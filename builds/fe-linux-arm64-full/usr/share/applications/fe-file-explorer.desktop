@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=File Explorer
+GenericName=File Manager
+Comment=Nemo-inspired dark desktop file explorer
+Exec=fe-gui %U
+Icon=fe
+Terminal=false
+Type=Application
+StartupNotify=true
+StartupWMClass=fe-file-explorer
+Categories=GNOME;GTK;Utility;Core;FileManager;
+MimeType=inode/directory;
+Keywords=files;folder;explorer;browser;manager;

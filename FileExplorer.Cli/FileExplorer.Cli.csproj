@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ProduceReferenceAssembly>false</ProduceReferenceAssembly>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <Nullable>enable</Nullable>
+        <OutputType>Exe</OutputType>
+        <RootNamespace>FileExplorer.Cli</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\TuiLib\TuiLib\TuiLib.csproj" />
+      <ProjectReference Include="..\..\InputLib\InputLib\InputLib.csproj" />
+      <ProjectReference Include="..\FileExplorer.Core\FileExplorer.Core.csproj" />
+    </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../MetadataGenerator/MetadataGenerator/MetadataGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <AdditionalFiles Include="builds/fe-linux-x64-full/DEBIAN/control" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+  </ItemGroup>
+</Project>

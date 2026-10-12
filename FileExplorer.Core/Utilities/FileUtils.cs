@@ -16,9 +16,25 @@ public static partial class FileUtils
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetBinaryType(string applicationName, out uint binaryType);
 
+    public static bool CanRead(string path, bool isDir)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            int mode = isDir ? 5 : 4;
+            return LinuxAccess(path, mode) == 0;
+        }
+
+        return true;
+    }
+
     public static bool IsFileExecutable(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        if (string.IsNullOrWhiteSpace(path))
         {
             return false;
         }
@@ -47,5 +63,65 @@ public static partial class FileUtils
         }
 
         return false;
+    }
+
+    public static string FormatSize(long bytes)
+    {
+        if (bytes < 1024)
+        {
+            return $"{bytes} B";
+        }
+
+        if (bytes < 1024 * 1024)
+        {
+            return $"{bytes / 1024.0:F1} KB";
+        }
+
+        if (bytes < 1024 * 1024 * 1024)
+        {
+            return $"{bytes / (1024.0 * 1024.0):F1} MB";
+        }
+
+        return $"{bytes / (1024.0 * 1024.0 * 1024.0):F2} GB";
+    }
+
+    public static string FormatSpeed(double bytesPerSecond)
+    {
+        if (bytesPerSecond <= 0)
+        {
+            return "-- KB/s";
+        }
+
+        return $"{FormatSize((long) bytesPerSecond)}/s";
+    }
+
+    public static string FormatEta(TimeSpan? eta)
+    {
+        if (!eta.HasValue || eta.Value.TotalSeconds <= 0)
+        {
+            return "almost done";
+        }
+
+        int seconds = (int) Math.Ceiling(eta.Value.TotalSeconds);
+        if (seconds < 5)
+        {
+            return "a few seconds remaining";
+        }
+
+        if (seconds < 60)
+        {
+            return $"about {seconds} seconds remaining";
+        }
+
+        int minutes = seconds / 60;
+        int remSec = seconds % 60;
+        if (minutes < 60)
+        {
+            return remSec == 0 ? $"about {minutes} minutes remaining" : $"about {minutes}m {remSec}s remaining";
+        }
+
+        int hours = minutes / 60;
+        int remMin = minutes % 60;
+        return $"about {hours}h {remMin}m remaining";
     }
 }

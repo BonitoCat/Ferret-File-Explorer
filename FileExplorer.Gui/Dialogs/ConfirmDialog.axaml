@@ -1,0 +1,58 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.ConfirmDialog"
+        Title="Confirm Deletion"
+        Width="420"
+        Height="170"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="*,Auto"
+          Margin="20">
+
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Spacing="14"
+                    VerticalAlignment="Center">
+
+            <Image Source="{markup:Icon Key=warning}"
+                   Width="32"
+                   Height="32"
+                   VerticalAlignment="Center"/>
+
+            <TextBlock x:Name="MessageText"
+                       Text="Are you sure you want to permanently delete this item?"
+                       TextWrapping="Wrap"
+                       FontSize="13"
+                       MaxWidth="320"
+                       VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10"
+                    Margin="0,16,0,0">
+
+            <Button x:Name="CancelButton"
+                    Content="Cancel"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    Width="80"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button x:Name="ConfirmButton"
+                    Content="OK"
+                    Click="OnConfirmClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    Width="80"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

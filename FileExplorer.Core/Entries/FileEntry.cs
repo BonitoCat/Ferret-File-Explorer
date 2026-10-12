@@ -11,6 +11,7 @@ public class FileEntry : IFileSystemEntry
     public FileType FileType { get; set; } = FileType.Unknown;
     public bool NeedsAccurateTypeCheck { get; set; }
     public bool IsAccurateType { get; set; }
+    public bool IsExecutable { get; set; }
 
     public bool IsHidden { get; set; }
     public bool IsEncrypted { get; set; }
@@ -22,4 +23,5 @@ public class FileEntry : IFileSystemEntry
     public DateTime CreationTime { get; set; }
     public DateTime LastAccessTime { get; set; }
     public DateTime LastWriteTime { get; set; }
+    public UnixFileMode? UnixMode { get; set; }
 }

@@ -1,0 +1,155 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.PropertiesDialog"
+        Title="{markup:Translate Key=Properties}"
+        Width="440"
+        Height="480"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0"
+        Focusable="True">
+
+    <Grid RowDefinitions="Auto,*,Auto"
+          Margin="20">
+
+        <!-- Header with Icon and Name -->
+        <Grid Grid.Row="0"
+              ColumnDefinitions="Auto,*"
+              Margin="0,0,0,16">
+
+            <Image Grid.Column="0"
+                   x:Name="ItemIcon"
+                   Width="48"
+                   Height="48"
+                   Margin="0,0,16,0"
+                   VerticalAlignment="Center"/>
+
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Spacing="4">
+
+                <TextBlock x:Name="NameLabel"
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
+
+                <TextBlock x:Name="TypeLabel"
+                           FontSize="12"
+                           Foreground="#888888"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Details Grid -->
+        <Border Grid.Row="1"
+                Background="#1C1C1E"
+                CornerRadius="8"
+                Padding="16"
+                BorderBrush="#333333"
+                BorderThickness="1">
+
+            <ScrollViewer>
+                <Grid ColumnDefinitions="110,*"
+                      RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                      Margin="0,4">
+
+                    <Grid.Styles>
+                        <Style Selector="TextBlock.label">
+                            <Setter Property="Foreground" Value="#888888"/>
+                            <Setter Property="FontSize" Value="12"/>
+                            <Setter Property="Margin" Value="0,6"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+
+                        <Style Selector="TextBlock.value">
+                            <Setter Property="Foreground" Value="#CCCCCC"/>
+                            <Setter Property="FontSize" Value="12"/>
+                            <Setter Property="Margin" Value="0,6"/>
+                            <Setter Property="TextWrapping" Value="Wrap"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                    </Grid.Styles>
+
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
+                               Text="{markup:Translate Key=Size}"
+                               Classes="label"/>
+
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="1"
+                               x:Name="SizeValue"
+                               Classes="value"/>
+
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="0"
+                               Text="{markup:Translate Key=LocationLabel}"
+                               Classes="label"/>
+
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="1"
+                               x:Name="LocationValue"
+                               Classes="value"/>
+
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="0"
+                               Text="{markup:Translate Key=Modified}"
+                               Classes="label"/>
+
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="1"
+                               x:Name="ModifiedValue"
+                               Classes="value"/>
+
+                    <TextBlock Grid.Row="3"
+                               Grid.Column="0"
+                               Text="{markup:Translate Key=Accessed}"
+                               Classes="label"/>
+
+                    <TextBlock Grid.Row="3"
+                               Grid.Column="1"
+                               x:Name="AccessedValue"
+                               Classes="value"/>
+
+                    <TextBlock Grid.Row="4"
+                               Grid.Column="0"
+                               Text="{markup:Translate Key=Permissions}"
+                               Classes="label"/>
+
+                    <TextBlock Grid.Row="4"
+                               Grid.Column="1"
+                               x:Name="PermissionsValue"
+                               Classes="value"/>
+
+                    <TextBlock Grid.Row="5"
+                               Grid.Column="0"
+                               Text="{markup:Translate Key=Owner}"
+                               Classes="label"/>
+
+                    <TextBlock Grid.Row="5"
+                               Grid.Column="1"
+                               x:Name="OwnerValue"
+                               Classes="value"/>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Close Button -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+
+            <Button x:Name="CloseButton"
+                    Content="{markup:Translate Key=Close}"
+                    Click="OnCloseClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    Width="85"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"
+                    IsCancel="True"
+                    CornerRadius="6"/>
+        </StackPanel>
+    </Grid>
+</Window>

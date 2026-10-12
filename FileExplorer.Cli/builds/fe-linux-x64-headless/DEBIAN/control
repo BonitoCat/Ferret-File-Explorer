@@ -1,0 +1,7 @@
+Package: fe-linux-x64
+Version: 2.1.0
+Section: utils
+Architecture: amd64
+Maintainer: BonitoCat
+Description: An advanced file explorer for the terminal
+Depends: wl-clipboard, xclip, libmagic1, libmagic-dev

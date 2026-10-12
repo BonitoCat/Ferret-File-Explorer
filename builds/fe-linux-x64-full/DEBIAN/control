@@ -1,0 +1,7 @@
+Package: ferret-linux-x64
+Version: 3.0.0
+Section: utils
+Architecture: amd64
+Maintainer: BonitoCat
+Description: Advanced terminal and desktop file explorer (CLI + GUI)
+Depends: wl-clipboard, xclip, libx11-6, libx11-dev, libmagic1, libmagic-dev, libfontconfig1

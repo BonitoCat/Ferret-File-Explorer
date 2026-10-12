@@ -16,4 +16,5 @@ public class FolderEntry : IFileSystemEntry
     public DateTime CreationTime { get; set; }
     public DateTime LastAccessTime { get; set; }
     public DateTime LastWriteTime { get; set; }
+    public UnixFileMode? UnixMode { get; set; }
 }

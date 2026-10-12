@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="FileExplorer.Gui.Dialogs.InputDialog"
+        Title="Input"
+        Width="380"
+        Height="160"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,*,Auto"
+          Margin="18">
+
+        <TextBlock Grid.Row="0"
+                   x:Name="PromptLabel"
+                   Text="Enter text:"
+                   FontSize="13"
+                   Margin="0,0,0,10"/>
+
+        <TextBox Grid.Row="1"
+                 x:Name="InputTextBox"
+                 VerticalAlignment="Center"
+                 CornerRadius="6"
+                 FontSize="13">
+            <TextBox.InnerRightContent>
+                <Button x:Name="TogglePasswordButton"
+                        Width="30"
+                        Height="30"
+                        Margin="0,0,2,0"
+                        Padding="0"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        Click="OnTogglePasswordClick"
+                        IsVisible="False">
+                    <Image x:Name="TogglePasswordIcon"
+                           Width="18"
+                           Height="18"/>
+                </Button>
+            </TextBox.InnerRightContent>
+        </TextBox>
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,12,0,0">
+
+            <Button Content="Cancel"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    Width="75"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button Content="OK"
+                    Click="OnOkClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    Width="75"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

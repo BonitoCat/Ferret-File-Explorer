@@ -1,0 +1,167 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.CompressDialog"
+        Title="{markup:Translate Key=Compress}"
+        Width="460"
+        Height="360"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto"
+          Margin="20">
+
+        <StackPanel Grid.Row="0"
+                    Spacing="4"
+                    Margin="0,0,0,16">
+
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+
+                <Image Source="{markup:Icon Key=archive}"
+                       Width="20"
+                       Height="20"/>
+
+                <TextBlock Text="{markup:Translate Key=Compress}"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <TextBlock Text="Create a compressed archive from selected files and folders."
+                       FontSize="12"
+                       Foreground="#888888"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="110,*"
+              RowDefinitions="Auto,Auto,Auto,Auto"
+              Margin="0,0,8,0">
+
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0"
+                       Text="Archive Name"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Margin="0,6"/>
+
+            <TextBox Grid.Row="0"
+                     Grid.Column="1"
+                     x:Name="ArchiveNameBox"
+                     CornerRadius="6"
+                     FontSize="12"
+                     Margin="0,4"/>
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="0"
+                       Text="Format"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Margin="0,6"/>
+
+            <ComboBox Grid.Row="1"
+                      Grid.Column="1"
+                      x:Name="FormatComboBox"
+                      HorizontalAlignment="Stretch"
+                      CornerRadius="6"
+                      FontSize="12"
+                      Margin="0,4">
+
+                <ComboBoxItem Content=".zip (ZIP Archive)"/>
+
+                <ComboBoxItem Content=".7z (7-Zip Archive)"/>
+
+                <ComboBoxItem Content=".tar.gz (Tar Gzip Archive)"/>
+
+                <ComboBoxItem Content=".tar.xz (Tar XZ Archive)"/>
+
+                <ComboBoxItem Content=".tar.bz2 (Tar Bzip2 Archive)"/>
+
+                <ComboBoxItem Content=".tar.zst (Tar Zstandard Archive)"/>
+
+                <ComboBoxItem Content=".tar (Tar Archive)"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="2"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=Password}"
+                       VerticalAlignment="Center"
+                       FontSize="12"
+                       Margin="0,6"/>
+
+            <TextBox Grid.Row="2"
+                     Grid.Column="1"
+                     x:Name="PasswordBox"
+                     CornerRadius="6"
+                     FontSize="12"
+                     PasswordChar="•"
+                     Watermark="Optional encryption password"
+                     Margin="0,4">
+                <TextBox.InnerRightContent>
+                    <Button x:Name="TogglePasswordButton"
+                            Width="30"
+                            Height="30"
+                            Margin="0,0,2,0"
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            Click="OnTogglePasswordClick">
+                        <Image x:Name="TogglePasswordIcon"
+                               Width="16"
+                               Height="16"/>
+                    </Button>
+                </TextBox.InnerRightContent>
+            </TextBox>
+
+            <TextBlock Grid.Row="3"
+                       Grid.Column="1"
+                       x:Name="PasswordHintText"
+                       Text="Password encryption is supported for .zip and .7z formats."
+                       FontSize="11"
+                       Foreground="#777777"
+                       Margin="0,2,0,4"/>
+        </Grid>
+
+        <StackPanel Grid.Row="2"
+                    Spacing="6"
+                    Margin="0,8,0,8">
+
+            <ProgressBar x:Name="ProgressBar"
+                         IsIndeterminate="True"
+                         Height="4"
+                         IsVisible="False"/>
+
+            <TextBlock x:Name="StatusLabel"
+                       FontSize="12"
+                       Foreground="#E05555"
+                       TextWrapping="Wrap"
+                       IsVisible="False"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,8,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    Width="85"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button Content="{markup:Translate Key=Create}"
+                    x:Name="CreateButton"
+                    Click="OnCreateClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    Width="85"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
