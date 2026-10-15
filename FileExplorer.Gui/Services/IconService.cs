@@ -2,21 +2,21 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Security.Principal;
+using System.Text;
 using Avalonia.Media;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Svg.Skia;
 using Avalonia.Threading;
 using FileExplorer.Core.Entries;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Gui.Services;
 
 public static class IconService
 {
     private static readonly ConcurrentDictionary<string, IImage> _cache = new();
-    private static readonly string _userIconsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
-        ".config", "fe", "icons");
+    private static readonly string _userIconsDir = Path.Combine(AppPaths.DataDir, "icons");
 
     public static IImage? Get(string iconName)
     {
@@ -65,38 +65,35 @@ public static class IconService
             return "folder";
         }
 
-        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrEmpty(userProfile))
+        string trimmed = path.TrimEnd('/');
+        if (trimmed == UserDirs.Desktop)
         {
-            if (path == Path.Combine(userProfile, "Desktop"))
-            {
-                return "folder-desktop";
-            }
+            return "folder-desktop";
+        }
 
-            if (path == Path.Combine(userProfile, "Documents"))
-            {
-                return "folder-documents";
-            }
+        if (trimmed == UserDirs.Documents)
+        {
+            return "folder-documents";
+        }
 
-            if (path == Path.Combine(userProfile, "Downloads"))
-            {
-                return "folder-downloads";
-            }
+        if (trimmed == UserDirs.Downloads)
+        {
+            return "folder-downloads";
+        }
 
-            if (path == Path.Combine(userProfile, "Music"))
-            {
-                return "folder-music";
-            }
+        if (trimmed == UserDirs.Music)
+        {
+            return "folder-music";
+        }
 
-            if (path == Path.Combine(userProfile, "Pictures"))
-            {
-                return "folder-pictures";
-            }
+        if (trimmed == UserDirs.Pictures)
+        {
+            return "folder-pictures";
+        }
 
-            if (path == Path.Combine(userProfile, "Videos"))
-            {
-                return "folder-videos";
-            }
+        if (trimmed == UserDirs.Videos)
+        {
+            return "folder-videos";
         }
 
         return "folder";
@@ -106,10 +103,89 @@ public static class IconService
     {
         if (isDirectory)
         {
-            return Get(GetForFolder(path));
+            string? color = string.IsNullOrEmpty(path) ? null : FolderColorService.Get(path);
+            return color == null ? Get(GetForFolder(path)) : GetColored(GetForFolder(path), color);
         }
 
         return GetForFile(type);
+    }
+
+    public static IImage? GetColored(string iconName, string hex, bool cache = true)
+    {
+        string key = $"{iconName}|{hex}";
+        if (cache && _cache.TryGetValue(key, out IImage? cached))
+        {
+            return cached;
+        }
+
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            return Dispatcher.UIThread.Invoke(() => GetColored(iconName, hex, cache));
+        }
+
+        string? svg = ReadIconSvg(iconName);
+        if (svg == null)
+        {
+            return Get(iconName);
+        }
+
+        try
+        {
+            string recolored = svg.Replace(FolderColorService.DefaultFolderColor, hex, StringComparison.OrdinalIgnoreCase);
+            using MemoryStream stream = new(Encoding.UTF8.GetBytes(recolored));
+            SvgSource? source = SvgSource.LoadFromStream(stream, null);
+            if (source == null)
+            {
+                return Get(iconName);
+            }
+
+            SvgImage image = new() { Source = source };
+            if (cache)
+            {
+                _cache[key] = image;
+            }
+
+            return image;
+        }
+        catch
+        {
+            return Get(iconName);
+        }
+    }
+
+    private static string? ReadIconSvg(string iconName)
+    {
+        string fileName = iconName.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
+            ? iconName
+            : $"{iconName}.svg";
+
+        try
+        {
+            string userOverridePath = Path.Combine(_userIconsDir, fileName);
+            if (File.Exists(userOverridePath))
+            {
+                return File.ReadAllText(userOverridePath);
+            }
+
+            string localAssetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Icons", fileName);
+            if (File.Exists(localAssetsPath))
+            {
+                return File.ReadAllText(localAssetsPath);
+            }
+
+            Uri resourceUri = new($"avares://FileExplorer.Gui/Assets/Icons/{fileName}");
+            if (AssetLoader.Exists(resourceUri))
+            {
+                using Stream stream = AssetLoader.Open(resourceUri);
+                using StreamReader reader = new(stream);
+                return reader.ReadToEnd();
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
     }
 
     public static void ClearCache()

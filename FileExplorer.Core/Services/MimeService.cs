@@ -5,112 +5,284 @@ namespace FileExplorer.Core.Services;
 
 public class MimeService
 {
+    private const string CustomMimePrefix = "application/x-fe-ext-";
+
+    private static readonly HashSet<string> GenericMimeTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "application/octet-stream",
+        "application/x-zerosize",
+        "text/plain",
+    };
+
+    private static string UserHome => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    private static string UserDataDir
+    {
+        get
+        {
+            string? dataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+            return string.IsNullOrEmpty(dataHome) ? Path.Combine(UserHome, ".local", "share") : dataHome;
+        }
+    }
+
+    private static IEnumerable<string> DataDirs
+    {
+        get
+        {
+            yield return UserDataDir;
+
+            string? dataDirs = Environment.GetEnvironmentVariable("XDG_DATA_DIRS");
+            if (string.IsNullOrEmpty(dataDirs))
+            {
+                dataDirs = "/usr/local/share:/usr/share";
+            }
+
+            foreach (string dir in dataDirs.Split(':', StringSplitOptions.RemoveEmptyEntries))
+            {
+                yield return dir;
+            }
+        }
+    }
+
     public static string GetMimeType(string filePath)
     {
-        if (File.Exists(filePath))
+        string ext = GetExtension(filePath);
+        if (!string.IsNullOrEmpty(ext))
         {
-            try
+            string? globMime = LookupGlobMimeType(ext);
+            if (globMime != null)
             {
-                ProcessStartInfo psi = new()
-                {
-                    FileName = "xdg-mime",
-                    Arguments = $"query filetype \"{filePath}\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                using Process proc = Process.Start(psi)!;
-                string mime = proc.StandardOutput.ReadToEnd().Trim();
-                proc.WaitForExit();
-
-                if (!string.IsNullOrEmpty(mime))
-                {
-                    return mime;
-                }
-            }
-            catch
-            {
+                return globMime;
             }
         }
 
-        string ext = Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
+        return SniffMimeType(filePath) ?? "application/octet-stream";
+    }
+
+    public static string GetAssociationMimeType(string filePath)
+    {
+        string ext = GetExtension(filePath);
+        if (string.IsNullOrEmpty(ext))
+        {
+            return SniffMimeType(filePath) ?? "application/octet-stream";
+        }
+
+        return LookupGlobMimeType(ext) ?? EnsureCustomMimeType(ext, SniffMimeType(filePath));
+    }
+
+    public static string EnsureCustomMimeType(string extension)
+    {
+        string ext = extension.TrimStart('.').ToLowerInvariant();
+        return LookupGlobMimeType(ext) ?? EnsureCustomMimeType(ext, null);
+    }
+
+    private static string EnsureCustomMimeType(string ext, string? sniffedParent)
+    {
         if (string.IsNullOrEmpty(ext))
         {
             return "application/octet-stream";
         }
 
-        return EnsureCustomMimeType(ext);
-    }
-
-    public static string EnsureCustomMimeType(string extension)
-    {
-        string cleanExt = extension.TrimStart('.').ToLowerInvariant();
-        if (string.IsNullOrEmpty(cleanExt))
+        string safeExt = new(ext.Where(c => char.IsLetterOrDigit(c) || c is '-' or '_' or '+').ToArray());
+        string customMime = CustomMimePrefix + safeExt.ToLowerInvariant();
+        string packagesDir = Path.Combine(UserDataDir, "mime", "packages");
+        string xmlPath = Path.Combine(packagesDir, $"fe_{safeExt.ToLowerInvariant()}.xml");
+        if (File.Exists(xmlPath))
         {
-            return "application/octet-stream";
+            return customMime;
         }
 
-        string tempFile = Path.Combine(Path.GetTempPath(), $"fe_probe_{Guid.NewGuid():N}.{cleanExt}");
+        string? parent = GetParentMimeType(sniffedParent);
+        StringBuilder xml = new();
+        xml.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+        xml.AppendLine("<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">");
+        xml.AppendLine($"  <mime-type type=\"{customMime}\">");
+        xml.AppendLine($"    <comment>{ext.ToUpperInvariant()} file</comment>");
+        if (parent != null)
+        {
+            xml.AppendLine($"    <sub-class-of type=\"{parent}\"/>");
+        }
+
+        xml.AppendLine($"    <glob pattern=\"*.{ext}\" weight=\"60\"/>");
+        xml.AppendLine("  </mime-type>");
+        xml.AppendLine("</mime-info>");
+
         try
         {
-            File.WriteAllText(tempFile, "");
-            string probed = GetMimeType(tempFile);
-            if (!string.IsNullOrEmpty(probed) && probed != "application/octet-stream")
-            {
-                return probed;
-            }
+            Directory.CreateDirectory(packagesDir);
+            File.WriteAllText(xmlPath, xml.ToString());
+            RunProcess("update-mime-database", $"\"{Path.Combine(UserDataDir, "mime")}\"");
         }
         catch
         {
         }
-        finally
+
+        return customMime;
+    }
+
+    private static string? GetParentMimeType(string? sniffed)
+    {
+        if (string.IsNullOrEmpty(sniffed) || sniffed is "application/octet-stream" or "application/x-zerosize")
         {
+            return null;
+        }
+
+        if (sniffed.StartsWith(CustomMimePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return sniffed;
+    }
+
+    public static string? LookupGlobMimeType(string extension)
+    {
+        string pattern = "*." + extension.TrimStart('.');
+        string? bestMime = null;
+        int bestWeight = -1;
+
+        foreach (string dataDir in DataDirs)
+        {
+            string globsPath = Path.Combine(dataDir, "mime", "globs2");
+            if (!File.Exists(globsPath))
+            {
+                continue;
+            }
+
             try
             {
-                if (File.Exists(tempFile))
+                foreach (string line in File.ReadLines(globsPath))
                 {
-                    File.Delete(tempFile);
+                    if (line.Length == 0 || line[0] == '#')
+                    {
+                        continue;
+                    }
+
+                    string[] parts = line.Split(':');
+                    if (parts.Length < 3 || !string.Equals(parts[2], pattern, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (int.TryParse(parts[0], out int weight) && weight > bestWeight)
+                    {
+                        bestWeight = weight;
+                        bestMime = parts[1];
+                    }
                 }
             }
             catch
             {
             }
+
+            if (bestMime != null)
+            {
+                return bestMime;
+            }
         }
 
-        string customMime = $"application/x-{cleanExt}";
-        string packagesDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "mime", "packages");
-        Directory.CreateDirectory(packagesDir);
+        return null;
+    }
 
-        string xmlPath = Path.Combine(packagesDir, $"fe_{cleanExt}.xml");
-        if (!File.Exists(xmlPath))
+    public static string? SniffMimeType(string filePath)
+    {
+        if (!File.Exists(filePath))
         {
-            string xml = $"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n  <mime-type type=\"{customMime}\">\n    <comment>{cleanExt} file</comment>\n    <glob pattern=\"*.{cleanExt}\"/>\n  </mime-type>\n</mime-info>\n";
-            File.WriteAllText(xmlPath, xml);
+            return null;
+        }
 
-            try
+        string? mime = RunProcess("xdg-mime", $"query filetype \"{filePath}\"");
+        return string.IsNullOrWhiteSpace(mime) ? null : mime.Trim();
+    }
+
+    public static string? GetDefaultApplication(string mimeType)
+    {
+        string? desktop = RunProcess("xdg-mime", $"query default \"{mimeType}\"");
+        return string.IsNullOrWhiteSpace(desktop) ? null : desktop.Trim();
+    }
+
+    public static List<string> GetApplicationsForMimeType(string mimeType)
+    {
+        string? output = RunProcess("gio", $"mime \"{mimeType}\"");
+        List<string> apps = new();
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return apps;
+        }
+
+        foreach (string line in output.Split('\n'))
+        {
+            if (!line.StartsWith('\t'))
             {
-                string mimeRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "mime");
-                ProcessStartInfo updatePsi = new()
-                {
-                    FileName = "update-mime-database",
-                    Arguments = $"\"{mimeRoot}\"",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                };
-
-                using Process updateProc = Process.Start(updatePsi)!;
-                updateProc.WaitForExit();
+                continue;
             }
-            catch
+
+            string id = line.Trim();
+            if (id.EndsWith(".desktop", StringComparison.Ordinal) && !apps.Contains(id))
             {
+                apps.Add(id);
             }
         }
 
-        return customMime;
+        return apps;
+    }
+
+    public static string GetDesktopAppName(string desktopId)
+    {
+        string? path = FindDesktopFilePath(desktopId);
+        if (path == null)
+        {
+            return Path.GetFileNameWithoutExtension(desktopId);
+        }
+
+        try
+        {
+            bool inEntry = false;
+            foreach (string rawLine in File.ReadLines(path))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith('['))
+                {
+                    if (inEntry)
+                    {
+                        break;
+                    }
+
+                    inEntry = line == "[Desktop Entry]";
+                    continue;
+                }
+
+                if (inEntry && line.StartsWith("Name=", StringComparison.Ordinal))
+                {
+                    return line[5..].Trim();
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return Path.GetFileNameWithoutExtension(desktopId);
+    }
+
+    private static string? FindDesktopFilePath(string desktopId)
+    {
+        IEnumerable<string> dirs = DataDirs
+            .Select(d => Path.Combine(d, "applications"))
+            .Append("/var/lib/flatpak/exports/share/applications")
+            .Append(Path.Combine(UserHome, ".local", "share", "flatpak", "exports", "share", "applications"))
+            .Append("/var/lib/snapd/desktop/applications");
+
+        foreach (string dir in dirs)
+        {
+            string candidate = Path.Combine(dir, desktopId);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return null;
     }
 
     public static string EnsureDesktopFile(string programPathOrCommand)
@@ -122,53 +294,37 @@ public class MimeService
         }
 
         string appName = Path.GetFileNameWithoutExtension(raw);
-        string[] appDirs =
-        [
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "applications"),
-            "/usr/share/applications",
-            "/usr/local/share/applications",
-            "/var/lib/flatpak/exports/share/applications",
-            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "flatpak", "exports", "share", "applications"),
-            "/var/lib/snapd/desktop/applications"
-        ];
+        List<string> appDirs = DataDirs
+            .Select(d => Path.Combine(d, "applications"))
+            .Concat(
+            [
+                "/var/lib/flatpak/exports/share/applications",
+                Path.Combine(UserHome, ".local", "share", "flatpak", "exports", "share", "applications"),
+                "/var/lib/snapd/desktop/applications",
+            ])
+            .Where(Directory.Exists)
+            .Distinct()
+            .ToList();
 
         foreach (string dir in appDirs)
         {
-            if (!Directory.Exists(dir))
-            {
-                continue;
-            }
-
-            string directPath = Path.Combine(dir, $"{appName}.desktop");
-            if (File.Exists(directPath))
+            if (File.Exists(Path.Combine(dir, $"{appName}.desktop")))
             {
                 return $"{appName}.desktop";
             }
-
-            try
-            {
-                string[] files = Directory.GetFiles(dir, "*.desktop");
-                foreach (string f in files)
-                {
-                    string fName = Path.GetFileName(f);
-                    if (fName.StartsWith($"{appName}.", StringComparison.OrdinalIgnoreCase) ||
-                        fName.Equals($"{appName}.desktop", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return fName;
-                    }
-                }
-            }
-            catch
-            {
-            }
         }
 
-        string userAppsDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "applications");
+        string? execMatch = FindDesktopFileByExec(appDirs, raw);
+        if (execMatch != null)
+        {
+            return execMatch;
+        }
+
+        string userAppsDir = Path.Combine(UserDataDir, "applications");
         Directory.CreateDirectory(userAppsDir);
 
         string safeName = $"fe-{appName.ToLowerInvariant()}.desktop";
         string targetDesktopPath = Path.Combine(userAppsDir, safeName);
-
         if (!File.Exists(targetDesktopPath))
         {
             StringBuilder sb = new();
@@ -185,149 +341,167 @@ public class MimeService
         return safeName;
     }
 
+    private static string? FindDesktopFileByExec(List<string> appDirs, string program)
+    {
+        string programName = Path.GetFileName(program);
+        string? generatedMatch = null;
+
+        foreach (string dir in appDirs)
+        {
+            string[] files;
+            try
+            {
+                files = Directory.GetFiles(dir, "*.desktop");
+            }
+            catch
+            {
+                continue;
+            }
+
+            foreach (string file in files)
+            {
+                string? execTarget = ReadExecTarget(file);
+                if (execTarget == null)
+                {
+                    continue;
+                }
+
+                bool matches = string.Equals(execTarget, program, StringComparison.Ordinal)
+                    || (!program.Contains('/') && string.Equals(Path.GetFileName(execTarget), programName, StringComparison.Ordinal));
+                if (!matches)
+                {
+                    continue;
+                }
+
+                string id = Path.GetFileName(file);
+                if (!id.StartsWith("fe-", StringComparison.Ordinal))
+                {
+                    return id;
+                }
+
+                generatedMatch ??= id;
+            }
+        }
+
+        return generatedMatch;
+    }
+
+    private static string? ReadExecTarget(string desktopFile)
+    {
+        try
+        {
+            bool inEntry = false;
+            foreach (string rawLine in File.ReadLines(desktopFile))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith('['))
+                {
+                    if (inEntry)
+                    {
+                        return null;
+                    }
+
+                    inEntry = line == "[Desktop Entry]";
+                    continue;
+                }
+
+                if (!inEntry)
+                {
+                    continue;
+                }
+
+                if (line is "Hidden=true")
+                {
+                    return null;
+                }
+
+                if (!line.StartsWith("Exec=", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                string exec = line[5..].Trim();
+                if (exec.StartsWith('"'))
+                {
+                    int end = exec.IndexOf('"', 1);
+                    return end > 0 ? exec[1..end] : null;
+                }
+
+                int space = exec.IndexOf(' ');
+                return space > 0 ? exec[..space] : exec;
+            }
+        }
+        catch
+        {
+        }
+
+        return null;
+    }
+
     public static void SetDefaultApplication(string filePathOrExtension, string program)
     {
-        string mimeType;
-        if (filePathOrExtension.StartsWith('.'))
-        {
-            mimeType = EnsureCustomMimeType(filePathOrExtension.TrimStart('.'));
-        }
-        else if (File.Exists(filePathOrExtension))
-        {
-            mimeType = GetMimeType(filePathOrExtension);
-        }
-        else
-        {
-            string ext = Path.GetExtension(filePathOrExtension);
-            mimeType = !string.IsNullOrEmpty(ext) ? EnsureCustomMimeType(ext) : GetMimeType(filePathOrExtension);
-        }
+        string mimeType = filePathOrExtension.StartsWith('.') && !File.Exists(filePathOrExtension)
+            ? EnsureCustomMimeType(filePathOrExtension)
+            : GetAssociationMimeType(filePathOrExtension);
 
         if (string.IsNullOrEmpty(mimeType) || mimeType == "application/octet-stream")
         {
-            string ext = Path.GetExtension(filePathOrExtension);
-            if (!string.IsNullOrEmpty(ext))
-            {
-                mimeType = EnsureCustomMimeType(ext);
-            }
+            return;
         }
 
         string desktopFile = EnsureDesktopFile(program);
 
         UpdateMimeAppsList(mimeType, desktopFile);
+        RunProcess("gio", $"mime \"{mimeType}\" \"{desktopFile}\"");
+        RunProcess("xdg-mime", $"default \"{desktopFile}\" \"{mimeType}\"");
+    }
 
+    public static bool IsGenericMimeType(string mimeType)
+    {
+        return GenericMimeTypes.Contains(mimeType);
+    }
+
+    private static string GetExtension(string filePath)
+    {
+        return Path.GetExtension(filePath).TrimStart('.').ToLowerInvariant();
+    }
+
+    private static string? RunProcess(string fileName, string arguments)
+    {
         try
         {
-            ProcessStartInfo gioPsi = new()
+            ProcessStartInfo psi = new()
             {
-                FileName = "gio",
-                Arguments = $"mime \"{mimeType}\" \"{desktopFile}\"",
+                FileName = fileName,
+                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = true,
             };
-            using Process proc = Process.Start(gioPsi)!;
+
+            using Process proc = Process.Start(psi)!;
+            string output = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit();
-        }
-        catch
-        {
-        }
 
-        try
-        {
-            ProcessStartInfo xdgPsi = new()
-            {
-                FileName = "xdg-mime",
-                Arguments = $"default \"{desktopFile}\" \"{mimeType}\"",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            using Process proc2 = Process.Start(xdgPsi)!;
-            proc2.WaitForExit();
+            return output;
         }
         catch
         {
+            return null;
         }
     }
 
     private static void UpdateMimeAppsList(string mimeType, string desktopFile)
     {
-        string configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+        string configDir = Path.Combine(UserHome, ".config");
         Directory.CreateDirectory(configDir);
         string listPath = Path.Combine(configDir, "mimeapps.list");
 
         List<string> lines = File.Exists(listPath) ? [..File.ReadAllLines(listPath)] : [];
 
-        int defHeaderIdx = lines.FindIndex(l => l.Trim().Equals("[Default Applications]", StringComparison.OrdinalIgnoreCase));
-        if (defHeaderIdx < 0)
-        {
-            lines.Add("[Default Applications]");
-            defHeaderIdx = lines.Count - 1;
-        }
-
-        int nextHeaderIdx = lines.FindIndex(defHeaderIdx + 1, l => l.Trim().StartsWith('[') && l.Trim().EndsWith(']'));
-        if (nextHeaderIdx < 0)
-        {
-            nextHeaderIdx = lines.Count;
-        }
-
-        int existingLineIdx = -1;
-        for (int i = defHeaderIdx + 1; i < nextHeaderIdx; i++)
-        {
-            string trimmed = lines[i].Trim();
-            if (trimmed.StartsWith($"{mimeType}=", StringComparison.OrdinalIgnoreCase))
-            {
-                existingLineIdx = i;
-                break;
-            }
-        }
-
-        string newLine = $"{mimeType}={desktopFile}";
-        if (existingLineIdx >= 0)
-        {
-            lines[existingLineIdx] = newLine;
-        }
-        else
-        {
-            lines.Insert(defHeaderIdx + 1, newLine);
-        }
-
-        int addedHeaderIdx = lines.FindIndex(l => l.Trim().Equals("[Added Associations]", StringComparison.OrdinalIgnoreCase));
-        if (addedHeaderIdx < 0)
-        {
-            lines.Add("");
-            lines.Add("[Added Associations]");
-            addedHeaderIdx = lines.Count - 1;
-        }
-
-        int nextAddedHeaderIdx = lines.FindIndex(addedHeaderIdx + 1, l => l.Trim().StartsWith('[') && l.Trim().EndsWith(']'));
-        if (nextAddedHeaderIdx < 0)
-        {
-            nextAddedHeaderIdx = lines.Count;
-        }
-
-        int existingAddedIdx = -1;
-        for (int i = addedHeaderIdx + 1; i < nextAddedHeaderIdx; i++)
-        {
-            string trimmed = lines[i].Trim();
-            if (trimmed.StartsWith($"{mimeType}=", StringComparison.OrdinalIgnoreCase))
-            {
-                existingAddedIdx = i;
-                break;
-            }
-        }
-
-        string newAddedLine = $"{mimeType}={desktopFile};";
-        if (existingAddedIdx >= 0)
-        {
-            lines[existingAddedIdx] = newAddedLine;
-        }
-        else
-        {
-            lines.Insert(addedHeaderIdx + 1, newAddedLine);
-        }
+        SetSectionEntry(lines, "[Default Applications]", mimeType, desktopFile);
+        SetSectionEntry(lines, "[Added Associations]", mimeType, $"{desktopFile};");
 
         try
         {
@@ -336,5 +510,38 @@ public class MimeService
         catch
         {
         }
+    }
+
+    private static void SetSectionEntry(List<string> lines, string header, string mimeType, string value)
+    {
+        int headerIdx = lines.FindIndex(l => l.Trim().Equals(header, StringComparison.OrdinalIgnoreCase));
+        if (headerIdx < 0)
+        {
+            if (lines.Count > 0 && lines[^1].Trim().Length > 0)
+            {
+                lines.Add("");
+            }
+
+            lines.Add(header);
+            headerIdx = lines.Count - 1;
+        }
+
+        int nextHeaderIdx = lines.FindIndex(headerIdx + 1, l => l.Trim().StartsWith('[') && l.Trim().EndsWith(']'));
+        if (nextHeaderIdx < 0)
+        {
+            nextHeaderIdx = lines.Count;
+        }
+
+        string newLine = $"{mimeType}={value}";
+        for (int i = headerIdx + 1; i < nextHeaderIdx; i++)
+        {
+            if (lines[i].Trim().StartsWith($"{mimeType}=", StringComparison.OrdinalIgnoreCase))
+            {
+                lines[i] = newLine;
+                return;
+            }
+        }
+
+        lines.Insert(headerIdx + 1, newLine);
     }
 }

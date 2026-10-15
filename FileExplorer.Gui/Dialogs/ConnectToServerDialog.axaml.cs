@@ -193,8 +193,7 @@ public partial class ConnectToServerDialog : Window
                 Password = info.Password
             };
 
-            NetworkBookmarkService bookmarkService = new();
-            bookmarkService.AddBookmark(bookmark);
+            await Task.Run(() => new NetworkBookmarkService().AddBookmark(bookmark));
 
             ResultMountPath = mountPath;
             Close(mountPath);

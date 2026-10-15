@@ -5,6 +5,7 @@
         xmlns:vm="using:FileExplorer.Gui.ViewModels"
         xmlns:m="using:FileExplorer.Gui.Models"
         xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:controls="using:FileExplorer.Gui.Controls"
         mc:Ignorable="d"
         d:DesignWidth="1100"
         d:DesignHeight="700"
@@ -28,6 +29,30 @@
 
         <Style Selector="Button.view-toggle.active">
             <Setter Property="Background" Value="#383838"/>
+        </Style>
+
+        <Style Selector="Button.crumb">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Button.crumb.current">
+            <Setter Property="Background" Value="#383838"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style Selector="Button.crumb-scroll">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.crumb-scroll:disabled /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Button.crumb-scroll:disabled">
+            <Setter Property="Opacity" Value="0.35"/>
         </Style>
 
         <Style Selector="Border.drop-target">
@@ -267,12 +292,24 @@
                             Padding="4,2"
                             PointerPressed="OnBreadcrumbBarPointerPressed"
                             IsVisible="{Binding !IsPathEditing}">
-                        <Grid ColumnDefinitions="*,Auto">
-                            <ScrollViewer Grid.Column="0"
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                            <Button Grid.Column="0"
+                                    x:Name="BreadcrumbScrollLeftButton"
+                                    Classes="crumb-scroll"
+                                    Click="OnBreadcrumbScrollLeftClick"
+                                    IsVisible="False">
+                                <Image Source="{markup:Icon Key=arrow-left}"
+                                       Width="12"
+                                       Height="12"/>
+                            </Button>
+
+                            <ScrollViewer Grid.Column="1"
                                           x:Name="BreadcrumbsScrollViewer"
                                           HorizontalScrollBarVisibility="Hidden"
-                                          VerticalScrollBarVisibility="Disabled">
-                                <ItemsControl ItemsSource="{Binding Breadcrumbs}">
+                                          VerticalScrollBarVisibility="Disabled"
+                                          ScrollChanged="OnBreadcrumbsScrollChanged">
+                                <ItemsControl x:Name="BreadcrumbsItemsControl"
+                                              ItemsSource="{Binding Breadcrumbs}">
                                     <ItemsControl.ItemsPanel>
                                         <ItemsPanelTemplate>
                                             <StackPanel Orientation="Horizontal"
@@ -284,14 +321,16 @@
                                         <DataTemplate x:DataType="m:BreadcrumbItem">
                                             <StackPanel Orientation="Horizontal"
                                                         Spacing="2">
-                                                <Button Content="{Binding Name}"
-                                                        Tag="{Binding FullPath}"
+                                                <Button Tag="{Binding FullPath}"
                                                         Click="OnBreadcrumbClick"
-                                                        Background="Transparent"
+                                                        Classes="crumb"
+                                                        Classes.current="{Binding IsCurrent}"
                                                         BorderThickness="0"
                                                         CornerRadius="4"
                                                         Padding="6,3"
-                                                        FontSize="12"/>
+                                                        FontSize="12">
+                                                    <TextBlock Text="{Binding Name}"/>
+                                                </Button>
 
                                                 <TextBlock Text="/"
                                                            Foreground="#666666"
@@ -304,7 +343,18 @@
                                 </ItemsControl>
                             </ScrollViewer>
 
-                            <Button Grid.Column="1"
+                            <Button Grid.Column="2"
+                                    x:Name="BreadcrumbScrollRightButton"
+                                    Classes="crumb-scroll"
+                                    Click="OnBreadcrumbScrollRightClick"
+                                    IsVisible="False">
+                                <Image Source="{markup:Icon Key=arrow-left}"
+                                       Width="12"
+                                       Height="12"
+                                       RenderTransform="rotate(180deg)"/>
+                            </Button>
+
+                            <Button Grid.Column="3"
                                     Click="OnTogglePathEditingClick"
                                     ToolTip.Tip="{markup:Translate Key=Location}"
                                     Background="Transparent"
@@ -445,24 +495,37 @@
                          Background="Transparent"
                          DragDrop.AllowDrop="True"
                          CornerRadius="6"
+                         AutoScrollToSelectedItem="False"
                          Focusable="True">
                     <ListBox.Styles>
-                        <Style Selector="ListBoxItem">
-                            <Setter Property="CornerRadius" Value="6"/>
-                            <Setter Property="Padding" Value="0"/>
-                            <Setter Property="Margin" Value="0,1"/>
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Style Selector="ListBoxItem"
+                               x:DataType="m:PlaceItem">
+                            <Setter Property="IsVisible"
+                                    Value="{Binding IsVisible}"/>
+                            <Setter Property="CornerRadius"
+                                    Value="6"/>
+                            <Setter Property="Padding"
+                                    Value="0"/>
+                            <Setter Property="Margin"
+                                    Value="0,1"/>
+                            <Setter Property="HorizontalContentAlignment"
+                                    Value="Stretch"/>
                         </Style>
 
                         <Style Selector="Button.sidebar-action-btn">
-                            <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="CornerRadius" Value="4"/>
-                            <Setter Property="Padding" Value="6,4"/>
-                            <Setter Property="BorderThickness" Value="0"/>
+                            <Setter Property="Background"
+                                    Value="Transparent"/>
+                            <Setter Property="CornerRadius"
+                                    Value="4"/>
+                            <Setter Property="Padding"
+                                    Value="6,4"/>
+                            <Setter Property="BorderThickness"
+                                    Value="0"/>
                         </Style>
 
                         <Style Selector="Button.sidebar-action-btn:pointerover">
-                            <Setter Property="Background" Value="#383838"/>
+                            <Setter Property="Background"
+                                    Value="#383838"/>
                         </Style>
                     </ListBox.Styles>
 
@@ -517,14 +580,26 @@
                                         Classes.drop-target="{Binding IsDropTarget}">
                                     <Panel>
                                         <Grid ColumnDefinitions="*,Auto"
-                                              IsVisible="{Binding IsHeader}">
-                                            <TextBlock Grid.Column="0"
-                                                       Text="{Binding Name}"
-                                                       FontWeight="Bold"
-                                                       FontSize="11"
-                                                       Foreground="#777777"
-                                                       Margin="4,6,6,2"
-                                                       TextTrimming="CharacterEllipsis"/>
+                                              IsVisible="{Binding IsHeader}"
+                                              Background="Transparent"
+                                              Cursor="Hand">
+                                            <StackPanel Grid.Column="0"
+                                                        Orientation="Horizontal"
+                                                        Spacing="4"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Chevron}"
+                                                           FontSize="9"
+                                                           Foreground="#777777"
+                                                           VerticalAlignment="Center"
+                                                           Margin="4,6,0,2"/>
+
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontWeight="Bold"
+                                                           FontSize="11"
+                                                           Foreground="#777777"
+                                                           Margin="0,6,6,2"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
 
                                             <Button Grid.Column="1"
                                                     Classes="sidebar-action-btn"
@@ -765,9 +840,8 @@
                                      IsVisible="{Binding IsGridView}">
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"
-                                                   ItemWidth="128"
-                                                   ItemHeight="136"/>
+                                        <controls:StretchWrapPanel ItemWidth="128"
+                                                                   ItemHeight="136"/>
                                     </ItemsPanelTemplate>
                                 </ListBox.ItemsPanel>
 
@@ -867,6 +941,10 @@
                                         <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
                                                   Click="OnMenuBookmarkClick"
                                                   IsVisible="{Binding CanBookmarkSelection}"/>
+                                        
+                                        <MenuItem x:Name="GridFolderColorMenu"
+                                                  Header="Folder Color"
+                                                  IsVisible="{Binding CanColorSelection}"/>
 
                                         <Separator/>
 
@@ -883,24 +961,26 @@
                                                 CornerRadius="8"
                                                 Opacity="{Binding DisplayOpacity}"
                                                 Classes.drop-target="{Binding IsDropTarget}">
-                                            <Grid RowDefinitions="70,*"
+                                            <Grid RowDefinitions="80,*"
                                                   Margin="4">
                                                 <Panel Grid.Row="0"
-                                                       Width="64"
-                                                       Height="64"
+                                                       Classes="drop-zone"
+                                                       Background="Transparent"
+                                                       Width="76"
+                                                       Height="76"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center">
                                                     <Image Source="{Binding Icon}"
-                                                           Width="56"
-                                                           Height="56"
+                                                           Width="68"
+                                                           Height="68"
                                                            IsVisible="{Binding !HasThumbnail}"/>
 
                                                     <Border CornerRadius="6"
                                                             ClipToBounds="True"
                                                             IsVisible="{Binding HasThumbnail}">
                                                         <Image Source="{Binding Thumbnail}"
-                                                               Width="56"
-                                                               Height="56"
+                                                               Width="68"
+                                                               Height="68"
                                                                Stretch="UniformToFill"/>
                                                     </Border>
                                                 </Panel>
@@ -915,7 +995,7 @@
                                                                TextWrapping="Wrap"
                                                                MaxLines="2"
                                                                TextTrimming="CharacterEllipsis"
-                                                               Width="110"/>
+                                                               MaxWidth="110"/>
 
                                                     <Border Background="#D35400"
                                                             CornerRadius="3"
@@ -1022,6 +1102,10 @@
                                                   Click="OnMenuExtractHereClick"
                                                   IsVisible="{Binding CanExtractSelection}"/>
 
+                                        <MenuItem x:Name="ListFolderColorMenu"
+                                                  Header="Folder Color"
+                                                  IsVisible="{Binding CanColorSelection}"/>
+
                                         <Separator IsVisible="{Binding IsItemSelected}"/>
 
                                         <MenuItem Header="{markup:Translate Key=Trash}"
@@ -1056,6 +1140,8 @@
                                             <Panel Grid.Column="0"
                                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
                                                 <StackPanel Orientation="Horizontal"
+                                                            Classes="drop-zone"
+                                                            Background="Transparent"
                                                             Spacing="8"
                                                             VerticalAlignment="Center">
                                                     <Panel Width="20"
@@ -1314,9 +1400,8 @@
                                      IsVisible="{Binding IsGridView}">
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal"
-                                                   ItemWidth="128"
-                                                   ItemHeight="136"/>
+                                        <controls:StretchWrapPanel ItemWidth="128"
+                                                                   ItemHeight="136"/>
                                     </ItemsPanelTemplate>
                                 </ListBox.ItemsPanel>
 
@@ -1397,6 +1482,10 @@
                                                   Click="OnMenuExtractHereClick"
                                                   IsVisible="{Binding Pane2CanExtractSelection}"/>
 
+                                        <MenuItem x:Name="Pane2GridFolderColorMenu"
+                                                  Header="Folder Color"
+                                                  IsVisible="{Binding Pane2CanColorSelection}"/>
+
                                         <Separator IsVisible="{Binding IsItemSelected}"/>
 
                                         <MenuItem Header="{markup:Translate Key=Trash}"
@@ -1430,24 +1519,26 @@
                                                 CornerRadius="8"
                                                 Opacity="{Binding DisplayOpacity}"
                                                 Classes.drop-target="{Binding IsDropTarget}">
-                                            <Grid RowDefinitions="70,*"
+                                            <Grid RowDefinitions="80,*"
                                                   Margin="4">
                                                 <Panel Grid.Row="0"
-                                                       Width="64"
-                                                       Height="64"
+                                                       Classes="drop-zone"
+                                                       Background="Transparent"
+                                                       Width="76"
+                                                       Height="76"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center">
                                                     <Image Source="{Binding Icon}"
-                                                           Width="56"
-                                                           Height="56"
+                                                           Width="68"
+                                                           Height="68"
                                                            IsVisible="{Binding !HasThumbnail}"/>
 
                                                     <Border CornerRadius="6"
                                                             ClipToBounds="True"
                                                             IsVisible="{Binding HasThumbnail}">
                                                         <Image Source="{Binding Thumbnail}"
-                                                               Width="56"
-                                                               Height="56"
+                                                               Width="68"
+                                                               Height="68"
                                                                Stretch="UniformToFill"/>
                                                     </Border>
                                                 </Panel>
@@ -1462,7 +1553,7 @@
                                                                TextWrapping="Wrap"
                                                                MaxLines="2"
                                                                TextTrimming="CharacterEllipsis"
-                                                               Width="110"/>
+                                                               MaxWidth="110"/>
 
                                                     <Border Background="#D35400"
                                                             CornerRadius="3"
@@ -1569,6 +1660,10 @@
                                                   Click="OnMenuExtractHereClick"
                                                   IsVisible="{Binding Pane2CanExtractSelection}"/>
 
+                                        <MenuItem x:Name="Pane2ListFolderColorMenu"
+                                                  Header="Folder Color"
+                                                  IsVisible="{Binding Pane2CanColorSelection}"/>
+
                                         <Separator IsVisible="{Binding IsItemSelected}"/>
 
                                         <MenuItem Header="{markup:Translate Key=Trash}"
@@ -1603,6 +1698,8 @@
                                             <Panel Grid.Column="0"
                                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
                                                 <StackPanel Orientation="Horizontal"
+                                                            Classes="drop-zone"
+                                                            Background="Transparent"
                                                             Spacing="8"
                                                             VerticalAlignment="Center">
                                                     <Panel Width="20"

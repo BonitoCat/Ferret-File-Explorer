@@ -1,3 +1,5 @@
+using FileExplorer.Core.Utilities;
+
 namespace FileExplorer.Core.Services;
 
 public class BookmarkService
@@ -6,8 +8,7 @@ public class BookmarkService
 
     public BookmarkService()
     {
-        BookmarkDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "fe", "bookmarks");
-        Directory.CreateDirectory(BookmarkDir);
+        BookmarkDir = AppPaths.GetDataDir("bookmarks");
     }
 
     public void AddOrRemoveBookmark(string targetPath)

@@ -162,6 +162,12 @@ public class NetworkService
             return (false, "", "Server hostname or IP address cannot be empty.");
         }
 
+        string? existingMount = FindExistingMount(info);
+        if (existingMount != null)
+        {
+            return (true, existingMount, "");
+        }
+
         HashSet<string> beforeMounts = GetGvfsMounts();
         string uri = info.BuildUri();
 
@@ -259,6 +265,13 @@ public class NetworkService
 
         if (process.ExitCode != 0)
         {
+            string alreadyMounted = errorBuilder.ToString() + outputBuilder;
+            string? mounted = FindExistingMount(info);
+            if (mounted != null && alreadyMounted.Contains("already mounted", StringComparison.OrdinalIgnoreCase))
+            {
+                return (true, mounted, "");
+            }
+
             string err = errorBuilder.ToString().Trim();
             if (string.IsNullOrEmpty(err))
             {
@@ -303,6 +316,59 @@ public class NetworkService
 
         string gvfsRoot = $"/run/user/{GetUserId()}/gvfs";
         return (true, gvfsRoot, "");
+    }
+
+    public static string? FindExistingMount(NetworkConnectionInfo info)
+    {
+        string prefix = info.Protocol switch
+        {
+            NetworkProtocol.Smb => "smb-share:",
+            NetworkProtocol.Ftp => "ftp:",
+            NetworkProtocol.Dav or NetworkProtocol.Davs => "dav",
+            _ => "sftp:",
+        };
+
+        string host = info.Host.Trim();
+        foreach (string mount in GetGvfsMounts())
+        {
+            string name = System.IO.Path.GetFileName(mount);
+            if (!name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            Dictionary<string, string> keys = name[(name.IndexOf(':') + 1)..]
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => part.Split('=', 2))
+                .Where(pair => pair.Length == 2)
+                .ToDictionary(pair => pair[0], pair => Uri.UnescapeDataString(pair[1]), StringComparer.OrdinalIgnoreCase);
+
+            string mountHost = keys.GetValueOrDefault("host") ?? keys.GetValueOrDefault("server") ?? "";
+            if (!string.Equals(mountHost, host, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (info.Port.HasValue && keys.TryGetValue("port", out string? port) && port != info.Port.Value.ToString())
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(info.Username) && keys.TryGetValue("user", out string? user) && !string.Equals(user, info.Username, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (info.Protocol == NetworkProtocol.Smb && !string.IsNullOrEmpty(info.Path) && keys.TryGetValue("share", out string? share)
+                && !string.Equals(share, info.Path.Trim('/').Split('/')[0], StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return mount;
+        }
+
+        return null;
     }
 
     public async Task<(bool Success, string MountPath, string ErrorMessage)> MountUriAsync(string uri, string? password = null, CancellationToken cancellationToken = default)

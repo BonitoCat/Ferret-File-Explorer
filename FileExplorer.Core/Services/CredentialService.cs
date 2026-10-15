@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using SecretsLib;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Services;
 
@@ -16,9 +17,7 @@ public class CredentialService
 
     public CredentialService()
     {
-        string configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "fe");
-        Directory.CreateDirectory(configDir);
-        _fallbackFilePath = Path.Combine(configDir, ".secrets");
+        _fallbackFilePath = AppPaths.GetDataPath(".secrets");
         _derivedKey = new(DeriveKey);
     }
 

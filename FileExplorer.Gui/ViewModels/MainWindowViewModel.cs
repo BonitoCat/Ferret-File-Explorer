@@ -32,7 +32,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly BookmarkService _bookmarkService = new();
     private readonly NetworkService _networkService = new();
     private readonly NetworkBookmarkService _networkBookmarkService = new();
-    private readonly Dictionary<string, string> _associations = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _associationsPath;
 
     private NavigationState _navigation;
@@ -52,7 +51,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private double _colSizeWidth = 110;
     private double _colTypeWidth = 110;
     private double _colModifiedWidth = 140;
-    public event Action? BeforeFolderLoad;
+    public event Action<int>? BeforeFolderLoad;
+    public event Action<string>? ScriptOpenRequested;
     private bool _isPathEditing;
     private int _activePane = 1;
     private CancellationTokenSource? _loadCts;
@@ -185,13 +185,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             if (!value)
             {
-                if (ActivePane == 2)
-                {
-                    _pane1Path = _pane2Path;
-                    _navigation = _navigation2 ?? new(_pane2Path);
-                    LoadFolder(_pane1Path);
-                }
-
                 _pane2Path = "";
                 _navigation2 = null;
                 ActivePane = 1;
@@ -292,6 +285,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public bool CanBookmarkSelection => IsFolderSelected || IsEmptySpaceSelected;
     public bool CanCreateNew => IsEmptySpaceSelected || IsFolderSelected;
     public bool CanExtractSelection => (ActivePane == 2 ? Pane2SelectedItem : SelectedItem) is FileItemViewModel item && (item.FileType == FileType.Archive || IsArchiveFile(item.FullPath));
+    public bool CanColorSelection => (ActivePane == 2 ? Pane2SelectedItem : SelectedItem)?.IsDirectory == true;
+    public bool Pane2CanColorSelection => Pane2SelectedItem?.IsDirectory == true;
     public bool Pane2CanExtractSelection => Pane2SelectedItem is FileItemViewModel item && (item.FileType == FileType.Archive || IsArchiveFile(item.FullPath));
 
     public static bool IsArchiveFile(string path)
@@ -310,10 +305,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(CanCreateNew));
         OnPropertyChanged(nameof(CanExtractSelection));
         OnPropertyChanged(nameof(Pane2CanExtractSelection));
+        OnPropertyChanged(nameof(CanColorSelection));
+        OnPropertyChanged(nameof(Pane2CanColorSelection));
     }
 
     public void ResetPlacesOrder()
     {
+        _sectionOrder = new(DefaultSectionOrder);
+        SaveSectionOrder();
         LoadPlaces();
     }
 
@@ -541,14 +540,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         PickerOptions = pickerOptions;
 
-        string configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "fe");
+        string configDir = AppPaths.DataDir;
         _associationsPath = Path.Combine(configDir, "associations.json");
+        _sectionOrderPath = Path.Combine(configDir, "sidebar_sections");
+        LoadSectionOrder();
         Task.Run(() =>
         {
             try
             {
-                Directory.CreateDirectory(configDir);
-                LoadAssociations();
+                AppPaths.EnsureDir(configDir);
+                MigrateLegacyAssociations();
             }
             catch
             {
@@ -565,20 +566,87 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _pane1Path = startPath;
         UpdateActiveBreadcrumbs();
 
-        _executionService.OnOpenTerminalForExecutable = path =>
-        {
-            string? dir = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
-            OpenTerminal(dir, path);
-        };
+        _executionService.OnOpenTerminalForExecutable = path => RunInTerminal(path, [path]);
 
         LoadPlaces();
         StartDeviceMonitoring();
         LoadFolder(_pane1Path);
     }
 
+    private string? _pane1Trail;
+    private string? _pane2Trail;
+
     public void UpdateActiveBreadcrumbs()
     {
-        UpdateBreadcrumbs(CurrentPath, Breadcrumbs);
+        string current = CurrentPath;
+        string? trail = ActivePane == 2 ? _pane2Trail : _pane1Trail;
+        if (trail == null || !IsSameOrAncestor(current, trail) || !Directory.Exists(trail))
+        {
+            trail = current;
+        }
+
+        List<BreadcrumbItem> crumbs = BuildBreadcrumbs(trail);
+        if (!crumbs.Any(c => IsSamePath(c.FullPath, current)))
+        {
+            trail = current;
+            crumbs = BuildBreadcrumbs(trail);
+        }
+
+        foreach (BreadcrumbItem crumb in crumbs)
+        {
+            crumb.IsCurrent = IsSamePath(crumb.FullPath, current);
+        }
+
+        if (ActivePane == 2)
+        {
+            _pane2Trail = trail;
+        }
+        else
+        {
+            _pane1Trail = trail;
+        }
+
+        Breadcrumbs.Clear();
+        foreach (BreadcrumbItem crumb in crumbs)
+        {
+            Breadcrumbs.Add(crumb);
+        }
+    }
+
+    private void ResetActiveBreadcrumbTrail()
+    {
+        if (ActivePane == 2)
+        {
+            _pane2Trail = null;
+        }
+        else
+        {
+            _pane1Trail = null;
+        }
+    }
+
+    private static bool IsSamePath(string a, string b)
+    {
+        return string.Equals(NormalizeTrailPath(a), NormalizeTrailPath(b), StringComparison.Ordinal);
+    }
+
+    private static bool IsSameOrAncestor(string ancestor, string path)
+    {
+        string normAncestor = NormalizeTrailPath(ancestor);
+        string normPath = NormalizeTrailPath(path);
+        if (normAncestor == normPath)
+        {
+            return true;
+        }
+
+        string prefix = normAncestor == "/" ? "/" : normAncestor + "/";
+        return normPath.StartsWith(prefix, StringComparison.Ordinal);
+    }
+
+    private static string NormalizeTrailPath(string path)
+    {
+        string trimmed = path.TrimEnd('/');
+        return string.IsNullOrEmpty(trimmed) ? "/" : trimmed;
     }
 
     public void SetGridView(bool grid)
@@ -590,6 +658,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void ToggleDualPane()
     {
         IsDualPane = !IsDualPane;
+        if (!IsDualPane)
+        {
+            ActivePane = 1;
+        }
+
         Logger.LogI($"Toggled dual pane: {IsDualPane}");
     }
 
@@ -598,103 +671,273 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         IsPathEditing = !IsPathEditing;
     }
 
+    private readonly HashSet<PlaceCategory> _collapsedCategories = new();
+    private static readonly PlaceCategory[] DefaultSectionOrder = [PlaceCategory.Places, PlaceCategory.Bookmarks, PlaceCategory.Devices, PlaceCategory.Network];
+    private readonly string _sectionOrderPath;
+    private List<PlaceCategory> _sectionOrder = new(DefaultSectionOrder);
+
+    private void LoadSectionOrder()
+    {
+        try
+        {
+            if (!File.Exists(_sectionOrderPath))
+            {
+                return;
+            }
+
+            List<PlaceCategory> loaded = new();
+            foreach (string line in File.ReadAllLines(_sectionOrderPath))
+            {
+                if (Enum.TryParse(line.Trim(), out PlaceCategory category) && !loaded.Contains(category))
+                {
+                    loaded.Add(category);
+                }
+            }
+
+            foreach (PlaceCategory category in DefaultSectionOrder)
+            {
+                if (!loaded.Contains(category))
+                {
+                    loaded.Add(category);
+                }
+            }
+
+            _sectionOrder = loaded;
+        }
+        catch
+        {
+        }
+    }
+
+    private void SaveSectionOrder()
+    {
+        try
+        {
+            AppPaths.EnsureDir(AppPaths.DataDir);
+            File.WriteAllLines(_sectionOrderPath, _sectionOrder.Select(c => c.ToString()));
+        }
+        catch
+        {
+        }
+    }
+
+    public void MoveSection(PlaceCategory source, PlaceCategory target, bool insertAbove)
+    {
+        if (source == target)
+        {
+            return;
+        }
+
+        _sectionOrder.Remove(source);
+        int targetIndex = _sectionOrder.IndexOf(target);
+        _sectionOrder.Insert(insertAbove ? targetIndex : targetIndex + 1, source);
+
+        SaveSectionOrder();
+        ApplySectionOrder();
+        Logger.LogI($"Moved sidebar section {source} {(insertAbove ? "above" : "below")} {target}");
+    }
+
+    private void SyncPlaces(List<PlaceItem> target)
+    {
+        List<PlaceItem> resolved = target
+            .OrderBy(p => _sectionOrder.IndexOf(p.Category))
+            .Select(t => Places.FirstOrDefault(p => IsSamePlace(p, t)) ?? t)
+            .ToList();
+
+        for (int i = Places.Count - 1; i >= 0; i--)
+        {
+            if (!resolved.Contains(Places[i]))
+            {
+                Places.RemoveAt(i);
+            }
+        }
+
+        for (int i = 0; i < resolved.Count; i++)
+        {
+            int current = Places.IndexOf(resolved[i]);
+            if (current < 0)
+            {
+                Places.Insert(i, resolved[i]);
+            }
+            else if (current != i)
+            {
+                Places.Move(current, i);
+            }
+        }
+    }
+
+    private static bool IsSamePlace(PlaceItem a, PlaceItem b)
+    {
+        return a.Category == b.Category
+            && a.IsHeader == b.IsHeader
+            && a.Path == b.Path
+            && a.Name == b.Name
+            && a.IsMounted == b.IsMounted
+            && a.IsNetworkBookmark == b.IsNetworkBookmark
+            && a.DevicePath == b.DevicePath;
+    }
+
+    private void ApplySectionOrder()
+    {
+        List<PlaceItem> ordered = Places
+            .OrderBy(p => _sectionOrder.IndexOf(p.Category))
+            .ToList();
+
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            int current = Places.IndexOf(ordered[i]);
+            if (current != i)
+            {
+                Places.Move(current, i);
+            }
+        }
+    }
+
+    public void ToggleCategoryCollapse(PlaceCategory category)
+    {
+        if (_collapsedCategories.Contains(category))
+        {
+            _collapsedCategories.Remove(category);
+        }
+        else
+        {
+            _collapsedCategories.Add(category);
+        }
+
+        bool isCollapsed = _collapsedCategories.Contains(category);
+        foreach (PlaceItem item in Places)
+        {
+            if (item.Category != category)
+            {
+                continue;
+            }
+
+            if (item.IsHeader)
+            {
+                item.IsCollapsed = isCollapsed;
+            }
+            else
+            {
+                item.IsVisible = !isCollapsed;
+            }
+        }
+    }
+
     public void LoadPlaces()
     {
-        Places.Clear();
+        List<PlaceItem> placesSection = new();
 
-        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string desktop = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
-        string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        string downloads = Path.Combine(userProfile, "Downloads");
-        string music = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
-        string pictures = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-        string videos = Environment.GetFolderPath(Environment.SpecialFolder.MyVideos);
+        string userProfile = UserDirs.Home;
+        string desktop = UserDirs.Desktop;
+        string documents = UserDirs.Documents;
+        string downloads = UserDirs.Downloads;
+        string music = UserDirs.Music;
+        string pictures = UserDirs.Pictures;
+        string videos = UserDirs.Videos;
 
-        Places.Add(new PlaceItem { Name = LocalizationService.Get("Places"), Path = "", IsHeader = true, Category = PlaceCategory.Places });
+        bool placesCollapsed = _collapsedCategories.Contains(PlaceCategory.Places);
+        placesSection.Add(new PlaceItem
+        {
+            Name = LocalizationService.Get("Places"),
+            Path = "",
+            IsHeader = true,
+            Category = PlaceCategory.Places,
+            IsCollapsed = placesCollapsed,
+        });
+
+        bool placesVisible = !placesCollapsed;
 
         if (Directory.Exists(userProfile))
         {
-            Places.Add(new PlaceItem
+            placesSection.Add(new PlaceItem
             {
                 Name = LocalizationService.Get("Home"),
                 Path = userProfile,
                 Icon = IconService.Get("home"),
                 Category = PlaceCategory.Places,
+                IsVisible = placesVisible,
             });
         }
 
         if (Directory.Exists(desktop))
         {
-            Places.Add(new PlaceItem
+            placesSection.Add(new PlaceItem
             {
-                Name = "Desktop",
+                Name = Path.GetFileName(desktop),
                 Path = desktop,
                 Icon = IconService.Get("desktop"),
                 Category = PlaceCategory.Places,
+                IsVisible = placesVisible,
             });
         }
 
         if (Directory.Exists(documents))
         {
-            Places.Add(new PlaceItem
+            placesSection.Add(new PlaceItem
             {
-                Name = "Documents",
+                Name = Path.GetFileName(documents),
                 Path = documents,
                 Icon = IconService.Get("documents"),
                 Category = PlaceCategory.Places,
+                IsVisible = placesVisible,
             });
         }
 
         if (Directory.Exists(downloads))
         {
-            Places.Add(new PlaceItem
+            placesSection.Add(new PlaceItem
             {
-                Name = "Downloads",
+                Name = Path.GetFileName(downloads),
                 Path = downloads,
                 Icon = IconService.Get("downloads"),
                 Category = PlaceCategory.Places,
+                IsVisible = placesVisible,
             });
         }
 
         if (Directory.Exists(music))
         {
-            Places.Add(new PlaceItem
+            placesSection.Add(new PlaceItem
             {
-                Name = "Music",
+                Name = Path.GetFileName(music),
                 Path = music,
                 Icon = IconService.Get("music"),
                 Category = PlaceCategory.Places,
+                IsVisible = placesVisible,
             });
         }
 
         if (Directory.Exists(pictures))
         {
-            Places.Add(new PlaceItem
+            placesSection.Add(new PlaceItem
             {
-                Name = "Pictures",
+                Name = Path.GetFileName(pictures),
                 Path = pictures,
                 Icon = IconService.Get("pictures"),
                 Category = PlaceCategory.Places,
+                IsVisible = placesVisible,
             });
         }
 
         if (Directory.Exists(videos))
         {
-            Places.Add(new PlaceItem
+            placesSection.Add(new PlaceItem
             {
-                Name = "Videos",
+                Name = Path.GetFileName(videos),
                 Path = videos,
                 Icon = IconService.Get("videos"),
                 Category = PlaceCategory.Places,
+                IsVisible = placesVisible,
             });
         }
 
-        Places.Add(new PlaceItem
+        placesSection.Add(new PlaceItem
         {
             Name = LocalizationService.Get("Root"),
             Path = "/",
             Icon = IconService.Get("disk"),
             Category = PlaceCategory.Places,
+            IsVisible = placesVisible,
         });
 
         string trashDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "Trash", "files");
@@ -704,13 +947,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         catch { }
 
-        Places.Add(new PlaceItem
+        placesSection.Add(new PlaceItem
         {
             Name = LocalizationService.Get("Trash"),
             Path = trashDir,
             Icon = IconService.Get("trash"),
             Category = PlaceCategory.Places,
+            IsVisible = placesVisible,
         });
+
+        SyncPlaces(placesSection
+            .Concat(Places.Where(p => p.Category != PlaceCategory.Places))
+            .ToList());
 
         LoadDevicesAndNetworkPlacesAsync();
     }
@@ -720,7 +968,57 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Task.Run(() =>
         {
             List<PlaceItem> extraPlaces = new();
-            extraPlaces.Add(new PlaceItem { Name = LocalizationService.Get("Devices"), Path = "", IsHeader = true, Category = PlaceCategory.Devices });
+
+            bool bookmarksCollapsed = _collapsedCategories.Contains(PlaceCategory.Bookmarks);
+            IEnumerable<string> bookmarks = _bookmarkService.GetBookmarks();
+            List<string> bookmarkList = bookmarks.ToList();
+
+            if (bookmarkList.Count > 0)
+            {
+                extraPlaces.Add(new PlaceItem
+                {
+                    Name = LocalizationService.Get("Bookmarks"),
+                    Path = "",
+                    IsHeader = true,
+                    Category = PlaceCategory.Bookmarks,
+                    IsCollapsed = bookmarksCollapsed,
+                });
+
+                foreach (string bm in bookmarkList)
+                {
+                    string resolvedPath = bm;
+                    try
+                    {
+                        DirectoryInfo dir = new(bm);
+                        FileSystemInfo? target = dir.ResolveLinkTarget(true);
+                        if (target != null)
+                        {
+                            resolvedPath = target.FullName;
+                        }
+                    }
+                    catch { }
+
+                    extraPlaces.Add(new PlaceItem
+                    {
+                        Name = Path.GetFileName(bm),
+                        Path = resolvedPath,
+                        Icon = IconService.Get("bookmark"),
+                        IsBookmark = true,
+                        Category = PlaceCategory.Bookmarks,
+                        IsVisible = !bookmarksCollapsed,
+                    });
+                }
+            }
+
+            bool devicesCollapsed = _collapsedCategories.Contains(PlaceCategory.Devices);
+            extraPlaces.Add(new PlaceItem
+            {
+                Name = LocalizationService.Get("Devices"),
+                Path = "",
+                IsHeader = true,
+                Category = PlaceCategory.Devices,
+                IsCollapsed = devicesCollapsed,
+            });
 
             HashSet<string> seenPaths = new(StringComparer.OrdinalIgnoreCase);
 
@@ -749,7 +1047,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                         {
                             foreach (JsonElement dev in bdevs.EnumerateArray())
                             {
-                                ParseBlockDevices(dev, extraPlaces, seenPaths);
+                                ParseBlockDevices(dev, extraPlaces, seenPaths, !devicesCollapsed);
                             }
                         }
                     }
@@ -769,6 +1067,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
                     string mount = drive.RootDirectory.FullName;
                     if (seenPaths.Contains(mount) || mount == "/" || mount == "/boot" || mount.StartsWith("/boot/"))
+                    {
+                        continue;
+                    }
+
+                    if (mount.StartsWith("/snap") || mount.StartsWith("/var/lib/snapd") || mount.Contains("/snap/"))
                     {
                         continue;
                     }
@@ -803,6 +1106,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                         Icon = IconService.Get("disk"),
                         Category = PlaceCategory.Devices,
                         IsMounted = true,
+                        IsVisible = !devicesCollapsed,
                     });
                 }
             }
@@ -833,6 +1137,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                                 Path = gvfsMount,
                                 Icon = IconService.Get("phone") ?? IconService.Get("disk"),
                                 Category = PlaceCategory.Devices,
+                                IsVisible = !devicesCollapsed,
                             };
                             extraPlaces.Add(placeItem);
                         }
@@ -844,6 +1149,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                                 Path = gvfsMount,
                                 Icon = IconService.Get("camera") ?? IconService.Get("disk"),
                                 Category = PlaceCategory.Devices,
+                                IsVisible = !devicesCollapsed,
                             };
                             extraPlaces.Add(placeItem);
                         }
@@ -855,6 +1161,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                                 Path = gvfsMount,
                                 Icon = IconService.Get("disk"),
                                 Category = PlaceCategory.Devices,
+                                IsVisible = !devicesCollapsed,
                             };
                             extraPlaces.Add(placeItem);
                         }
@@ -899,6 +1206,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
             catch { }
 
+            bool networkCollapsed = _collapsedCategories.Contains(PlaceCategory.Network);
             foreach (NetworkBookmark bm in savedBookmarks)
             {
                 if (matchedBookmarkUris.Contains(bm.Uri))
@@ -915,61 +1223,31 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     Category = PlaceCategory.Network,
                     IsNetworkBookmark = true,
                     IsMounted = false,
+                    IsVisible = !networkCollapsed,
                 });
             }
 
-            extraPlaces.Add(new PlaceItem { Name = LocalizationService.Get("Network"), Path = "", IsHeader = true, Category = PlaceCategory.Network });
+            extraPlaces.Add(new PlaceItem
+            {
+                Name = LocalizationService.Get("Network"),
+                Path = "",
+                IsHeader = true,
+                Category = PlaceCategory.Network,
+                IsCollapsed = networkCollapsed,
+            });
+
             foreach (PlaceItem netPlace in networkPlaces)
             {
+                netPlace.IsVisible = !networkCollapsed;
                 extraPlaces.Add(netPlace);
-            }
-
-            IEnumerable<string> bookmarks = _bookmarkService.GetBookmarks();
-            List<string> bookmarkList = bookmarks.ToList();
-
-            if (bookmarkList.Count > 0)
-            {
-                extraPlaces.Add(new PlaceItem { Name = LocalizationService.Get("Bookmarks"), Path = "", IsHeader = true, Category = PlaceCategory.Bookmarks });
-
-                foreach (string bm in bookmarkList)
-                {
-                    string resolvedPath = bm;
-                    try
-                    {
-                        DirectoryInfo dir = new(bm);
-                        FileSystemInfo? target = dir.ResolveLinkTarget(true);
-                        if (target != null)
-                        {
-                            resolvedPath = target.FullName;
-                        }
-                    }
-                    catch { }
-
-                    extraPlaces.Add(new PlaceItem
-                    {
-                        Name = Path.GetFileName(bm),
-                        Path = resolvedPath,
-                        Icon = IconService.Get("bookmark"),
-                        IsBookmark = true,
-                        Category = PlaceCategory.Bookmarks,
-                    });
-                }
             }
 
             Dispatcher.UIThread.Post(() =>
             {
-                for (int i = Places.Count - 1; i >= 0; i--)
-                {
-                    if (Places[i].Category != PlaceCategory.Places)
-                    {
-                        Places.RemoveAt(i);
-                    }
-                }
-
-                foreach (PlaceItem item in extraPlaces)
-                {
-                    Places.Add(item);
-                }
+                SyncPlaces(Places
+                    .Where(p => p.Category == PlaceCategory.Places)
+                    .Concat(extraPlaces)
+                    .ToList());
             });
         });
     }
@@ -978,26 +1256,42 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly List<IDisposable> _deviceWatchers = new();
     private Process? _udisksMonitorProcess;
 
-    private static void ParseBlockDevices(JsonElement elem, List<PlaceItem> extraPlaces, HashSet<string> seenPaths)
+    private static void ParseBlockDevices(JsonElement elem, List<PlaceItem> extraPlaces, HashSet<string> seenPaths, bool isVisible)
     {
         if (elem.TryGetProperty("children", out JsonElement children) && children.ValueKind == JsonValueKind.Array && children.GetArrayLength() > 0)
         {
             foreach (JsonElement child in children.EnumerateArray())
             {
-                ParseBlockDevices(child, extraPlaces, seenPaths);
+                ParseBlockDevices(child, extraPlaces, seenPaths, isVisible);
             }
 
             return;
         }
 
+        string? type = elem.TryGetProperty("type", out JsonElement typeElem) ? typeElem.GetString() : null;
+        if (string.Equals(type, "loop", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         string? path = elem.TryGetProperty("path", out JsonElement pathElem) ? pathElem.GetString() : null;
-        if (string.IsNullOrEmpty(path))
+        if (string.IsNullOrEmpty(path) || path.StartsWith("/dev/loop", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        string? fstype = elem.TryGetProperty("fstype", out JsonElement fsElem) ? fsElem.GetString() : null;
+        if (string.Equals(fstype, "squashfs", StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
         string? mountpoint = elem.TryGetProperty("mountpoint", out JsonElement mpElem) ? mpElem.GetString() : null;
-        string? fstype = elem.TryGetProperty("fstype", out JsonElement fsElem) ? fsElem.GetString() : null;
+        if (!string.IsNullOrEmpty(mountpoint) && (mountpoint.StartsWith("/snap") || mountpoint.StartsWith("/var/lib/snapd") || mountpoint.Contains("/snap/")))
+        {
+            return;
+        }
+
         string? label = elem.TryGetProperty("label", out JsonElement lblElem) ? lblElem.GetString() : null;
         string? partlabel = elem.TryGetProperty("partlabel", out JsonElement plblElem) ? plblElem.GetString() : null;
         string? model = elem.TryGetProperty("model", out JsonElement mdlElem) ? mdlElem.GetString() : null;
@@ -1032,6 +1326,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 Icon = IconService.Get("disk"),
                 Category = PlaceCategory.Devices,
                 IsMounted = true,
+                IsVisible = isVisible,
             });
             return;
         }
@@ -1066,6 +1361,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 Icon = IconService.Get("disk"),
                 Category = PlaceCategory.Devices,
                 IsMounted = false,
+                IsVisible = isVisible,
             });
         }
     }
@@ -1176,52 +1472,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        try
+        Task.Run(() =>
         {
-            if (Directory.Exists("/media"))
-            {
-                FileSystemWatcher mediaWatcher = new("/media")
-                {
-                    NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName,
-                    IncludeSubdirectories = true,
-                    EnableRaisingEvents = true,
-                };
-                mediaWatcher.Created += (_, _) => DebouncedReloadPlaces();
-                mediaWatcher.Deleted += (_, _) => DebouncedReloadPlaces();
-                mediaWatcher.Renamed += (_, _) => DebouncedReloadPlaces();
-                _deviceWatchers.Add(mediaWatcher);
-            }
-
-            if (Directory.Exists("/run/media"))
-            {
-                FileSystemWatcher runMediaWatcher = new("/run/media")
-                {
-                    NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName,
-                    IncludeSubdirectories = true,
-                    EnableRaisingEvents = true,
-                };
-                runMediaWatcher.Created += (_, _) => DebouncedReloadPlaces();
-                runMediaWatcher.Deleted += (_, _) => DebouncedReloadPlaces();
-                runMediaWatcher.Renamed += (_, _) => DebouncedReloadPlaces();
-                _deviceWatchers.Add(runMediaWatcher);
-            }
-
-            string gvfsDir = $"/run/user/{GetUserId()}/gvfs";
-            if (Directory.Exists(gvfsDir))
-            {
-                FileSystemWatcher gvfsWatcher = new(gvfsDir)
-                {
-                    NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName,
-                    IncludeSubdirectories = false,
-                    EnableRaisingEvents = true,
-                };
-                gvfsWatcher.Created += (_, _) => DebouncedReloadPlaces();
-                gvfsWatcher.Deleted += (_, _) => DebouncedReloadPlaces();
-                gvfsWatcher.Renamed += (_, _) => DebouncedReloadPlaces();
-                _deviceWatchers.Add(gvfsWatcher);
-            }
-        }
-        catch { }
+            AddMountRootWatchers("/media");
+            AddMountRootWatchers("/run/media");
+            AddDeviceWatcher($"/run/user/{GetUserId()}/gvfs");
+        });
 
         Task.Run(async () =>
         {
@@ -1255,6 +1511,52 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
             catch { }
         });
+    }
+
+    private void AddMountRootWatchers(string root)
+    {
+        if (!Directory.Exists(root))
+        {
+            return;
+        }
+
+        AddDeviceWatcher(root);
+
+        try
+        {
+            foreach (string userDir in Directory.EnumerateDirectories(root))
+            {
+                AddDeviceWatcher(userDir);
+            }
+        }
+        catch { }
+    }
+
+    private void AddDeviceWatcher(string path)
+    {
+        if (!Directory.Exists(path))
+        {
+            return;
+        }
+
+        try
+        {
+            FileSystemWatcher watcher = new(path)
+            {
+                NotifyFilter = NotifyFilters.DirectoryName | NotifyFilters.FileName,
+                IncludeSubdirectories = false,
+            };
+            watcher.Created += (_, _) => DebouncedReloadPlaces();
+            watcher.Deleted += (_, _) => DebouncedReloadPlaces();
+            watcher.Renamed += (_, _) => DebouncedReloadPlaces();
+            watcher.EnableRaisingEvents = true;
+
+            lock (_deviceWatchers)
+            {
+                _deviceWatchers.Add(watcher);
+            }
+        }
+        catch { }
     }
 
     public void MovePlaceUp(PlaceItem item)
@@ -1527,7 +1829,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _pane1Path = path;
         UpdateWatcher1(path);
         OnPropertyChanged(nameof(IsPane1InTrash));
-        BeforeFolderLoad?.Invoke();
+        BeforeFolderLoad?.Invoke(1);
         SelectedItem = null;
         SelectedItems.Clear();
         Items.Clear();
@@ -1671,7 +1973,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _pane2Path = path;
         UpdateWatcher2(path);
         OnPropertyChanged(nameof(IsPane2InTrash));
-        BeforeFolderLoad?.Invoke();
+        BeforeFolderLoad?.Invoke(2);
         Pane2SelectedItem = null;
         Pane2SelectedItems.Clear();
         Pane2Items.Clear();
@@ -2176,6 +2478,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             if (item.IsDirectory)
             {
+                ResetActiveBreadcrumbTrail();
                 NavigateTo(item.FullPath);
                 return;
             }
@@ -2193,6 +2496,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (item.IsDirectory)
         {
+            ResetActiveBreadcrumbTrail();
             if (ActivePane == 2)
             {
                 NavigatePane2To(item.FullPath);
@@ -2205,46 +2509,162 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
-        if (!string.IsNullOrEmpty(ext) && _associations.TryGetValue(ext, out string? associatedProgram))
+        if (IsScriptFile(item.FullPath) && ScriptOpenRequested != null)
         {
-            try
-            {
-                ProcessStartInfo psi = new()
-                {
-                    FileName = associatedProgram,
-                    Arguments = $"\"{item.FullPath}\"",
-                    UseShellExecute = false,
-                };
-                if (OperatingSystem.IsLinux())
-                {
-                    psi.EnvironmentVariables["DESKTOP_STARTUP_ID"] = $"ferret_{Environment.ProcessId}_TIME{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
-                }
-
-                Process.Start(psi);
-                return;
-            }
-            catch { }
+            ScriptOpenRequested.Invoke(item.FullPath);
+            return;
         }
 
         _executionService.Execute(item.Entry);
     }
 
-    public void OpenWith(FileItemViewModel item, string program, bool always)
+    private static readonly string[] ScriptExtensions = [".sh", ".bash"];
+
+    public static bool IsScriptFile(string path)
     {
-        if (always)
+        if (!File.Exists(path))
         {
-            string ext = Path.GetExtension(item.FullPath).ToLowerInvariant();
-            if (!string.IsNullOrEmpty(ext))
+            return false;
+        }
+
+        if (ScriptExtensions.Contains(Path.GetExtension(path).ToLowerInvariant()))
+        {
+            return true;
+        }
+
+        if (!FileUtils.IsFileExecutable(path))
+        {
+            return false;
+        }
+
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            return stream.ReadByte() == '#' && stream.ReadByte() == '!';
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string[] GetScriptCommand(string path)
+    {
+        if (FileUtils.IsFileExecutable(path))
+        {
+            return [path];
+        }
+
+        return ["bash", path];
+    }
+
+    public void RunScript(string path, bool inTerminal)
+    {
+        string[] command = GetScriptCommand(path);
+        Logger.LogI(inTerminal ? "Running script in terminal" : "Running script");
+
+        if (inTerminal)
+        {
+            RunInTerminal(path, command);
+            return;
+        }
+
+        try
+        {
+            ProcessStartInfo psi = new()
             {
-                _associations[ext] = program;
-                SaveAssociations();
+                FileName = command[0],
+                WorkingDirectory = Path.GetDirectoryName(path) ?? "/",
+                UseShellExecute = false,
+            };
+            foreach (string arg in command.Skip(1))
+            {
+                psi.ArgumentList.Add(arg);
             }
 
-            if (OperatingSystem.IsLinux())
+            Process.Start(psi);
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Failed to run script: {ex.Message}";
+        }
+    }
+
+    public void ShowFileContent(string path)
+    {
+        try
+        {
+            ProcessStartInfo psi = new()
             {
-                Task.Run(() => MimeService.SetDefaultApplication(item.FullPath, program));
+                FileName = "gio",
+                UseShellExecute = false,
+            };
+            psi.ArgumentList.Add("open");
+            psi.ArgumentList.Add(path);
+            Process.Start(psi);
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Failed to open file: {ex.Message}";
+        }
+    }
+
+    public void RunInTerminal(string path, string[] command)
+    {
+        string dir = Path.GetDirectoryName(path) ?? "/";
+        string quoted = string.Join(" ", command.Select(QuoteForShell));
+        string shellScript = $"{quoted}; echo; read -n 1 -s -r -p \"[Process finished - press any key to close]\"";
+        string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
+
+        foreach (string candidate in candidates)
+        {
+            try
+            {
+                ProcessStartInfo psi = new()
+                {
+                    FileName = candidate,
+                    WorkingDirectory = dir,
+                    UseShellExecute = false,
+                };
+                string? separator = candidate switch
+                {
+                    "gnome-terminal" => "--",
+                    "kitty" => null,
+                    _ => "-e",
+                };
+                if (separator != null)
+                {
+                    psi.ArgumentList.Add(separator);
+                }
+
+                psi.ArgumentList.Add("bash");
+                psi.ArgumentList.Add("-c");
+                psi.ArgumentList.Add(shellScript);
+
+                if (Process.Start(psi) != null)
+                {
+                    return;
+                }
             }
+            catch
+            {
+            }
+        }
+
+        StatusText = "No terminal emulator found";
+    }
+
+    private static string QuoteForShell(string value)
+    {
+        return "'" + value.Replace("'", "'\\''") + "'";
+    }
+
+    public void OpenWith(FileItemViewModel item, string program, bool always)
+    {
+        if (always && OperatingSystem.IsLinux())
+        {
+            string path = item.FullPath;
+            Task.Run(() => MimeService.SetDefaultApplication(path, program));
         }
 
         try
@@ -2489,31 +2909,31 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void UpdateBreadcrumbs(string path, ObservableCollection<BreadcrumbItem> targetList)
+    private static List<BreadcrumbItem> BuildBreadcrumbs(string path)
     {
-        targetList.Clear();
+        List<BreadcrumbItem> crumbs = new();
         if (string.IsNullOrEmpty(path))
         {
-            return;
+            return crumbs;
         }
 
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
         if (path == "/")
         {
-            targetList.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = true });
-            return;
+            crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = true });
+            return crumbs;
         }
 
         if (path.Equals(userProfile, StringComparison.OrdinalIgnoreCase))
         {
-            targetList.Add(new BreadcrumbItem { Name = LocalizationService.Get("Home"), FullPath = userProfile, IsLast = true });
-            return;
+            crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Home"), FullPath = userProfile, IsLast = true });
+            return crumbs;
         }
 
         if (path.StartsWith(userProfile + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
-            targetList.Add(new BreadcrumbItem { Name = LocalizationService.Get("Home"), FullPath = userProfile, IsLast = false });
+            crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Home"), FullPath = userProfile, IsLast = false });
             string relative = path.Substring(userProfile.Length).TrimStart(Path.DirectorySeparatorChar);
             string[] parts = relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
             string accum = userProfile;
@@ -2521,7 +2941,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             for (int i = 0; i < parts.Length; i++)
             {
                 accum = Path.Combine(accum, parts[i]);
-                targetList.Add(new BreadcrumbItem
+                crumbs.Add(new BreadcrumbItem
                 {
                     Name = parts[i],
                     FullPath = accum,
@@ -2529,23 +2949,25 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 });
             }
 
-            return;
+            return crumbs;
         }
 
-        targetList.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = false });
+        crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = false });
         string[] rootParts = path.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
         string currentAccum = "";
 
         for (int i = 0; i < rootParts.Length; i++)
         {
             currentAccum += "/" + rootParts[i];
-            targetList.Add(new BreadcrumbItem
+            crumbs.Add(new BreadcrumbItem
             {
                 Name = rootParts[i],
                 FullPath = currentAccum,
                 IsLast = i == rootParts.Length - 1,
             });
         }
+
+        return crumbs;
     }
 
     private void UpdatePreview(FileItemViewModel? selected)
@@ -2656,9 +3078,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private void LoadAssociations()
+    private void MigrateLegacyAssociations()
     {
-        if (!File.Exists(_associationsPath))
+        if (!OperatingSystem.IsLinux() || !File.Exists(_associationsPath))
         {
             return;
         }
@@ -2667,23 +3089,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             string json = File.ReadAllText(_associationsPath);
             Dictionary<string, string>? data = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-            if (data != null)
+            foreach (KeyValuePair<string, string> kvp in data ?? new())
             {
-                foreach (KeyValuePair<string, string> kvp in data)
-                {
-                    _associations[kvp.Key] = kvp.Value;
-                }
+                string ext = kvp.Key.StartsWith('.') ? kvp.Key : "." + kvp.Key;
+                MimeService.SetDefaultApplication(ext, kvp.Value);
             }
-        }
-        catch { }
-    }
 
-    private void SaveAssociations()
-    {
-        try
-        {
-            string json = JsonSerializer.Serialize(_associations, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_associationsPath, json);
+            File.Move(_associationsPath, _associationsPath + ".migrated", true);
+            Logger.LogI($"Migrated {data?.Count ?? 0} legacy file associations to MIME defaults");
         }
         catch { }
     }
@@ -3223,11 +3636,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _reloadPlacesCts?.Dispose();
-        foreach (IDisposable w in _deviceWatchers)
+        lock (_deviceWatchers)
         {
-            w.Dispose();
+            foreach (IDisposable w in _deviceWatchers)
+            {
+                w.Dispose();
+            }
+
+            _deviceWatchers.Clear();
         }
-        _deviceWatchers.Clear();
 
         try
         {

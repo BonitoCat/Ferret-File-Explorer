@@ -72,6 +72,11 @@ public class FileItemViewModel : ViewModelBase
         set => SetProperty(ref _isDropTarget, value);
     }
 
+    public void RefreshIcon()
+    {
+        OnPropertyChanged(nameof(Icon));
+    }
+
     public static FileItemViewModel FromEntry(IFileSystemEntry entry)
     {
         bool isDir = entry is FolderEntry;

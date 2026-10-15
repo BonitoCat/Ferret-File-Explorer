@@ -7,10 +7,28 @@ namespace FileExplorer.Cli.Utilities;
 
 using System;
 using Cli.Context;
+using TuiLib.Helpers;
 
 public static class InputUtils
 {
-    public static string? Input(this EntryContext context, string prompt, string defaultText = "")
+    private static void DrainPendingInput()
+    {
+        DateTime deadline = DateTime.UtcNow.AddMilliseconds(300);
+        DateTime quietUntil = DateTime.UtcNow.AddMilliseconds(60);
+        while (DateTime.UtcNow < quietUntil && DateTime.UtcNow < deadline)
+        {
+            if (!Console.KeyAvailable)
+            {
+                Thread.Sleep(5);
+                continue;
+            }
+
+            Console.ReadKey(true);
+            quietUntil = DateTime.UtcNow.AddMilliseconds(60);
+        }
+    }
+
+    public static string? Input(this EntryContext context, string prompt, string defaultText = "", bool mask = false)
     {
         if (!prompt.StartsWith(' '))
         {
@@ -21,12 +39,9 @@ public static class InputUtils
         Program.Listener.PauseListening = true;
         Program.Listener.ClearKeyState();
         
-        while (Console.KeyAvailable)
-        {
-            Console.ReadKey(true);
-        }
+        DrainPendingInput();
 
-        Console.CursorVisible = true;
+        TerminalHelper.ShowCursor();
         
         System.Text.StringBuilder builder = new(defaultText);
         string? result = null;
@@ -34,32 +49,46 @@ public static class InputUtils
         int cursor = builder.Length;
         int? selectionStart = null;
 
+        string label = prompt.Trim().TrimEnd(':').TrimEnd();
+
         void Redraw()
         {
-            Console.CursorVisible = false;
-            Console.SetCursorPosition(0, Console.WindowHeight - 2);
-            Console.Write("\x1b[2K");
-            Console.Write(prompt);
-            
-            string text = builder.ToString();
+            TerminalHelper.HideCursor();
+            int width = Math.Max(Console.WindowWidth - 1, 10);
+            string head = $" {label} › ";
+            int available = Math.Max(width - head.Length - 1, 5);
+            string text = mask ? new string('*', builder.Length) : builder.ToString();
+            int offset = Math.Max(0, cursor - available + 1);
+            string visible = text.Substring(offset, Math.Min(available, text.Length - offset));
+
+            System.Text.StringBuilder line = new();
+            line.Append("\x1b[48;2;38;38;44m\x1b[1;38;2;120;180;255m ");
+            line.Append(label);
+            line.Append("\x1b[22;38;2;120;120;130m › \x1b[38;2;235;235;235m");
+
             if (selectionStart.HasValue && selectionStart.Value != cursor)
             {
-                int selMin = Math.Min(cursor, selectionStart.Value);
-                int selMax = Math.Max(cursor, selectionStart.Value);
-
-                Console.Write(text.Substring(0, selMin));
-                Console.Write("\x1b[7m"); // Invert colors
-                Console.Write(text.Substring(selMin, selMax - selMin));
-                Console.Write("\x1b[27m"); // Reset invert
-                Console.Write(text.Substring(selMax));
+                int selMin = Math.Clamp(Math.Min(cursor, selectionStart.Value) - offset, 0, visible.Length);
+                int selMax = Math.Clamp(Math.Max(cursor, selectionStart.Value) - offset, 0, visible.Length);
+                line.Append(visible[..selMin]);
+                line.Append("\x1b[7m").Append(visible[selMin..selMax]).Append("\x1b[27m");
+                line.Append(visible[selMax..]);
             }
             else
             {
-                Console.Write(text);
+                line.Append(visible);
             }
-            
-            Console.SetCursorPosition(prompt.Length + cursor, Console.WindowHeight - 2);
-            Console.CursorVisible = true;
+
+            line.Append(new string(' ', Math.Max(width - head.Length - visible.Length, 0)));
+            line.Append("\x1b[0m");
+
+            Console.SetCursorPosition(0, Console.WindowHeight - 2);
+            Console.Write("\x1b[2K" + line);
+            Console.SetCursorPosition(0, Console.WindowHeight - 1);
+            Console.Write("\x1b[2K\x1b[38;2;110;110;120m  Enter confirm   Esc cancel\x1b[0m");
+
+            Console.SetCursorPosition(head.Length + cursor - offset, Console.WindowHeight - 2);
+            TerminalHelper.ShowCursor();
         }
 
         void DeleteSelection()
@@ -247,7 +276,7 @@ public static class InputUtils
         Program.Listener.PauseListening = false;
         Program.PauseRendering = false;
 
-        Console.CursorVisible = false;
+        TerminalHelper.HideCursor();
         
         Console.SetCursorPosition(0, Console.WindowHeight - 2);
         Console.Write(new string(' ', Console.WindowWidth));

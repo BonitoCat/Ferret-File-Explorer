@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using System.Text;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Services;
 
@@ -13,11 +14,8 @@ public static class ClipboardService
     {
         try
         {
-            string cacheDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "fe");
-            if (!Directory.Exists(cacheDir))
-            {
-                Directory.CreateDirectory(cacheDir);
-            }
+            string cacheDir = AppPaths.CacheDir;
+            AppPaths.EnsureDir(cacheDir);
 
             string filePath = Path.Combine(cacheDir, Name);
             using MemoryMappedFile memFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.OpenOrCreate, null, Size);
@@ -44,7 +42,7 @@ public static class ClipboardService
 
         try
         {
-            string filePath = Path.Combine(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "fe"), Name);
+            string filePath = Path.Combine(AppPaths.CacheDir, Name);
             if (!File.Exists(filePath))
             {
                 return;
@@ -74,7 +72,7 @@ public static class ClipboardService
     {
         try
         {
-            string filePath = Path.Combine(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "fe"), Name);
+            string filePath = Path.Combine(AppPaths.CacheDir, Name);
             if (File.Exists(filePath))
             {
                 File.Delete(filePath);

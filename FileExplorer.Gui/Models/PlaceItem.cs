@@ -16,6 +16,8 @@ public class PlaceItem : ViewModelBase
     private bool _showDropLineAbove;
     private bool _showDropLineBelow;
     private bool _isDropTarget;
+    private bool _isVisible = true;
+    private bool _isCollapsed;
 
     public required string Name { get; set; }
     public required string Path { get; set; }
@@ -30,6 +32,26 @@ public class PlaceItem : ViewModelBase
     public PlaceCategory Category { get; init; } = PlaceCategory.Places;
     public bool CanDismount => !IsHeader && IsMounted && (Category == PlaceCategory.Devices || Category == PlaceCategory.Network) && !string.IsNullOrEmpty(Path) && Path != "/" && !Path.StartsWith("sftp://") && !Path.StartsWith("smb://") && !Path.StartsWith("ftp://") && !Path.StartsWith("dav://") && !Path.StartsWith("davs://") && !Path.StartsWith("/dev/");
     public bool IsNetworkHeader => IsHeader && Category == PlaceCategory.Network;
+
+    public bool IsVisible
+    {
+        get => _isVisible;
+        set => SetProperty(ref _isVisible, value);
+    }
+
+    public bool IsCollapsed
+    {
+        get => _isCollapsed;
+        set
+        {
+            if (SetProperty(ref _isCollapsed, value))
+            {
+                OnPropertyChanged(nameof(Chevron));
+            }
+        }
+    }
+
+    public string Chevron => IsCollapsed ? "▶" : "▼";
 
     public bool ShowDropLineAbove
     {

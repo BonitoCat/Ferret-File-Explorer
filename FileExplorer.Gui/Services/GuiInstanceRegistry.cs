@@ -1,11 +1,12 @@
 using System;
 using System.IO;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Gui.Services;
 
 public static class GuiInstanceRegistry
 {
-    private static readonly string CacheDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "fe", "instances");
+    private static readonly string CacheDir = Path.Combine(AppPaths.CacheDir, "instances");
 
     public static void Register(int pid, string currentPath)
     {

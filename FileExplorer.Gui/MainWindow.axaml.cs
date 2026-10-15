@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private MainWindowViewModel ViewModel => (MainWindowViewModel) DataContext!;
 
     private PlaceItem? _draggedPlace;
+    private PlaceCategory? _draggedSection;
     private Point _sidebarDragStart;
     private bool _isSidebarDragging;
 
@@ -88,12 +89,24 @@ public partial class MainWindow : Window
             PickerResult ??= FilePickerResult.Cancelled();
         };
 
-        ViewModel.BeforeFolderLoad += () =>
+        ViewModel.ScriptOpenRequested += OnScriptOpenRequested;
+
+        foreach (MenuItem menu in new[] { GridFolderColorMenu, ListFolderColorMenu, Pane2GridFolderColorMenu, Pane2ListFolderColorMenu })
         {
+            PopulateFolderColorMenu(menu);
+        }
+
+        ViewModel.BeforeFolderLoad += pane =>
+        {
+            if (pane == 2)
+            {
+                Pane2GridFilesListBox.Selection.Clear();
+                Pane2ListFilesListBox.Selection.Clear();
+                return;
+            }
+
             GridFilesListBox.Selection.Clear();
             ListFilesListBox.Selection.Clear();
-            Pane2GridFilesListBox.Selection.Clear();
-            Pane2ListFilesListBox.Selection.Clear();
         };
 
         Opened += (s, e) =>
@@ -149,7 +162,7 @@ public partial class MainWindow : Window
         {
             if (e.PropertyName == nameof(MainWindowViewModel.CurrentPath) || e.PropertyName == nameof(MainWindowViewModel.ActivePane))
             {
-                ScrollBreadcrumbsToEnd();
+                ScrollBreadcrumbsToCurrent();
                 SyncSidebarSelection(ViewModel.CurrentPath);
             }
             else if (e.PropertyName == nameof(MainWindowViewModel.IsDualPane))
@@ -167,7 +180,7 @@ public partial class MainWindow : Window
             }
         };
 
-        ScrollBreadcrumbsToEnd();
+        ScrollBreadcrumbsToCurrent();
         SyncSidebarSelection(ViewModel.CurrentPath);
 
         SidebarListBox.AddHandler(PointerPressedEvent, OnSidebarPointerPressed, Tunnel);
@@ -200,15 +213,109 @@ public partial class MainWindow : Window
         AddHandler(TextInputEvent, OnWindowTextInput, Tunnel);
     }
 
-    private void ScrollBreadcrumbsToEnd()
+    private void ScrollBreadcrumbsToCurrent()
     {
-        Dispatcher.UIThread.Post(() =>
+        Dispatcher.UIThread.Post(EnsureCurrentBreadcrumbVisible, DispatcherPriority.Background);
+    }
+
+    private void EnsureCurrentBreadcrumbVisible()
+    {
+        int index = ViewModel.Breadcrumbs
+            .Select((crumb, i) => crumb.IsCurrent ? i : -1)
+            .FirstOrDefault(i => i >= 0, -1);
+        (double Left, double Right)? bounds = GetBreadcrumbBounds(index);
+        if (bounds == null)
         {
-            if (BreadcrumbsScrollViewer != null)
+            return;
+        }
+
+        double offset = BreadcrumbsScrollViewer.Offset.X;
+        double viewport = BreadcrumbsScrollViewer.Viewport.Width;
+        if (bounds.Value.Right > offset + viewport)
+        {
+            offset = bounds.Value.Right - viewport;
+        }
+
+        if (bounds.Value.Left < offset)
+        {
+            offset = bounds.Value.Left;
+        }
+
+        BreadcrumbsScrollViewer.Offset = new(Math.Max(0, offset), 0);
+        UpdateBreadcrumbScrollButtons();
+    }
+
+    private (double Left, double Right)? GetBreadcrumbBounds(int index)
+    {
+        if (index < 0)
+        {
+            return null;
+        }
+
+        Control? container = BreadcrumbsItemsControl.ContainerFromIndex(index);
+        Point? origin = container?.TranslatePoint(new(0, 0), BreadcrumbsItemsControl);
+        if (container == null || origin == null)
+        {
+            return null;
+        }
+
+        return (origin.Value.X, origin.Value.X + container.Bounds.Width);
+    }
+
+    private void UpdateBreadcrumbScrollButtons()
+    {
+        double extent = BreadcrumbsScrollViewer.Extent.Width;
+        double viewport = BreadcrumbsScrollViewer.Viewport.Width;
+        double offset = BreadcrumbsScrollViewer.Offset.X;
+        bool overflowing = extent > viewport + 0.5;
+
+        BreadcrumbScrollLeftButton.IsVisible = overflowing;
+        BreadcrumbScrollRightButton.IsVisible = overflowing;
+        BreadcrumbScrollLeftButton.IsEnabled = offset > 0.5;
+        BreadcrumbScrollRightButton.IsEnabled = offset < extent - viewport - 0.5;
+    }
+
+    private void OnBreadcrumbsScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (e.ExtentDelta.X != 0 || e.ViewportDelta.X != 0)
+        {
+            ScrollBreadcrumbsToCurrent();
+            return;
+        }
+
+        UpdateBreadcrumbScrollButtons();
+    }
+
+    private void OnBreadcrumbScrollLeftClick(object? sender, RoutedEventArgs e)
+    {
+        double offset = BreadcrumbsScrollViewer.Offset.X;
+        for (int i = ViewModel.Breadcrumbs.Count - 1; i >= 0; i--)
+        {
+            (double Left, double Right)? bounds = GetBreadcrumbBounds(i);
+            if (bounds != null && bounds.Value.Left < offset - 0.5)
             {
-                BreadcrumbsScrollViewer.Offset = new(double.MaxValue, 0);
+                BreadcrumbsScrollViewer.Offset = new(Math.Max(0, bounds.Value.Left), 0);
+                break;
             }
-        }, DispatcherPriority.Loaded);
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnBreadcrumbScrollRightClick(object? sender, RoutedEventArgs e)
+    {
+        double viewEnd = BreadcrumbsScrollViewer.Offset.X + BreadcrumbsScrollViewer.Viewport.Width;
+        for (int i = 0; i < ViewModel.Breadcrumbs.Count; i++)
+        {
+            (double Left, double Right)? bounds = GetBreadcrumbBounds(i);
+            if (bounds != null && bounds.Value.Right > viewEnd + 0.5)
+            {
+                BreadcrumbsScrollViewer.Offset = new(bounds.Value.Right - BreadcrumbsScrollViewer.Viewport.Width, 0);
+                break;
+            }
+        }
+
+        e.Handled = true;
     }
 
     private ListBox GetActiveListBox()
@@ -231,41 +338,69 @@ public partial class MainWindow : Window
         return (SelectionCanvas1, RubberBandRect1);
     }
 
+    private static List<FileItemViewModel> GetListSelection(ListBox list)
+    {
+        return list.Selection.SelectedItems
+            .OfType<FileItemViewModel>()
+            .Distinct()
+            .ToList();
+    }
+
+    private static bool IsInListSelection(ListBox list, FileItemViewModel item)
+    {
+        return list.Selection.SelectedItems.Contains(item);
+    }
+
     private IEnumerable<FileItemViewModel> GetSelectedItems()
     {
         ListBox activeList = GetActiveListBox();
-        if (activeList.SelectedItems is null || activeList.SelectedItems.Count == 0)
+        List<FileItemViewModel> selection = GetListSelection(activeList);
+        if (selection.Count > 0)
         {
-            FileItemViewModel? selected = ViewModel.ActivePane == 2 ? ViewModel.Pane2SelectedItem : ViewModel.SelectedItem;
-            if (selected != null)
-            {
-                return [selected];
-            }
-
-            return Enumerable.Empty<FileItemViewModel>();
+            return selection;
         }
 
-        return activeList.SelectedItems.Cast<FileItemViewModel>();
+        FileItemViewModel? selected = ViewModel.ActivePane == 2 ? ViewModel.Pane2SelectedItem : ViewModel.SelectedItem;
+        return selected != null ? [selected] : Enumerable.Empty<FileItemViewModel>();
+    }
+
+    private void FocusActiveListBox()
+    {
+        ListBox activeList = GetActiveListBox();
+        activeList.Focus();
+    }
+
+    private void ResetDualPaneRatio()
+    {
+        if (FilePanesGrid != null && FilePanesGrid.ColumnDefinitions.Count >= 3)
+        {
+            FilePanesGrid.ColumnDefinitions[0].Width = new(1, GridUnitType.Star);
+            FilePanesGrid.ColumnDefinitions[2].Width = new(1, GridUnitType.Star);
+        }
     }
 
     private void OnBackClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.GoBack();
+        FocusActiveListBox();
     }
 
     private void OnForwardClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.GoForward();
+        FocusActiveListBox();
     }
 
     private void OnUpClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.GoUp();
+        FocusActiveListBox();
     }
 
     private void OnRefreshClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.Refresh();
+        FocusActiveListBox();
     }
 
     private void OnGoHomeClick(object? sender, RoutedEventArgs e)
@@ -274,12 +409,14 @@ public partial class MainWindow : Window
         if (Directory.Exists(home))
         {
             ViewModel.NavigateTo(home);
+            FocusActiveListBox();
         }
     }
 
     private void OnGoRootClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.NavigateTo("/");
+        FocusActiveListBox();
     }
 
     private void OnToggleHiddenClick(object? sender, RoutedEventArgs e)
@@ -290,6 +427,12 @@ public partial class MainWindow : Window
     private void OnToggleDualPaneClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.ToggleDualPane();
+        if (ViewModel.IsDualPane)
+        {
+            ResetDualPaneRatio();
+        }
+
+        FocusActiveListBox();
     }
 
     private void OnTogglePreviewPaneClick(object? sender, RoutedEventArgs e)
@@ -458,8 +601,17 @@ public partial class MainWindow : Window
 
     private void UpdateSelectionState()
     {
-        List<FileItemViewModel> selected = GetSelectedItems().ToList();
+        ListBox activeList = GetActiveListBox();
+        List<FileItemViewModel> selected = GetListSelection(activeList);
         ViewModel.SetSelectedItems(selected);
+        if (ViewModel.ActivePane == 2)
+        {
+            ViewModel.Pane2SelectedItem = activeList.SelectedItem as FileItemViewModel ?? selected.FirstOrDefault();
+        }
+        else
+        {
+            ViewModel.SelectedItem = activeList.SelectedItem as FileItemViewModel ?? selected.FirstOrDefault();
+        }
     }
 
     private void OnPane1GotFocus(object? sender, GotFocusEventArgs e)
@@ -475,16 +627,19 @@ public partial class MainWindow : Window
     private void OnPane2BackClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.GoBackPane2();
+        FocusActiveListBox();
     }
 
     private void OnPane2ForwardClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.GoForwardPane2();
+        FocusActiveListBox();
     }
 
     private void OnPane2UpClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.GoUpPane2();
+        FocusActiveListBox();
     }
 
     private void OnPane2BreadcrumbClick(object? sender, RoutedEventArgs e)
@@ -497,6 +652,7 @@ public partial class MainWindow : Window
         }
 
         ViewModel.NavigatePane2To(targetPath);
+        FocusActiveListBox();
     }
 
     private void OnPane2FileDoubleTapped(object? sender, TappedEventArgs e)
@@ -581,7 +737,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (Directory.Exists(selected.Path))
+        string placePath = selected.Path;
+        if (await Task.Run(() => Directory.Exists(placePath)))
         {
             if (ViewModel.ActivePane == 2)
             {
@@ -591,6 +748,8 @@ public partial class MainWindow : Window
             {
                 ViewModel.NavigateTo(selected.Path);
             }
+
+            FocusActiveListBox();
         }
     }
 
@@ -618,6 +777,7 @@ public partial class MainWindow : Window
                 ViewModel.NavigateTo(mountPath);
             }
 
+            FocusActiveListBox();
             ViewModel.LoadPlaces();
         }
     }
@@ -680,8 +840,18 @@ public partial class MainWindow : Window
         }
 
         ListBoxItem? item = FindVisualParent<ListBoxItem>((Visual?) e.Source);
-        if (item?.DataContext is not PlaceItem place || place.IsHeader)
+        if (item?.DataContext is not PlaceItem place)
         {
+            return;
+        }
+
+        if (place.IsHeader)
+        {
+            _draggedSection = place.Category;
+            _sidebarDragStart = e.GetPosition(SidebarListBox);
+            _isSidebarDragging = false;
+            SidebarListBox.SelectedItem = null;
+            e.Handled = true;
             return;
         }
 
@@ -697,7 +867,7 @@ public partial class MainWindow : Window
 
     private void OnSidebarPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_draggedPlace == null)
+        if (_draggedPlace == null && _draggedSection == null)
         {
             return;
         }
@@ -718,13 +888,15 @@ public partial class MainWindow : Window
         ListBoxItem? targetItem = FindVisualParent<ListBoxItem>(hit);
         PlaceItem? targetPlace = targetItem?.DataContext as PlaceItem;
 
-        foreach (PlaceItem p in ViewModel.Places)
+        ClearSidebarDropLines();
+
+        if (_draggedSection != null)
         {
-            p.ShowDropLineAbove = false;
-            p.ShowDropLineBelow = false;
+            HighlightSectionDropTarget(e, targetItem, targetPlace, _draggedSection.Value);
+            return;
         }
 
-        if (targetItem == null || targetPlace == null || targetPlace == _draggedPlace || targetPlace.IsHeader || targetPlace.Category != _draggedPlace.Category)
+        if (_draggedPlace == null || targetItem == null || targetPlace == null || targetPlace == _draggedPlace || targetPlace.IsHeader || targetPlace.Category != _draggedPlace.Category)
         {
             return;
         }
@@ -738,24 +910,68 @@ public partial class MainWindow : Window
 
     private void OnSidebarPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_isSidebarDragging && _draggedPlace != null)
+        PlaceItem? target = ViewModel.Places.FirstOrDefault(p => p.ShowDropLineAbove || p.ShowDropLineBelow);
+        if (_draggedSection != null)
         {
-            PlaceItem? target = ViewModel.Places.FirstOrDefault(p => p.ShowDropLineAbove || p.ShowDropLineBelow);
-            if (target != null)
+            if (!_isSidebarDragging)
             {
-                ViewModel.ReorderPlace(_draggedPlace, target, target.ShowDropLineAbove);
+                ViewModel.ToggleCategoryCollapse(_draggedSection.Value);
+            }
+            else if (target != null)
+            {
+                ViewModel.MoveSection(_draggedSection.Value, target.Category, target.ShowDropLineAbove);
+                SyncSidebarSelection(ViewModel.CurrentPath);
             }
         }
+        else if (_isSidebarDragging && _draggedPlace != null && target != null)
+        {
+            ViewModel.ReorderPlace(_draggedPlace, target, target.ShowDropLineAbove);
+        }
 
+        ClearSidebarDropLines();
+
+        _draggedPlace = null;
+        _draggedSection = null;
+        _isSidebarDragging = false;
+        e.Pointer.Capture(null);
+    }
+
+    private void ClearSidebarDropLines()
+    {
         foreach (PlaceItem p in ViewModel.Places)
         {
             p.ShowDropLineAbove = false;
             p.ShowDropLineBelow = false;
         }
+    }
 
-        _draggedPlace = null;
-        _isSidebarDragging = false;
-        e.Pointer.Capture(null);
+    private void HighlightSectionDropTarget(PointerEventArgs e, ListBoxItem? targetItem, PlaceItem? targetPlace, PlaceCategory section)
+    {
+        if (targetItem == null || targetPlace == null || targetPlace.Category == section)
+        {
+            return;
+        }
+
+        List<PlaceItem> rows = ViewModel.Places
+            .Where(p => p.Category == targetPlace.Category && (p.IsHeader || p.IsVisible))
+            .ToList();
+        int rowIndex = rows.IndexOf(targetPlace);
+        if (rows.Count == 0 || rowIndex < 0)
+        {
+            return;
+        }
+
+        double fraction = e.GetPosition(targetItem).Y / Math.Max(1, targetItem.Bounds.Height);
+        bool insertAbove = (rowIndex + fraction) / rows.Count < 0.5;
+
+        if (insertAbove)
+        {
+            rows[0].ShowDropLineAbove = true;
+        }
+        else
+        {
+            rows[^1].ShowDropLineBelow = true;
+        }
     }
 
     private void OnSidebarContextMenuOpening(object? sender, CancelEventArgs e)
@@ -877,7 +1093,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (Directory.Exists(selected.Path))
+        string selectedPath = selected.Path;
+        if (await Task.Run(() => Directory.Exists(selectedPath)))
         {
             if (ViewModel.ActivePane == 2)
             {
@@ -924,7 +1141,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        string? password = ViewModel.GetNetworkPassword(uri);
+        string? password = await Task.Run(() => ViewModel.GetNetworkPassword(uri));
         if (string.IsNullOrEmpty(password) && !NetworkService.ParseUri(uri).Anonymous)
         {
             InputDialog pwdDialog = new("Authentication Required", $"Enter password for {item.Name}:", "", true);
@@ -934,7 +1151,8 @@ public partial class MainWindow : Window
                 return;
             }
 
-            ViewModel.SetNetworkPassword(uri, password);
+            string newPassword = password;
+            await Task.Run(() => ViewModel.SetNetworkPassword(uri, newPassword));
         }
 
         if (ViewModel.ActivePane == 2)
@@ -950,9 +1168,10 @@ public partial class MainWindow : Window
 
         try
         {
-            (bool success, string mountPath, string error) = await ViewModel.MountNetworkBookmarkAsync(uri, password);
+            (bool success, string mountPath, string error) = await Task.Run(() => ViewModel.MountNetworkBookmarkAsync(uri, password));
+            bool mountExists = success && !string.IsNullOrEmpty(mountPath) && await Task.Run(() => Directory.Exists(mountPath));
 
-            if (success && !string.IsNullOrEmpty(mountPath) && Directory.Exists(mountPath))
+            if (mountExists)
             {
                 ViewModel.LoadPlaces();
                 if (ViewModel.ActivePane == 2)
@@ -1079,7 +1298,7 @@ public partial class MainWindow : Window
             ViewModel.Refresh();
         }
     }
-
+    
     private void OnSidebarRemoveBookmarkClick(object? sender, RoutedEventArgs e)
     {
         PlaceItem? selected = GetContextPlaceItem(sender);
@@ -1333,15 +1552,15 @@ public partial class MainWindow : Window
         {
             if (clickedItem?.DataContext is FileItemViewModel fileItem)
             {
-                if (activeList.SelectedItems != null && !activeList.SelectedItems.Contains(fileItem))
+                if (!IsInListSelection(activeList, fileItem))
                 {
-                    activeList.SelectedItems.Clear();
+                    activeList.Selection.Clear();
                     activeList.SelectedItem = fileItem;
                 }
             }
             else
             {
-                activeList.SelectedItems?.Clear();
+                activeList.Selection.Clear();
                 if (ViewModel.ActivePane == 2)
                 {
                     ViewModel.Pane2SelectedItem = null;
@@ -1359,7 +1578,7 @@ public partial class MainWindow : Window
         {
             if (clickedItem?.DataContext is FileItemViewModel fileItem)
             {
-                if (activeList.SelectedItems != null && activeList.SelectedItems.Contains(fileItem) &&
+                if (IsInListSelection(activeList, fileItem) &&
                     !e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
                     _draggedFile = fileItem;
@@ -1378,8 +1597,12 @@ public partial class MainWindow : Window
 
                 if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
-                    activeList.SelectedItems?.Clear();
+                    activeList.Selection.Clear();
                     activeList.SelectedItem = fileItem;
+
+                    _draggedFile = fileItem;
+                    _fileDragStart = e.GetPosition(this);
+                    _potentialFileDrag = true;
                 }
             }
             else
@@ -1388,7 +1611,7 @@ public partial class MainWindow : Window
                 _clickedAlreadySelectedItem = null;
                 if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
-                    activeList.SelectedItems?.Clear();
+                    activeList.Selection.Clear();
                     if (ViewModel.ActivePane == 2)
                     {
                         ViewModel.Pane2SelectedItem = null;
@@ -1461,16 +1684,16 @@ public partial class MainWindow : Window
 
                 if (selBounds.Intersects(itemBounds))
                 {
-                    if (activeList.SelectedItems != null && !activeList.SelectedItems.Contains(fileItem))
+                    if (!IsInListSelection(activeList, fileItem))
                     {
-                        activeList.SelectedItems.Add(fileItem);
+                        activeList.Selection.Select(activeList.IndexFromContainer(container));
                     }
                 }
                 else
                 {
-                    if (activeList.SelectedItems != null && activeList.SelectedItems.Contains(fileItem))
+                    if (IsInListSelection(activeList, fileItem))
                     {
-                        activeList.SelectedItems.Remove(fileItem);
+                        activeList.Selection.Deselect(activeList.IndexFromContainer(container));
                     }
                 }
             }
@@ -1555,7 +1778,7 @@ public partial class MainWindow : Window
         if (_clickedAlreadySelectedItem != null)
         {
             ListBox activeList = (ListBox) sender!;
-            activeList.SelectedItems?.Clear();
+            activeList.Selection.Clear();
             activeList.SelectedItem = _clickedAlreadySelectedItem;
             _clickedAlreadySelectedItem = null;
         }
@@ -1639,7 +1862,7 @@ public partial class MainWindow : Window
         }
 
         ListBoxItem? hoverFile = FindVisualParent<ListBoxItem>(hit);
-        if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory)
+        if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory && IsOverItemDropZone(hit))
         {
             if (IsInvalidDropDestination(targetFolder.FullPath))
             {
@@ -1686,7 +1909,7 @@ public partial class MainWindow : Window
                 else
                 {
                     ListBoxItem? hoverFile = FindVisualParent<ListBoxItem>(hit);
-                    if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory && !IsInvalidDropDestination(targetFolder.FullPath, paths))
+                    if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory && IsOverItemDropZone(hit) && !IsInvalidDropDestination(targetFolder.FullPath, paths))
                     {
                         targetDir = targetFolder.FullPath;
                     }
@@ -1801,7 +2024,7 @@ public partial class MainWindow : Window
     {
         if (_hoveredBreadcrumbButton != null)
         {
-            _hoveredBreadcrumbButton.Background = Brushes.Transparent;
+            _hoveredBreadcrumbButton.ClearValue(BackgroundProperty);
             _hoveredBreadcrumbButton = null;
             _hoveredBreadcrumbPath = null;
         }
@@ -1822,6 +2045,21 @@ public partial class MainWindow : Window
         }
     }
 
+    private static bool IsOverItemDropZone(Visual? visual)
+    {
+        while (visual != null && visual is not ListBoxItem)
+        {
+            if (visual.Classes.Contains("drop-zone"))
+            {
+                return true;
+            }
+
+            visual = visual.GetVisualParent();
+        }
+
+        return false;
+    }
+
     private static T? FindVisualParent<T>(Visual? visual) where T : Visual
     {
         while (visual != null)
@@ -1835,6 +2073,113 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    private void PopulateFolderColorMenu(MenuItem menu)
+    {
+        List<object> items = new();
+        foreach ((string name, string hex) in FolderColorService.Presets)
+        {
+            MenuItem item = new()
+            {
+                Header = name,
+                Tag = hex,
+                Icon = new Border
+                {
+                    Width = 14,
+                    Height = 14,
+                    CornerRadius = new(7),
+                    Background = new SolidColorBrush(Color.Parse(hex)),
+                },
+            };
+            item.Click += OnFolderColorPresetClick;
+            items.Add(item);
+        }
+
+        items.Add(new Separator());
+
+        MenuItem custom = new() { Header = "Custom…" };
+        custom.Click += OnFolderColorCustomClick;
+        items.Add(custom);
+
+        MenuItem reset = new() { Header = "Default" };
+        reset.Click += (_, _) => ApplyFolderColor(null);
+        items.Add(reset);
+
+        menu.ItemsSource = items;
+    }
+
+    private void OnFolderColorPresetClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem { Tag: string hex })
+        {
+            ApplyFolderColor(hex);
+        }
+    }
+
+    private async void OnFolderColorCustomClick(object? sender, RoutedEventArgs e)
+    {
+        List<FileItemViewModel> folders = GetSelectedItems()
+            .Where(i => i.IsDirectory)
+            .ToList();
+        if (folders.Count == 0)
+        {
+            return;
+        }
+
+        FolderColorDialog dialog = new(FolderColorService.Get(folders[0].FullPath));
+        string? hex = await dialog.ShowDialog<string?>(this);
+        if (hex == null)
+        {
+            return;
+        }
+
+        ApplyFolderColor(hex, folders);
+    }
+
+    private void ApplyFolderColor(string? hex, List<FileItemViewModel>? folders = null)
+    {
+        folders ??= GetSelectedItems()
+            .Where(i => i.IsDirectory)
+            .ToList();
+        if (folders.Count == 0)
+        {
+            return;
+        }
+
+        FolderColorService.Set(folders.Select(f => f.FullPath), hex);
+
+        HashSet<string> paths = folders
+            .Select(f => f.FullPath)
+            .ToHashSet();
+        foreach (FileItemViewModel item in ViewModel.Items.Concat(ViewModel.Pane2Items))
+        {
+            if (paths.Contains(item.FullPath))
+            {
+                item.RefreshIcon();
+            }
+        }
+    }
+
+    private async void OnScriptOpenRequested(string path)
+    {
+        ScriptPromptDialog dialog = new(path);
+        ScriptAction action = await dialog.ShowDialog<ScriptAction>(this);
+
+        switch (action)
+        {
+            case ScriptAction.Run:
+                ViewModel.RunScript(path, false);
+                break;
+
+            case ScriptAction.RunInTerminal:
+                ViewModel.RunScript(path, true);
+                break;
+
+            case ScriptAction.ShowContent:
+                ViewModel.ShowFileContent(path);
+                break;
+        }
     }
 
     private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
@@ -1866,7 +2211,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (e.Key == Key.Enter)
+        if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
         {
             TopLevel? topLevel = TopLevel.GetTopLevel(this);
             IInputElement? focusedElement = topLevel?.FocusManager?.GetFocusedElement();
@@ -1877,8 +2222,60 @@ public partial class MainWindow : Window
                 if (activeSelected != null)
                 {
                     ViewModel.OpenEntry(activeSelected);
+                    FocusActiveListBox();
                     e.Handled = true;
                     return;
+                }
+            }
+        }
+
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Alt) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            if (e.Key == Key.Down || e.Key == Key.Up || e.Key == Key.Left || e.Key == Key.Right)
+            {
+                TopLevel? topLevel = TopLevel.GetTopLevel(this);
+                IInputElement? focusedElement = topLevel?.FocusManager?.GetFocusedElement();
+                if (focusedElement is not TextBox)
+                {
+                    ListBox activeList = GetActiveListBox();
+                    System.Collections.IList items = ViewModel.ActivePane == 2 ? ViewModel.Pane2Items : ViewModel.Items;
+                    if (items.Count > 0 && activeList.SelectedItem == null)
+                    {
+                        int targetIndex = (e.Key == Key.Up || e.Key == Key.Left) ? items.Count - 1 : 0;
+                        if (items[targetIndex] is FileItemViewModel targetItem)
+                        {
+                            activeList.SelectedIndex = targetIndex;
+                            activeList.SelectedItem = targetItem;
+                            activeList.ScrollIntoView(targetItem);
+                            if (ViewModel.ActivePane == 2)
+                            {
+                                ViewModel.Pane2SelectedItem = targetItem;
+                            }
+                            else
+                            {
+                                ViewModel.SelectedItem = targetItem;
+                            }
+
+                            UpdateSelectionState();
+                            Control? container = activeList.ContainerFromIndex(targetIndex);
+                            container?.Focus();
+                            e.Handled = true;
+                            return;
+                        }
+                    }
+                    else if (activeList.SelectedItem != null && focusedElement is not ListBoxItem)
+                    {
+                        int currentIndex = activeList.SelectedIndex;
+                        if (currentIndex >= 0)
+                        {
+                            Control? container = activeList.ContainerFromIndex(currentIndex);
+                            container?.Focus();
+                        }
+                        else
+                        {
+                            activeList.Focus();
+                        }
+                    }
                 }
             }
         }
@@ -1888,6 +2285,7 @@ public partial class MainWindow : Window
             if (e.Key == Key.Left)
             {
                 ViewModel.GoBack();
+                FocusActiveListBox();
                 e.Handled = true;
                 return;
             }
@@ -1895,6 +2293,7 @@ public partial class MainWindow : Window
             if (e.Key == Key.Right)
             {
                 ViewModel.GoForward();
+                FocusActiveListBox();
                 e.Handled = true;
                 return;
             }
@@ -1902,6 +2301,7 @@ public partial class MainWindow : Window
             if (e.Key == Key.Up)
             {
                 ViewModel.GoUp();
+                FocusActiveListBox();
                 e.Handled = true;
                 return;
             }
@@ -1909,6 +2309,22 @@ public partial class MainWindow : Window
 
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
+            if (e.Key == Key.W)
+            {
+                if (ViewModel.IsDualPane)
+                {
+                    ViewModel.ToggleDualPane();
+                    FocusActiveListBox();
+                }
+                else
+                {
+                    Close();
+                }
+
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == Key.F)
             {
                 SearchTextBox.Focus();
@@ -2002,6 +2418,13 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.Key == Key.F6)
+        {
+            SwitchActivePane();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == Key.F5)
         {
             OnRefreshClick(sender, e);
@@ -2036,11 +2459,30 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SwitchActivePane()
+    {
+        if (!ViewModel.IsDualPane)
+        {
+            return;
+        }
+
+        ViewModel.ActivePane = ViewModel.ActivePane == 1 ? 2 : 1;
+        ListBox activeList = GetActiveListBox();
+        int index = activeList.SelectedIndex;
+        Control? container = index >= 0 ? activeList.ContainerFromIndex(index) : null;
+        if (container != null)
+        {
+            container.Focus();
+            return;
+        }
+
+        activeList.Focus();
+    }
+
     private void ClearActiveSelection()
     {
         ListBox activeList = GetActiveListBox();
         activeList.Selection.Clear();
-        activeList.SelectedItems?.Clear();
         activeList.SelectedItem = null;
         ViewModel.ClearSelection();
     }
@@ -2054,12 +2496,46 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Alt) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            if (e.Key == Key.Down || e.Key == Key.Up || e.Key == Key.Left || e.Key == Key.Right)
+            {
+                ListBox activeList = GetActiveListBox();
+                System.Collections.IList items = ViewModel.ActivePane == 2 ? ViewModel.Pane2Items : ViewModel.Items;
+                if (items.Count > 0 && activeList.SelectedItem == null)
+                {
+                    int targetIndex = (e.Key == Key.Up || e.Key == Key.Left) ? items.Count - 1 : 0;
+                    if (items[targetIndex] is FileItemViewModel targetItem)
+                    {
+                        activeList.SelectedIndex = targetIndex;
+                        activeList.SelectedItem = targetItem;
+                        activeList.ScrollIntoView(targetItem);
+                        if (ViewModel.ActivePane == 2)
+                        {
+                            ViewModel.Pane2SelectedItem = targetItem;
+                        }
+                        else
+                        {
+                            ViewModel.SelectedItem = targetItem;
+                        }
+
+                        UpdateSelectionState();
+                        Control? container = activeList.ContainerFromIndex(targetIndex);
+                        container?.Focus();
+                        e.Handled = true;
+                        return;
+                    }
+                }
+            }
+        }
+
         FileItemViewModel? activeSelected = ViewModel.ActivePane == 2 ? ViewModel.Pane2SelectedItem : ViewModel.SelectedItem;
         activeSelected ??= GetSelectedItems().FirstOrDefault();
 
-        if (e.Key == Key.Enter)
+        if (e.Key == Key.Enter && !e.KeyModifiers.HasFlag(KeyModifiers.Alt))
         {
             ViewModel.OpenEntry(activeSelected);
+            FocusActiveListBox();
             e.Handled = true;
             return;
         }
@@ -2075,6 +2551,7 @@ public partial class MainWindow : Window
                 ViewModel.GoUp();
             }
 
+            FocusActiveListBox();
             e.Handled = true;
             return;
         }

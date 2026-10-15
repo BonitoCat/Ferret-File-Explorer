@@ -14,6 +14,7 @@ using InputLib.EventArgs;
 
 using TuiLib;
 using TuiLib.Controls;
+using TuiLib.Helpers;
 
 namespace FileExplorer.Cli.Keybinds;
 
@@ -69,9 +70,8 @@ public class NavigateUpKeybind : Keybind
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Navigation.NavigateUp();
-        FolderUtils.LoadFolderContent(Context, Context.Cwd);
+        FolderUtils.LoadFolderContent(Context, Context.Cwd, null, () => Context.Menu.SelectedIndex = 0);
         Directory.SetCurrentDirectory(Context.Cwd);
-        Context.Menu.SelectedIndex = 0;
     }
 }
 
@@ -97,12 +97,8 @@ public class ExecuteKeybind : Keybind
                 }
 
                 Context.Navigation.NavigateTo(folder.FullPath);
-                FolderUtils.LoadFolderContent(Context, Context.Cwd);
+                FolderUtils.LoadFolderContent(Context, Context.Cwd, null, selected.DisplayName.Text == ".." ? () => Context.Menu.SelectedIndex = 0 : null);
                 Directory.SetCurrentDirectory(Context.Cwd);
-                if (selected.DisplayName.Text == "..")
-                {
-                    Context.Menu.SelectedIndex = 0;
-                }
             }
             else
             {
@@ -196,10 +192,14 @@ public class PasteKeybind : Keybind
                 Context.Clipboard.Items.Clear();
             }
             
-            FolderUtils.LoadFolderContent(Context, Context.Cwd);
-
-            TuiListBoxItem<EntryListItem> item = Context.Menu.Items.First(item => lastItemName == item.Value?.Entry.FullPath);
-            Context.Menu.TryScrollTo(item);
+            FolderUtils.LoadFolderContent(Context, Context.Cwd, null, () =>
+            {
+                TuiListBoxItem<EntryListItem>? item = Context.Menu.Items.FirstOrDefault(item => lastItemName == item.Value?.Entry.FullPath);
+                if (item != null)
+                {
+                    Context.Menu.TryScrollTo(item);
+                }
+            });
         }
     }
 }
@@ -259,7 +259,7 @@ public class CmdKeybind : Keybind
             Context.Listener.PauseListening = true;
         }
 
-        Console.CursorVisible = true;
+        TerminalHelper.EndSession();
         Console.Clear();
 
         string shell = Environment.GetEnvironmentVariable("SHELL") ?? "/bin/bash";
@@ -277,7 +277,7 @@ public class CmdKeybind : Keybind
         proc.Start();
         proc.WaitForExit();
 
-        Console.CursorVisible = false;
+        TerminalHelper.BeginSession();
         InputListener.DisableEcho();
         Console.Clear();
 
@@ -313,7 +313,7 @@ public class NanoKeybind : Keybind
             Context.Listener.PauseListening = true;
         }
 
-        Console.CursorVisible = true;
+        TerminalHelper.EndSession();
         Console.Clear();
 
         Process proc = new()
@@ -329,7 +329,7 @@ public class NanoKeybind : Keybind
         proc.Start();
         proc.WaitForExit();
 
-        Console.CursorVisible = false;
+        TerminalHelper.BeginSession();
         InputListener.DisableEcho();
         Console.Clear();
 
@@ -597,6 +597,7 @@ public class HideKeybind : Keybind
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.ShowHiddenFiles = !Context.ShowHiddenFiles;
+        CliSettings.ShowHiddenFiles = Context.ShowHiddenFiles;
         FolderUtils.LoadFolderContent(Context, Context.Cwd, Context.SearchPattern);
     }
 }
@@ -752,17 +753,20 @@ public class MultiSelectDownKeybind : Keybind
 
 public class ConnectServerKeybind : Keybind
 {
-    private readonly NetworkService _networkService = new();
-
     public override void OnKeyDown(KeyDownEventArgs e)
     {
-        string? server = InputUtils.Input(Context, "Server (IP/hostname):", "");
+        Connect(Context);
+    }
+
+    public static void Connect(EntryContext context)
+    {
+        string? server = InputUtils.Input(context, "Server (IP/hostname):", "");
         if (string.IsNullOrWhiteSpace(server))
         {
             return;
         }
 
-        string? protocolStr = InputUtils.Input(Context, "Protocol (sftp/smb/ftp/dav/davs):", "sftp");
+        string? protocolStr = InputUtils.Input(context, "Protocol (sftp/smb/ftp/dav/davs):", "sftp");
         if (string.IsNullOrWhiteSpace(protocolStr))
         {
             return;
@@ -786,26 +790,26 @@ public class ConnectServerKeybind : Keybind
             _ => "22"
         };
 
-        string? portStr = InputUtils.Input(Context, $"Port [{defaultPort}]:", defaultPort);
+        string? portStr = InputUtils.Input(context, $"Port [{defaultPort}]:", defaultPort);
         int? port = null;
         if (int.TryParse(portStr?.Trim(), out int parsedPort) && parsedPort > 0)
         {
             port = parsedPort;
         }
 
-        string? path = InputUtils.Input(Context, "Share / Path (optional):", "");
+        string? path = InputUtils.Input(context, "Share / Path (optional):", "");
 
         string? domain = null;
         if (protocol == NetworkProtocol.Smb)
         {
-            domain = InputUtils.Input(Context, "Domain (optional):", "");
+            domain = InputUtils.Input(context, "Domain (optional):", "");
         }
 
-        string? user = InputUtils.Input(Context, "Username (optional):", "");
+        string? user = InputUtils.Input(context, "Username (optional):", "");
         string? pass = null;
         if (!string.IsNullOrEmpty(user))
         {
-            pass = InputUtils.Input(Context, "Password (optional):", "");
+            pass = InputUtils.Input(context, "Password (optional):", "", true);
         }
 
         NetworkConnectionInfo info = new()
@@ -822,13 +826,33 @@ public class ConnectServerKeybind : Keybind
 
         Task.Run(async () =>
         {
-            (bool success, string mountPath, string error) = await _networkService.MountAsync(info);
-            if (success && Directory.Exists(mountPath))
+            NetworkService networkService = new();
+            (bool success, string mountPath, string error) = await networkService.MountAsync(info);
+            if (!success || !Directory.Exists(mountPath))
             {
-                Context.Navigation.NavigateTo(mountPath);
-                FolderUtils.LoadFolderContent(Context, mountPath);
-                Directory.SetCurrentDirectory(mountPath);
+                Program.Sidebar.StatusText = string.IsNullOrWhiteSpace(error) ? "Connection failed" : $"Connection failed: {error}";
+                return;
             }
+
+            string bookmarkName = string.IsNullOrEmpty(info.Username)
+                ? $"{protocol.ToString().ToUpperInvariant()}: {info.Host}"
+                : $"{info.Username}@{info.Host}";
+            if (!string.IsNullOrEmpty(info.Path) && info.Path != "/")
+            {
+                bookmarkName += info.Path;
+            }
+
+            new NetworkBookmarkService().AddBookmark(new()
+            {
+                Name = bookmarkName,
+                Uri = info.BuildUri(),
+                Password = info.Password,
+            });
+
+            context.Navigation.NavigateTo(mountPath);
+            FolderUtils.LoadFolderContent(context, mountPath);
+            Directory.SetCurrentDirectory(mountPath);
+            Program.Sidebar.Reload();
         });
     }
 }

@@ -49,44 +49,12 @@ public class EntryItemRenderer
         
         bool isSelected = context.SelectedItems.Contains(entry);
         bool isCut = context.Clipboard.Mode == ClipboardMode.Cut && context.Clipboard.Items.Contains(entry.Entry.FullPath);
-        
-        string entryText;
-        if (isSelected)
-        {
-            string prefixString = "";
-            if (entry.Prefixes.Count > 0)
-            {
-                prefixString = string.Concat(entry.Prefixes.Select(p => p.ToString()));
-            }
-            
-            string suffixString = "";
-            if (entry.Suffixes.Count > 0)
-            {
-                suffixString = string.Concat(entry.Suffixes.Select(s => s.ToString()));
-            }
-            
-            if (isCut)
-            {
-                entryText = $"\x1b[38;2;180;180;180m{Color.TrimAnsi(entry.Icon.ToString())}\x1b[0m{prefixString}\x1b[47m\x1b[38;2;0;0;0m{entry.DisplayName.Text}\x1b[0m{suffixString}";
-            }
-            else
-            {
-                entryText = $"{entry.Icon}{prefixString}\x1b[47m\x1b[30m{entry.DisplayName.Text}\x1b[0m{suffixString}";
-            }
-        }
-        else
-        {
-            if (isCut)
-            {
-                entryText = isFocused ? $"\x1b[38;2;200;200;200m{Color.TrimAnsi(entry.ToString())}\x1b[0m" : $"\x1b[38;2;150;150;150m{Color.TrimAnsi(entry.ToString())}\x1b[0m";
-            }
-            else
-            {
-                entryText = isFocused ? entry.ToString() : $"\x1b[38;2;180;180;180m{Color.TrimAnsi(entry.ToString())}\x1b[0m";
-            }
-        }
-        
+
+        string prefixString = string.Concat(entry.Prefixes.Select(p => p.ToString()));
+        string suffixString = string.Concat(entry.Suffixes.Select(s => s.ToString()));
+
         string sizeText = "";
+        string sizeVisible = "";
         if (context.ShowFileSizes && entry.Entry is FileEntry fileEntry)
         {
             double size = fileEntry.FileSize;
@@ -99,21 +67,41 @@ public class EntryItemRenderer
                 unitIndex++;
             }
 
-            if (index == entries.SelectedIndex || isSelected)
+            sizeVisible = $"{size:0.##} {units[unitIndex]}";
+            sizeText = (index == entries.SelectedIndex || isSelected ? Color.White.ToAnsi() : Color.Gray.ToAnsi()) + sizeVisible;
+        }
+
+        int targetWidth = context.HasActiveImagePreview ? entries.MaxWidth / 2 : entries.MaxWidth;
+        int fixedWidth = VisibleLength(cursor) + VisibleLength(entry.Icon.ToString()) + VisibleLength(prefixString) + VisibleLength(suffixString) + sizeVisible.Length + 5;
+        string name = Truncate(entry.DisplayName.Text, targetWidth - fixedWidth);
+        ColoredText displayName = new(name, entry.DisplayName.ForeColor, entry.DisplayName.BackColor);
+        string plainEntry = $"{entry.Icon}{prefixString}{displayName}{suffixString}\x1b[0m";
+
+        string entryText;
+        if (isSelected)
+        {
+            if (isCut)
             {
-                sizeText = Color.White.ToAnsi();
+                entryText = $"\x1b[38;2;180;180;180m{Color.TrimAnsi(entry.Icon.ToString())}\x1b[0m{prefixString}\x1b[47m\x1b[38;2;0;0;0m{name}\x1b[0m{suffixString}";
             }
             else
             {
-                sizeText = Color.Gray.ToAnsi();
+                entryText = $"{entry.Icon}{prefixString}\x1b[47m\x1b[30m{name}\x1b[0m{suffixString}";
             }
-            
-            sizeText += $"{size:0.##} {units[unitIndex]}";
+        }
+        else
+        {
+            if (isCut)
+            {
+                entryText = isFocused ? $"\x1b[38;2;200;200;200m{Color.TrimAnsi(plainEntry)}\x1b[0m" : $"\x1b[38;2;150;150;150m{Color.TrimAnsi(plainEntry)}\x1b[0m";
+            }
+            else
+            {
+                entryText = isFocused ? plainEntry : $"\x1b[38;2;180;180;180m{Color.TrimAnsi(plainEntry)}\x1b[0m";
+            }
         }
         
-        string rawVisibleText = Regex.Replace($"{cursor}{entryText}{sizeText}", @"\x1b\[[0-9;]*m", "");
-        int textElementsLength = new StringInfo(rawVisibleText).LengthInTextElements;
-        int targetWidth = context.HasActiveImagePreview ? entries.MaxWidth / 2 : entries.MaxWidth;
+        int textElementsLength = VisibleLength($"{cursor}{entryText}{sizeText}");
         int spacesNeeded = Math.Max(0, targetWidth - textElementsLength - 4);
         
         string finalPadding = new(' ', spacesNeeded);
@@ -123,5 +111,27 @@ public class EntryItemRenderer
             Text = $"{cursor}{entryText}{finalPadding}{sizeText}    ",
             Foreground = isFocused ? Color.Reset : new Color(100, 100, 100),
         };
+    }
+
+    private static int VisibleLength(string text)
+    {
+        string stripped = Regex.Replace(text, @"\x1b\[[0-9;]*m", "");
+        return new StringInfo(stripped).LengthInTextElements;
+    }
+
+    private static string Truncate(string text, int maxLength)
+    {
+        if (maxLength <= 1)
+        {
+            return text.Length > 0 ? "…" : text;
+        }
+
+        StringInfo info = new(text);
+        if (info.LengthInTextElements <= maxLength)
+        {
+            return text;
+        }
+
+        return info.SubstringByTextElements(0, maxLength - 1) + "…";
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FileExplorer.Core.Models;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Services;
 
@@ -10,9 +11,7 @@ public class NetworkBookmarkService
 
     public NetworkBookmarkService()
     {
-        string configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "fe");
-        Directory.CreateDirectory(configDir);
-        _filePath = Path.Combine(configDir, "network_bookmarks.json");
+        _filePath = AppPaths.GetDataPath("network_bookmarks.json");
     }
 
     public List<NetworkBookmark> GetBookmarks()

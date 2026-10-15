@@ -6,6 +6,7 @@ using TuiLib.Controls;
 using System.Collections.Generic;
 
 using FileExplorer.Cli.Models;
+using FileExplorer.Cli.Utilities;
 
 using InputLib;
 
@@ -24,11 +25,13 @@ public class EntryContext
     public HashSet<EntryListItem> SelectedItems { get; } = new();
     public ClipboardContext Clipboard { get; } = new();
     public string? SearchPattern { get; set; }
-    public bool ShowHiddenFiles { get; set; } = false;
+    public bool ShowHiddenFiles { get; set; } = CliSettings.ShowHiddenFiles;
     public bool ShowFileSizes { get; set; } = false;
     public InputListener? Listener { get; set; }
     public bool IsReloading { get; set; } = false;
     public bool HasActiveImagePreview { get; set; } = false;
+    public bool IsLoading { get; set; }
+    public CancellationTokenSource? LoadCts { get; set; }
 
     public string Cwd => Navigation.CurrentPath;
 }

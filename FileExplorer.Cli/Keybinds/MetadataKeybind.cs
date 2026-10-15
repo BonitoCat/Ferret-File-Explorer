@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text;
 using FileExplorer.Cli.Context;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Services;
@@ -16,40 +14,14 @@ namespace FileExplorer.Cli.Keybinds;
 
 public class MetadataKeybind : Keybind
 {
-    [DllImport("libc", SetLastError = true)]
-    private static extern int stat(string path, out StatBuffer statbuf);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct StatBuffer
-    {
-        public ulong st_dev;
-        public ulong st_ino;
-        public ulong st_nlink;
-        public uint st_mode;
-        public uint st_uid;
-        public uint st_gid;
-        public uint _pad0;
-        public ulong st_rdev;
-        public long st_size;
-        public long st_blksize;
-        public long st_blocks;
-        public long st_atime;
-        public long st_atime_nsec;
-        public long st_mtime;
-        public long st_mtime_nsec;
-        public long st_ctime;
-        public long st_ctime_nsec;
-        public long _unused0;
-        public long _unused1;
-        public long _unused2;
-    }
-
     private readonly object _renderLock = new();
     private readonly Dictionary<string, List<(string Key, string Value)>> _sections = new();
 
     private TuiListBox<TuiLabel> _list = new();
     private TuiBorder _border = new();
     private string _filePath = "";
+    private CancellationTokenSource? _scanCts;
+    private const int PopupWidth = 64;
 
     public override void OnKeyDown(KeyDownEventArgs e)
     {
@@ -68,7 +40,7 @@ public class MetadataKeybind : Keybind
         Program.ModalKeyHandler = HandleModalKey;
         Program.ModalResizeHandler = OnWindowResize;
 
-        int popupWidth = Math.Min(Console.WindowWidth - 4, 52);
+        int popupWidth = Math.Min(Console.WindowWidth - 4, PopupWidth);
         int popupHeight = 4;
 
         _list = new TuiListBox<TuiLabel>
@@ -108,13 +80,20 @@ public class MetadataKeybind : Keybind
         };
 
         _sections.Clear();
-        _sections["General"] = [("Loading...", "")];
-        _sections["Permissions"] = [("Loading...", "")];
+        _sections["General"] = [("Loading…", "")];
+        _sections["Permissions"] = [("Loading…", "")];
+        _sections["Volume"] = [("Loading…", "")];
+        _sections["Details"] = [];
+
+        _scanCts?.Cancel();
+        _scanCts = new();
+        CancellationToken token = _scanCts.Token;
 
         RebuildList();
 
-        Task.Run(LoadGeneralSection);
+        Task.Run(() => LoadGeneralSection(token));
         Task.Run(LoadPermissionsSection);
+        Task.Run(LoadVolumeSection);
         Task.Run(LoadTypeSpecificSection);
     }
 
@@ -132,7 +111,7 @@ public class MetadataKeybind : Keybind
             {
                 if (_list.GetItemCount() > _list.MaxHeight && _list.Scroll(1))
                 {
-                    RenderPopup();
+                    RenderPopupOnly();
                 }
             }
             return;
@@ -144,7 +123,7 @@ public class MetadataKeybind : Keybind
             {
                 if (_list.GetItemCount() > _list.MaxHeight && _list.Scroll(-1))
                 {
-                    RenderPopup();
+                    RenderPopupOnly();
                 }
             }
             return;
@@ -156,7 +135,7 @@ public class MetadataKeybind : Keybind
             {
                 if (_list.GetItemCount() > _list.MaxHeight && _list.Scroll(5))
                 {
-                    RenderPopup();
+                    RenderPopupOnly();
                 }
             }
             return;
@@ -168,7 +147,7 @@ public class MetadataKeybind : Keybind
             {
                 if (_list.GetItemCount() > _list.MaxHeight && _list.Scroll(-5))
                 {
-                    RenderPopup();
+                    RenderPopupOnly();
                 }
             }
             return;
@@ -177,6 +156,7 @@ public class MetadataKeybind : Keybind
 
     private void ClosePopup()
     {
+        _scanCts?.Cancel();
         Program.ModalKeyHandler = null;
         Program.ModalResizeHandler = null;
         Program.PauseRendering = false;
@@ -192,7 +172,7 @@ public class MetadataKeybind : Keybind
             int itemCount = _list.GetItemCount();
             int newHeight = Math.Min(Console.WindowHeight - 4, Math.Max(2, itemCount));
 
-            _list.MaxWidth = Math.Min(Console.WindowWidth - 4, 52);
+            _list.MaxWidth = Math.Min(Console.WindowWidth - 4, PopupWidth);
             _list.MaxHeight = newHeight;
             _list.Height = newHeight;
             _list.ViewRange = newHeight;
@@ -211,6 +191,14 @@ public class MetadataKeybind : Keybind
             List<RenderPart> allParts = Program.GetExplorerRenderParts();
             allParts.AddRange(_border.Render());
             Program.Renderer.Render(allParts);
+        }
+    }
+
+    private void RenderPopupOnly()
+    {
+        lock (_renderLock)
+        {
+            Program.Renderer.Render(_border.Render().ToList());
         }
     }
 
@@ -255,8 +243,9 @@ public class MetadataKeybind : Keybind
 
             int itemCount = _list.GetItemCount();
             int newHeight = Math.Min(Console.WindowHeight - 4, Math.Max(2, itemCount));
+            bool sizeChanged = newHeight != _list.MaxHeight || _list.MaxWidth != Math.Min(Console.WindowWidth - 4, PopupWidth);
 
-            _list.MaxWidth = Math.Min(Console.WindowWidth - 4, 52);
+            _list.MaxWidth = Math.Min(Console.WindowWidth - 4, PopupWidth);
             _list.MaxHeight = newHeight;
             _list.Height = newHeight;
             _list.ViewRange = newHeight;
@@ -264,76 +253,213 @@ public class MetadataKeybind : Keybind
             _list.Y = Console.WindowHeight / 2;
             _list.ViewIndex = Math.Min(prevViewIndex, Math.Max(0, itemCount - newHeight));
 
-            RenderPopup();
+            if (sizeChanged)
+            {
+                RenderPopup();
+                return;
+            }
+
+            RenderPopupOnly();
         }
     }
 
-    private void LoadGeneralSection()
+    private void LoadGeneralSection(CancellationToken token)
     {
-        List<(string Key, string Value)> rows = new();
+        bool isDirectory = Directory.Exists(_filePath);
+        UnixStat? stat = OperatingSystem.IsLinux() ? UnixStat.Load(_filePath) : null;
+        List<(string Key, string Value)> head = new();
+        List<(string Key, string Value)> dates = new();
+        List<(string Key, string Value)> tail = new();
 
         try
         {
-            if (Directory.Exists(_filePath))
+            FileSystemInfo info = isDirectory ? new DirectoryInfo(_filePath) : new FileInfo(_filePath);
+            head.Add(("Name", info.Name));
+            head.Add(("Location", Path.GetDirectoryName(_filePath) ?? "/"));
+            if (info.LinkTarget != null)
             {
-                DirectoryInfo dirInfo = new(_filePath);
-                rows.Add(("Name", dirInfo.Name));
-                rows.Add(("Type", "Folder"));
-                rows.Add(("Modified", dirInfo.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")));
-                rows.Add(("Created", dirInfo.CreationTime.ToString("yyyy-MM-dd HH:mm:ss")));
-                rows.Add(("Accessed", dirInfo.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")));
+                head.Add(("Link target", info.LinkTarget));
             }
-            else
+
+            dates.Add(("Created", stat?.Birth?.ToString("yyyy-MM-dd HH:mm:ss") ?? "Unknown"));
+            dates.Add(("Modified", info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")));
+            dates.Add(("Accessed", info.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")));
+
+            if (!isDirectory)
             {
-                FileInfo info = new(_filePath);
-                rows.Add(("Name", info.Name));
-                rows.Add(("Type", GetFileTypeLabel()));
-                rows.Add(("Size", FormatSize(info.Length)));
-                rows.Add(("Modified", info.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")));
-                rows.Add(("Created", info.CreationTime.ToString("yyyy-MM-dd HH:mm:ss")));
-                rows.Add(("Accessed", info.LastAccessTime.ToString("yyyy-MM-dd HH:mm:ss")));
+                string mime = MimeService.GetMimeType(_filePath);
+                head.Insert(1, ("Type", $"{GetFileTypeLabel()} ({mime})"));
+                head.Add(("Size", FormatSize(((FileInfo) info).Length)));
+                if (stat != null)
+                {
+                    head.Add(("Size on disk", FormatSize(stat.SizeOnDisk)));
+                }
+
+                string? defaultApp = MimeService.GetDefaultApplication(mime);
+                tail.Add(("Opens with", defaultApp == null ? "No default application" : MimeService.GetDesktopAppName(defaultApp)));
+                SetSection("General", head.Concat(dates).Concat(tail).ToList());
+                return;
             }
+
+            head.Insert(1, ("Type", "Folder"));
         }
         catch (Exception ex)
         {
-            rows.Add(("Error", ex.Message));
+            SetSection("General", [("Error", ex.Message)]);
+            return;
         }
 
-        SetSection("General", rows);
+        void ShowProgress(FolderScanProgress progress)
+        {
+            List<(string Key, string Value)> rows = head.ToList();
+            rows.Add(("Size", progress.Completed ? FormatSize(progress.Bytes) : $"{FormatSize(progress.Bytes)} …"));
+            rows.Add(("Contents", $"{Plural(progress.Folders, "folder")}, {Plural(progress.Files, "file")}"));
+            if (progress.Completed && progress.Unreadable > 0)
+            {
+                rows.Add(("Unreadable", $"{Plural(progress.Unreadable, "folder")} (size may be larger)"));
+            }
+
+            SetSection("General", rows.Concat(dates).ToList());
+        }
+
+        ShowProgress(new(0, 0, 0, 0, false));
+        FolderScanner.ScanAsync(_filePath, progress =>
+        {
+            if (!token.IsCancellationRequested)
+            {
+                ShowProgress(progress);
+            }
+        }, token).ContinueWith(_ => { }, TaskScheduler.Default);
     }
 
     private void LoadPermissionsSection()
     {
         List<(string Key, string Value)> rows = new();
+        bool isDirectory = Directory.Exists(_filePath);
+        UnixStat? stat = OperatingSystem.IsLinux() ? UnixStat.Load(_filePath) : null;
 
-        try
+        if (stat == null)
         {
-            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-            {
-                if (stat(_filePath, out StatBuffer sb) == 0)
-                {
-                    uint mode = sb.st_mode;
-                    rows.Add(("Permissions", FormatUnixPermissions(mode)));
-                    rows.Add(("Octal", $"{mode & 0xFFF:000}"));
-                    rows.Add(("Owner UID", sb.st_uid.ToString()));
-                    rows.Add(("Group GID", sb.st_gid.ToString()));
-
-                    bool isExec = (mode & 0b001001001) != 0;
-                    rows.Add(("Executable", isExec ? "Yes" : "No"));
-                }
-            }
-
-            FileAttributes attrs = File.GetAttributes(_filePath);
-            rows.Add(("Read-only", attrs.HasFlag(FileAttributes.ReadOnly) ? "Yes" : "No"));
-            rows.Add(("Hidden", attrs.HasFlag(FileAttributes.Hidden) ? "Yes" : "No"));
-            rows.Add(("System", attrs.HasFlag(FileAttributes.System) ? "Yes" : "No"));
+            SetSection("Permissions", [("Unavailable", "")]);
+            return;
         }
-        catch (Exception ex)
+
+        rows.Add(("Owner", stat.Uid == UnixStat.CurrentUid ? $"{stat.Owner} (you)" : stat.Owner));
+        rows.Add(("Group", stat.Group));
+        rows.Add(("Owner access", DescribeAccess(stat.Mode >> 6, isDirectory)));
+        rows.Add(("Group access", DescribeAccess(stat.Mode >> 3, isDirectory)));
+        rows.Add(("Others access", DescribeAccess(stat.Mode, isDirectory)));
+        rows.Add(("Mode", $"{Convert.ToString(stat.Mode, 8).PadLeft(4, '0')}  {UnixStat.FormatMode(stat.Mode, isDirectory)}"));
+
+        List<string> access = new();
+        if (FileUtils.HasAccess(_filePath, true, false, false))
         {
-            rows.Add(("Error", ex.Message));
+            access.Add(isDirectory ? "list" : "read");
+        }
+
+        if (FileUtils.HasAccess(_filePath, false, true, false))
+        {
+            access.Add(isDirectory ? "create/delete" : "write");
+        }
+
+        if (FileUtils.HasAccess(_filePath, false, false, true))
+        {
+            access.Add(isDirectory ? "open" : "execute");
+        }
+
+        rows.Add(("Your access", access.Count == 0 ? "None" : string.Join(", ", access)));
+        if (!isDirectory)
+        {
+            rows.Add(("Executable", (stat.Mode & 0x49) != 0 ? "Yes" : "No"));
+        }
+
+        List<string> special = new();
+        if ((stat.Mode & 0x800) != 0)
+        {
+            special.Add("setuid");
+        }
+
+        if ((stat.Mode & 0x400) != 0)
+        {
+            special.Add("setgid");
+        }
+
+        if ((stat.Mode & 0x200) != 0)
+        {
+            special.Add("sticky");
+        }
+
+        if (special.Count > 0)
+        {
+            rows.Add(("Special bits", string.Join(", ", special)));
         }
 
         SetSection("Permissions", rows);
+    }
+
+    private void LoadVolumeSection()
+    {
+        UnixStat? stat = OperatingSystem.IsLinux() ? UnixStat.Load(_filePath) : null;
+        if (stat == null || string.IsNullOrEmpty(stat.MountPoint))
+        {
+            SetSection("Volume", []);
+            return;
+        }
+
+        List<(string Key, string Value)> rows =
+        [
+            ("Mount point", stat.MountPoint),
+            ("Filesystem", stat.FileSystemType),
+        ];
+
+        try
+        {
+            DriveInfo drive = new(stat.MountPoint);
+            if (drive.IsReady && drive.TotalSize > 0)
+            {
+                long used = drive.TotalSize - drive.AvailableFreeSpace;
+                rows.Add(("Free", $"{FileUtils.FormatSize(drive.AvailableFreeSpace)} of {FileUtils.FormatSize(drive.TotalSize)} ({used * 100 / drive.TotalSize}% used)"));
+            }
+        }
+        catch
+        {
+        }
+
+        SetSection("Volume", rows);
+    }
+
+    private static string DescribeAccess(int bits, bool isDirectory)
+    {
+        bool read = (bits & 4) != 0;
+        bool write = (bits & 2) != 0;
+        bool execute = (bits & 1) != 0;
+
+        if (isDirectory)
+        {
+            return (read, write, execute) switch
+            {
+                (false, false, false) => "None",
+                (true, false, false) => "List files only",
+                (true, false, true) => "Access files",
+                (true, true, true) => "Create and delete files",
+                _ => $"Custom ({(read ? 'r' : '-')}{(write ? 'w' : '-')}{(execute ? 'x' : '-')})",
+            };
+        }
+
+        string basic = (read, write) switch
+        {
+            (false, false) => "None",
+            (true, false) => "Read-only",
+            (true, true) => "Read and write",
+            _ => "Write-only",
+        };
+
+        return execute ? $"{basic}, execute" : basic;
+    }
+
+    private static string Plural(long count, string noun)
+    {
+        return $"{count:N0} {noun}{(count == 1 ? "" : "s")}";
     }
 
     private void LoadTypeSpecificSection()
@@ -599,22 +725,6 @@ public class MetadataKeybind : Keybind
         }
 
         return $"{size:0.##} {units[unit]} ({bytes:N0} bytes)";
-    }
-
-    private static string FormatUnixPermissions(uint mode)
-    {
-        StringBuilder sb = new(9);
-        sb.Append((mode & 0x100) != 0 ? 'r' : '-');
-        sb.Append((mode & 0x080) != 0 ? 'w' : '-');
-        sb.Append((mode & 0x040) != 0 ? "x " : "- ");
-        sb.Append((mode & 0x020) != 0 ? 'r' : '-');
-        sb.Append((mode & 0x010) != 0 ? 'w' : '-');
-        sb.Append((mode & 0x008) != 0 ? "x " : "- ");
-        sb.Append((mode & 0x004) != 0 ? 'r' : '-');
-        sb.Append((mode & 0x002) != 0 ? 'w' : '-');
-        sb.Append((mode & 0x001) != 0 ? 'x' : '-');
-
-        return sb.ToString();
     }
 
     private string TruncateValue(string value)

@@ -32,6 +32,17 @@ public static partial class FileUtils
         return true;
     }
 
+    public static bool HasAccess(string path, bool read, bool write, bool execute)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !OperatingSystem.IsLinux())
+        {
+            return false;
+        }
+
+        int mode = (read ? 4 : 0) | (write ? 2 : 0) | (execute ? 1 : 0);
+        return LinuxAccess(path, mode) == 0;
+    }
+
     public static bool IsFileExecutable(string path)
     {
         if (string.IsNullOrWhiteSpace(path))

@@ -8,6 +8,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using FileExplorer.Core.Models;
 using FileExplorer.Core.Services;
+using FileExplorer.Core.Utilities;
 using FileLib;
 using LoggerLib;
 
@@ -41,6 +42,8 @@ public partial class App : Application
             {
             }
         });
+
+        AppPaths.MigrateLegacyConfig();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

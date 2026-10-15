@@ -1,0 +1,70 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.ScriptPromptDialog"
+        Title="Run Script"
+        Width="560"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,Auto"
+          Margin="20">
+
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Spacing="14">
+
+            <Image Source="{markup:Icon Key=executable}"
+                   Width="36"
+                   Height="36"
+                   VerticalAlignment="Top"/>
+
+            <StackPanel Spacing="6"
+                        MaxWidth="460">
+                <TextBlock x:Name="HeaderText"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
+
+                <TextBlock Text="Do you want to run it, or display its contents?"
+                           FontSize="13"
+                           Foreground="#AAAAAA"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,20,0,0">
+
+            <Button Content="Run in Terminal"
+                    Click="OnRunInTerminalClick"
+                    Background="#333333"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button Content="Show Content"
+                    Click="OnShowContentClick"
+                    Background="#333333"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button Content="Cancel"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button x:Name="RunButton"
+                    Content="Run"
+                    Click="OnRunClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    MinWidth="70"
+                    HorizontalContentAlignment="Center"/>
+        </StackPanel>
+    </Grid>
+</Window>
