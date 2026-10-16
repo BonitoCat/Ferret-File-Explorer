@@ -12,6 +12,28 @@ public static partial class FileUtils
     [LibraryImport("libSystem.dylib", EntryPoint = "access", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int MacAccess(string pathname, int mode);
 
+    [LibraryImport("libc.so.6", EntryPoint = "statvfs", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int LinuxStatVfs(string path, out StatVfs buffer);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StatVfs
+    {
+        public ulong BlockSize;
+        public ulong FragmentSize;
+        public ulong Blocks;
+        public ulong BlocksFree;
+        public ulong BlocksAvailable;
+        public ulong Files;
+        public ulong FilesFree;
+        public ulong FilesAvailable;
+        public ulong FileSystemId;
+        public ulong Flags;
+        public ulong MaxNameLength;
+        public ulong Spare0;
+        public ulong Spare1;
+        public ulong Spare2;
+    }
+
     [LibraryImport("kernel32.dll", EntryPoint = "GetBinaryTypeW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool GetBinaryType(string applicationName, out uint binaryType);
@@ -74,6 +96,34 @@ public static partial class FileUtils
         }
 
         return false;
+    }
+
+    public static long? GetAvailableFreeSpace(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        if (OperatingSystem.IsLinux() && Environment.Is64BitProcess)
+        {
+            if (LinuxStatVfs(path, out StatVfs stat) != 0)
+            {
+                return null;
+            }
+
+            return (long) (stat.BlocksAvailable * stat.FragmentSize);
+        }
+
+        try
+        {
+            string? root = Path.GetPathRoot(Path.GetFullPath(path));
+            return root == null ? null : new DriveInfo(root).AvailableFreeSpace;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public static bool IsLaunchableProgram(string path)

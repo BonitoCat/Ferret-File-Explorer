@@ -1984,7 +1984,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                             UpdateStatus();
                         }
                     }
-                });
+                }, DispatcherPriority.Background);
             }
         }, token);
     }
@@ -2132,7 +2132,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                             UpdateStatus();
                         }
                     }
-                });
+                }, DispatcherPriority.Background);
             }
         }, token);
     }
@@ -2391,6 +2391,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void Refresh()
     {
         Logger.LogI("Refreshed directory");
+        InvalidateFreeSpace();
 
         LoadFolder(_pane1Path, ActivePane == 1 ? SearchQuery : null);
         if (IsDualPane && !string.IsNullOrEmpty(_pane2Path))
@@ -3295,18 +3296,44 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private static string GetFreeDiskSpace(string path)
+    private string _freeSpacePath = "";
+    private string _freeSpaceText = "";
+
+    private string GetFreeDiskSpace(string path)
     {
-        try
+        if (path == _freeSpacePath)
         {
-            string root = Path.GetPathRoot(path) ?? "/";
-            DriveInfo drive = new(root);
-            return FormatBytes(drive.AvailableFreeSpace);
+            return _freeSpaceText;
         }
-        catch
+
+        _freeSpacePath = path;
+        _freeSpaceText = "";
+        if (string.IsNullOrEmpty(path))
         {
             return "";
         }
+
+        Task.Run(() => FileUtils.GetAvailableFreeSpace(path)).ContinueWith(t =>
+        {
+            long? available = t.IsCompletedSuccessfully ? t.Result : null;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_freeSpacePath != path || available == null)
+                {
+                    return;
+                }
+
+                _freeSpaceText = FormatBytes(available.Value);
+                UpdateStatus();
+            });
+        });
+
+        return "";
+    }
+
+    private void InvalidateFreeSpace()
+    {
+        _freeSpacePath = "";
     }
 
     private static string FormatBytes(long bytes)
