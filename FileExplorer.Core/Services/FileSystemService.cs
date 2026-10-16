@@ -496,13 +496,13 @@ public partial class FileSystemService
 
     private static void PopulateFileMetadataFast(FileEntry file)
     {
-        if (file.IsExecutable)
+        string? mime = MimeUtils.GetMimeTypeFast(file.FullPath);
+        if (file.IsExecutable && !IsDocumentMime(mime))
         {
             file.FileType = FileType.Executable;
             return;
         }
 
-        string? mime = MimeUtils.GetMimeTypeFast(file.FullPath);
         if (mime is null)
         {
             file.NeedsAccurateTypeCheck = true;
@@ -526,6 +526,22 @@ public partial class FileSystemService
         {
             file.NeedsAccurateTypeCheck = true;
         }
+    }
+
+    private static bool IsDocumentMime(string? mime)
+    {
+        if (string.IsNullOrEmpty(mime))
+        {
+            return false;
+        }
+
+        return mime.StartsWith("image/")
+               || mime.StartsWith("audio/")
+               || mime.StartsWith("video/")
+               || mime.StartsWith("font/")
+               || mime == "application/pdf"
+               || mime == "application/vnd.debian.binary-package"
+               || MimeUtils.IsArchiveMime(mime);
     }
 
     private static void PopulateFileMetadataAccurate(FileEntry file)

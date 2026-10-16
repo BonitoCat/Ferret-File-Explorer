@@ -120,10 +120,10 @@ echo "=========================================="
 echo "Building .deb packages..."
 echo "=========================================="
 
-dpkg-deb --build "$SCRIPT_DIR/fe-linux-x64-full" "$OUTPUT_DIR/ferret-linux-x64-full.deb"
-dpkg-deb --build "$SCRIPT_DIR/fe-linux-x64-headless" "$OUTPUT_DIR/ferret-linux-x64-headless.deb"
-dpkg-deb --build "$SCRIPT_DIR/fe-linux-arm64-full" "$OUTPUT_DIR/ferret-linux-arm64-full.deb"
-dpkg-deb --build "$SCRIPT_DIR/fe-linux-arm64-headless" "$OUTPUT_DIR/ferret-linux-arm64-headless.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-x64-full" "$OUTPUT_DIR/ferret-linux-x64-full.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-x64-headless" "$OUTPUT_DIR/ferret-linux-x64-headless.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-full" "$OUTPUT_DIR/ferret-linux-arm64-full.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-headless" "$OUTPUT_DIR/ferret-linux-arm64-headless.deb"
 
 APPIMAGETOOL="$SCRIPT_DIR/appimagetool-x86_64.AppImage"
 if [ -f "$APPIMAGETOOL" ]; then

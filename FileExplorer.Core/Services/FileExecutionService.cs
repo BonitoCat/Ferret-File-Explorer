@@ -24,7 +24,7 @@ public class FileExecutionService
             return;
         }
 
-        if (FileUtils.IsFileExecutable(file.FullPath))
+        if (FileUtils.IsLaunchableProgram(file.FullPath))
         {
             if (OnOpenTerminalForExecutable != null && RequiresTerminal(file.FullPath))
             {

@@ -76,6 +76,42 @@ public static partial class FileUtils
         return false;
     }
 
+    public static bool IsLaunchableProgram(string path)
+    {
+        if (!IsFileExecutable(path))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return true;
+        }
+
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            Span<byte> header = stackalloc byte[4];
+            int read = stream.Read(header);
+            if (read >= 2 && header[0] == '#' && header[1] == '!')
+            {
+                return true;
+            }
+
+            if (read < 4)
+            {
+                return false;
+            }
+
+            uint magic = BitConverter.ToUInt32(header);
+            return magic is 0x464C457F or 0xFEEDFACE or 0xFEEDFACF or 0xCEFAEDFE or 0xCFFAEDFE or 0xBEBAFECA;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public static string FormatSize(long bytes)
     {
         if (bytes < 1024)

@@ -1,8 +1,8 @@
 [Desktop Entry]
-Name=File Explorer
-GenericName=File Manager
-Comment=Nemo-inspired dark desktop file explorer
-Exec=fe-gui %U
+Name=Ferret
+GenericName=File Explorer
+Comment=Ferret File Explorer
+Exec=ferret %U
 Icon=fe
 Terminal=false
 Type=Application
@@ -10,4 +10,9 @@ StartupNotify=true
 StartupWMClass=fe-file-explorer
 Categories=GNOME;GTK;Utility;Core;FileManager;
 MimeType=inode/directory;
-Keywords=files;folder;explorer;browser;manager;
+Keywords=file;files;folder;explorer;browser;manager;ferret;file explorer;
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Exec=ferret %U

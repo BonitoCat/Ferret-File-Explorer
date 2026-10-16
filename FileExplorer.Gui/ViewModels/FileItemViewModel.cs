@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading.Tasks;
+using System.Threading;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using Avalonia.Threading;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Utilities;
@@ -79,6 +78,11 @@ public class FileItemViewModel : ViewModelBase
 
     public static FileItemViewModel FromEntry(IFileSystemEntry entry)
     {
+        return FromEntry(entry, CancellationToken.None);
+    }
+
+    public static FileItemViewModel FromEntry(IFileSystemEntry entry, CancellationToken token)
+    {
         bool isDir = entry is FolderEntry;
         bool isAccessDenied = CheckRequiresElevatedAccess(entry, isDir) && !Environment.IsPrivilegedProcess && Environment.UserName != "root";
 
@@ -122,21 +126,7 @@ public class FileItemViewModel : ViewModelBase
 
         if (!isDir && entry is FileEntry imageFile && imageFile.FileType == FileType.Image)
         {
-            if (!entry.FullPath.StartsWith("/run/user/", StringComparison.OrdinalIgnoreCase))
-            {
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        using FileStream stream = File.OpenRead(entry.FullPath);
-                        Bitmap bmp = Bitmap.DecodeToWidth(stream, 96);
-                        Dispatcher.UIThread.Post(() => item.Thumbnail = bmp);
-                    }
-                    catch
-                    {
-                    }
-                });
-            }
+            ThumbnailService.Request(item, entry.LastWriteTime, token);
         }
 
         return item;

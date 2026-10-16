@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -168,6 +169,12 @@ public class NetworkService
             return (true, existingMount, "");
         }
 
+        string? unreachableError = await ProbeHostAsync(info, cancellationToken);
+        if (unreachableError != null)
+        {
+            return (false, "", unreachableError);
+        }
+
         HashSet<string> beforeMounts = GetGvfsMounts();
         string uri = info.BuildUri();
 
@@ -316,6 +323,36 @@ public class NetworkService
 
         string gvfsRoot = $"/run/user/{GetUserId()}/gvfs";
         return (true, gvfsRoot, "");
+    }
+
+    private static async Task<string?> ProbeHostAsync(NetworkConnectionInfo info, CancellationToken cancellationToken)
+    {
+        int port = info.Port ?? info.Protocol switch
+        {
+            NetworkProtocol.Smb => 445,
+            NetworkProtocol.Ftp => 21,
+            NetworkProtocol.Dav => 80,
+            NetworkProtocol.Davs => 443,
+            _ => 22
+        };
+
+        using CancellationTokenSource timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            using TcpClient client = new();
+            await client.ConnectAsync(info.Host, port, timeoutCts.Token);
+            return null;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return $"Server {info.Host}:{port} is not responding.";
+        }
+        catch (SocketException ex)
+        {
+            return $"Cannot reach {info.Host}:{port}: {ex.Message}";
+        }
     }
 
     public static string? FindExistingMount(NetworkConnectionInfo info)

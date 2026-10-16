@@ -115,6 +115,7 @@ public partial class MainWindow : Window
             if (handle != null)
             {
                 X11WindowHelper.ConfigureWindow(handle.Handle);
+                X11WindowHelper.CompleteStartupNotification(handle.Handle);
                 X11XdndHook.Hook(
                     this,
                     (paths, rootX, rootY, isCopy) =>
@@ -659,6 +660,7 @@ public partial class MainWindow : Window
     {
         ViewModel.ActivePane = 2;
         ViewModel.OpenEntry(ViewModel.Pane2SelectedItem);
+        FocusActiveListBox();
     }
 
     private bool _isSyncingSidebar;
@@ -1141,7 +1143,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        string? password = await Task.Run(() => ViewModel.GetNetworkPassword(uri));
+        MainWindowViewModel vm = ViewModel;
+        string? password = await Task.Run(() => vm.GetNetworkPassword(uri));
         if (string.IsNullOrEmpty(password) && !NetworkService.ParseUri(uri).Anonymous)
         {
             InputDialog pwdDialog = new("Authentication Required", $"Enter password for {item.Name}:", "", true);
@@ -1152,7 +1155,7 @@ public partial class MainWindow : Window
             }
 
             string newPassword = password;
-            await Task.Run(() => ViewModel.SetNetworkPassword(uri, newPassword));
+            await Task.Run(() => vm.SetNetworkPassword(uri, newPassword));
         }
 
         if (ViewModel.ActivePane == 2)
@@ -1168,7 +1171,7 @@ public partial class MainWindow : Window
 
         try
         {
-            (bool success, string mountPath, string error) = await Task.Run(() => ViewModel.MountNetworkBookmarkAsync(uri, password));
+            (bool success, string mountPath, string error) = await Task.Run(() => vm.MountNetworkBookmarkAsync(uri, password));
             bool mountExists = success && !string.IsNullOrEmpty(mountPath) && await Task.Run(() => Directory.Exists(mountPath));
 
             if (mountExists)
@@ -2186,6 +2189,7 @@ public partial class MainWindow : Window
     {
         ViewModel.ActivePane = 1;
         ViewModel.OpenEntry(ViewModel.SelectedItem);
+        FocusActiveListBox();
     }
 
     private async void OnWindowKeyDown(object? sender, KeyEventArgs e)
@@ -2313,7 +2317,7 @@ public partial class MainWindow : Window
             {
                 if (ViewModel.IsDualPane)
                 {
-                    ViewModel.ToggleDualPane();
+                    ViewModel.CloseActivePane();
                     FocusActiveListBox();
                 }
                 else
@@ -2612,6 +2616,16 @@ public partial class MainWindow : Window
     private void OnEmptyTrashClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.EmptyTrash();
+    }
+
+    private void OnRecoverPane1Click(object? sender, RoutedEventArgs e)
+    {
+        ViewModel.RestoreSelectedFromTrash(1);
+    }
+
+    private void OnRecoverPane2Click(object? sender, RoutedEventArgs e)
+    {
+        ViewModel.RestoreSelectedFromTrash(2);
     }
 
     private void OnMenuOpenClick(object? sender, RoutedEventArgs e)

@@ -58,6 +58,109 @@ public class FileOperationService
         _ = Logger.LogI($"{(permanent ? "Permanently deleted" : "Moved to trash")} {pathList.Count} items");
     }
 
+    public List<string> RestoreFromTrash(IEnumerable<string> trashedPaths)
+    {
+        List<string> failed = new();
+        int restored = 0;
+
+        foreach (string trashedPath in trashedPaths)
+        {
+            try
+            {
+                if (TryRestoreFromTrash(trashedPath))
+                {
+                    restored++;
+                    continue;
+                }
+            }
+            catch (Exception ex)
+            {
+                _ = Logger.LogE($"Failed to restore {trashedPath}: {ex.Message}");
+            }
+
+            failed.Add(trashedPath);
+        }
+
+        _ = Logger.LogI($"Restored {restored} items from trash, {failed.Count} failed");
+        return failed;
+    }
+
+    private static bool TryRestoreFromTrash(string trashedPath)
+    {
+        string trimmed = Path.TrimEndingDirectorySeparator(trashedPath);
+        string? filesDir = Path.GetDirectoryName(trimmed);
+        if (filesDir == null || Path.GetFileName(filesDir) != "files")
+        {
+            return false;
+        }
+
+        string? trashDir = Path.GetDirectoryName(filesDir);
+        if (trashDir == null)
+        {
+            return false;
+        }
+
+        string infoPath = Path.Combine(trashDir, "info", Path.GetFileName(trimmed) + ".trashinfo");
+        string? originalPath = ReadTrashInfoPath(infoPath, trashDir);
+        if (originalPath == null)
+        {
+            return false;
+        }
+
+        if (File.Exists(originalPath) || Directory.Exists(originalPath))
+        {
+            _ = Logger.LogW($"Cannot restore {trimmed}: {originalPath} already exists");
+            return false;
+        }
+
+        string? parent = Path.GetDirectoryName(originalPath);
+        if (!string.IsNullOrEmpty(parent))
+        {
+            Directory.CreateDirectory(parent);
+        }
+
+        if (Directory.Exists(trimmed))
+        {
+            Directory.Move(trimmed, originalPath);
+        }
+        else
+        {
+            File.Move(trimmed, originalPath);
+        }
+
+        File.Delete(infoPath);
+        return true;
+    }
+
+    private static string? ReadTrashInfoPath(string infoPath, string trashDir)
+    {
+        if (!File.Exists(infoPath))
+        {
+            return null;
+        }
+
+        string? rawPath = File.ReadLines(infoPath)
+            .Select(l => l.Trim())
+            .Where(l => l.StartsWith("Path=", StringComparison.Ordinal))
+            .Select(l => l.Substring("Path=".Length))
+            .FirstOrDefault();
+        if (string.IsNullOrEmpty(rawPath))
+        {
+            return null;
+        }
+
+        string decoded = Uri.UnescapeDataString(rawPath);
+        if (Path.IsPathRooted(decoded))
+        {
+            return decoded;
+        }
+
+        string topDir = Path.GetFileName(trashDir).StartsWith(".Trash-", StringComparison.Ordinal)
+            ? Path.GetDirectoryName(trashDir) ?? "/"
+            : Path.GetDirectoryName(Path.GetDirectoryName(trashDir)) ?? "/";
+        return Path.Combine(topDir, decoded);
+    }
+
     public void Rename(string oldPath, string newName)
     {
         string? dir = Path.GetDirectoryName(oldPath);

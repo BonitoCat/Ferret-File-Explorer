@@ -472,7 +472,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public bool ShowDetailsPane
     {
         get => _showDetailsPane;
-        set => SetProperty(ref _showDetailsPane, value);
+        set
+        {
+            if (SetProperty(ref _showDetailsPane, value) && value)
+            {
+                UpdatePreview(ActivePane == 2 ? Pane2SelectedItem : SelectedItem);
+            }
+        }
     }
 
     public Bitmap? PreviewImage
@@ -664,6 +670,32 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         Logger.LogI($"Toggled dual pane: {IsDualPane}");
+    }
+
+    public void CloseActivePane()
+    {
+        if (!IsDualPane)
+        {
+            return;
+        }
+
+        if (ActivePane == 2 || _navigation2 == null || string.IsNullOrEmpty(_pane2Path))
+        {
+            ToggleDualPane();
+            return;
+        }
+
+        NavigationState promotedNavigation = _navigation2;
+        string promotedPath = _pane2Path;
+        string? promotedTrail = _pane2Trail;
+
+        IsDualPane = false;
+
+        _navigation = promotedNavigation;
+        _pane1Trail = promotedTrail;
+        LoadFolder(promotedPath);
+
+        Logger.LogI("Closed primary pane, promoted secondary pane");
     }
 
     public void TogglePathEditing()
@@ -1883,7 +1915,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                         continue;
                     }
 
-                    FileItemViewModel item = FileItemViewModel.FromEntry(entry);
+                    FileItemViewModel item = FileItemViewModel.FromEntry(entry, token);
                     if (clipMode == ClipboardMode.Cut && clipPaths.Contains(entry.FullPath))
                     {
                         item.IsCut = true;
@@ -2031,7 +2063,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                         continue;
                     }
 
-                    FileItemViewModel item = FileItemViewModel.FromEntry(entry);
+                    FileItemViewModel item = FileItemViewModel.FromEntry(entry, token);
                     if (clipMode == ClipboardMode.Cut && clipPaths.Contains(entry.FullPath))
                     {
                         item.IsCut = true;
@@ -2796,6 +2828,27 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Refresh();
     }
 
+    public void RestoreSelectedFromTrash(int pane)
+    {
+        List<FileItemViewModel> targets = (pane == 2 ? Pane2SelectedItems : SelectedItems).ToList();
+        FileItemViewModel? activeSelected = pane == 2 ? Pane2SelectedItem : SelectedItem;
+        if (targets.Count == 0 && activeSelected != null)
+        {
+            targets.Add(activeSelected);
+        }
+
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        List<string> paths = targets
+            .Select(t => t.FullPath)
+            .ToList();
+        _operationService.RestoreFromTrash(paths);
+        Refresh();
+    }
+
     public void RenameSelected(FileItemViewModel item, string newName)
     {
         if (string.IsNullOrWhiteSpace(newName) || item.Name == newName)
@@ -2970,10 +3023,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return crumbs;
     }
 
+    private const int PreviewDecodeWidth = 400;
+    private const int PreviewDebounceMs = 120;
+    private CancellationTokenSource? _previewCts;
+
     private void UpdatePreview(FileItemViewModel? selected)
     {
-        PreviewImage?.Dispose();
+        _previewCts?.Cancel();
+        _previewCts = null;
+
+        Bitmap? oldPreview = PreviewImage;
         PreviewImage = null;
+        oldPreview?.Dispose();
 
         if (selected == null)
         {
@@ -2989,17 +3050,35 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         PreviewDetails = details;
 
-        if (!selected.IsDirectory && (selected.Entry as FileEntry)?.FileType == FileType.Image)
+        if (!ShowDetailsPane || selected.IsDirectory || (selected.Entry as FileEntry)?.FileType != FileType.Image)
         {
-            try
-            {
-                PreviewImage = new Bitmap(selected.FullPath);
-            }
-            catch
-            {
-                PreviewImage = null;
-            }
+            return;
         }
+
+        CancellationTokenSource cts = new();
+        _previewCts = cts;
+        string path = selected.FullPath;
+        Task.Run(async () =>
+        {
+            await Task.Delay(PreviewDebounceMs, cts.Token);
+
+            Bitmap bitmap;
+            using (FileStream stream = File.OpenRead(path))
+            {
+                bitmap = Bitmap.DecodeToWidth(stream, PreviewDecodeWidth);
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (cts.IsCancellationRequested)
+                {
+                    bitmap.Dispose();
+                    return;
+                }
+
+                PreviewImage = bitmap;
+            });
+        }, cts.Token).ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     public void SetSelectedItems(IEnumerable<FileItemViewModel> selected)

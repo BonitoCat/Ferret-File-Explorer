@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace FileExplorer.Gui.Services;
 
@@ -7,6 +8,10 @@ public static class X11WindowHelper
 {
     private const string LibX11 = "libX11.so.6";
     private const int PropModeReplace = 0;
+    private const int ClientMessage = 33;
+    private const long PropertyChangeMask = 1L << 22;
+    private const int XEventSize = 192;
+    private const int ClientMessageDataSize = 20;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct XClassHint
@@ -34,6 +39,23 @@ public static class X11WindowHelper
         int mode,
         ref IntPtr data,
         int nelements);
+
+    [DllImport(LibX11, EntryPoint = "XChangeProperty")]
+    private static extern int XChangePropertyBytes(
+        IntPtr display,
+        IntPtr window,
+        IntPtr property,
+        IntPtr type,
+        int format,
+        int mode,
+        byte[] data,
+        int nelements);
+
+    [DllImport(LibX11)]
+    private static extern IntPtr XDefaultRootWindow(IntPtr display);
+
+    [DllImport(LibX11)]
+    private static extern int XSendEvent(IntPtr display, IntPtr window, bool propagate, IntPtr event_mask, IntPtr event_send);
 
     [DllImport(LibX11)]
     private static extern int XSetClassHint(IntPtr display, IntPtr window, ref XClassHint class_hints);
@@ -101,6 +123,76 @@ public static class X11WindowHelper
         finally
         {
             XCloseDisplay(display);
+        }
+    }
+
+    public static void CompleteStartupNotification(IntPtr xid)
+    {
+        string? startupId = Environment.GetEnvironmentVariable("DESKTOP_STARTUP_ID");
+        Environment.SetEnvironmentVariable("DESKTOP_STARTUP_ID", null);
+        if (!OperatingSystem.IsLinux() || xid == IntPtr.Zero || string.IsNullOrEmpty(startupId))
+        {
+            return;
+        }
+
+        IntPtr display = XOpenDisplay(null);
+        if (display == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            IntPtr startupIdAtom = XInternAtom(display, "_NET_STARTUP_ID", false);
+            IntPtr utf8Atom = XInternAtom(display, "UTF8_STRING", false);
+            byte[] idBytes = Encoding.UTF8.GetBytes(startupId);
+            XChangePropertyBytes(display, xid, startupIdAtom, utf8Atom, 8, PropModeReplace, idBytes, idBytes.Length);
+
+            string escapedId = startupId
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"");
+            SendStartupInfoMessage(display, xid, $"remove: ID=\"{escapedId}\"");
+        }
+        catch
+        {
+        }
+        finally
+        {
+            XCloseDisplay(display);
+        }
+    }
+
+    private static void SendStartupInfoMessage(IntPtr display, IntPtr xid, string message)
+    {
+        IntPtr root = XDefaultRootWindow(display);
+        IntPtr beginAtom = XInternAtom(display, "_NET_STARTUP_INFO_BEGIN", false);
+        IntPtr continueAtom = XInternAtom(display, "_NET_STARTUP_INFO", false);
+
+        byte[] payload = Encoding.UTF8.GetBytes(message + "\0");
+        IntPtr xEvent = Marshal.AllocHGlobal(XEventSize);
+        try
+        {
+            for (int offset = 0; offset < payload.Length; offset += ClientMessageDataSize)
+            {
+                byte[] zeroed = new byte[XEventSize];
+                Marshal.Copy(zeroed, 0, xEvent, XEventSize);
+
+                Marshal.WriteInt32(xEvent, 0, ClientMessage);
+                Marshal.WriteInt32(xEvent, 16, 1);
+                Marshal.WriteIntPtr(xEvent, 24, display);
+                Marshal.WriteIntPtr(xEvent, 32, xid);
+                Marshal.WriteIntPtr(xEvent, 40, offset == 0 ? beginAtom : continueAtom);
+                Marshal.WriteInt32(xEvent, 48, 8);
+
+                int chunkLength = Math.Min(ClientMessageDataSize, payload.Length - offset);
+                Marshal.Copy(payload, offset, xEvent + 56, chunkLength);
+
+                XSendEvent(display, root, false, new IntPtr(PropertyChangeMask), xEvent);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(xEvent);
         }
     }
 

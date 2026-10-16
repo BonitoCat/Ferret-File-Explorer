@@ -707,23 +707,44 @@
                                                VerticalAlignment="Center"/>
                                 </StackPanel>
 
-                                <Button Grid.Column="1"
-                                        Click="OnEmptyTrashClick"
-                                        Background="#C0392B"
-                                        Foreground="White"
-                                        Padding="12,5"
-                                        CornerRadius="6"
-                                        FontSize="12">
-                                    <StackPanel Orientation="Horizontal"
-                                                Spacing="6">
-                                        <Image Source="{markup:Icon Key=trash-empty}"
-                                               Width="14"
-                                               Height="14"/>
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="8">
+                                    <Button Click="OnRecoverPane1Click"
+                                            IsEnabled="{Binding SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                            Background="#2E5E3A"
+                                            Foreground="White"
+                                            Padding="12,5"
+                                            CornerRadius="6"
+                                            FontSize="12">
+                                        <StackPanel Orientation="Horizontal"
+                                                    Spacing="6">
+                                            <Image Source="{markup:Icon Key=trash-restore}"
+                                                   Width="14"
+                                                   Height="14"/>
 
-                                        <TextBlock Text="Empty Trash"
-                                                   VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </Button>
+                                            <TextBlock Text="Recover Selected"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+
+                                    <Button Click="OnEmptyTrashClick"
+                                            Background="#C0392B"
+                                            Foreground="White"
+                                            Padding="12,5"
+                                            CornerRadius="6"
+                                            FontSize="12">
+                                        <StackPanel Orientation="Horizontal"
+                                                    Spacing="6">
+                                            <Image Source="{markup:Icon Key=trash-empty}"
+                                                   Width="14"
+                                                   Height="14"/>
+
+                                            <TextBlock Text="Empty Trash"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
                             </Grid>
                         </Border>
 
@@ -990,6 +1011,7 @@
                                                             HorizontalAlignment="Center">
                                                     <TextBlock Text="{Binding Name}"
                                                                FontSize="13"
+                                                               Foreground="White"
                                                                TextAlignment="Center"
                                                                HorizontalAlignment="Center"
                                                                TextWrapping="Wrap"
@@ -1102,10 +1124,6 @@
                                                   Click="OnMenuExtractHereClick"
                                                   IsVisible="{Binding CanExtractSelection}"/>
 
-                                        <MenuItem x:Name="ListFolderColorMenu"
-                                                  Header="Folder Color"
-                                                  IsVisible="{Binding CanColorSelection}"/>
-
                                         <Separator IsVisible="{Binding IsItemSelected}"/>
 
                                         <MenuItem Header="{markup:Translate Key=Trash}"
@@ -1123,7 +1141,11 @@
                                         <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
                                                   Click="OnMenuBookmarkClick"
                                                   IsVisible="{Binding CanBookmarkSelection}"/>
-
+                                        
+                                        <MenuItem x:Name="ListFolderColorMenu"
+                                                  Header="Folder Color"
+                                                  IsVisible="{Binding CanColorSelection}"/>
+                                        
                                         <Separator/>
 
                                         <MenuItem Header="{markup:Translate Key=Properties}"
@@ -1139,13 +1161,13 @@
                                               Classes.drop-target="{Binding IsDropTarget}">
                                             <Panel Grid.Column="0"
                                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
-                                                <StackPanel Orientation="Horizontal"
-                                                            Classes="drop-zone"
-                                                            Background="Transparent"
-                                                            Spacing="8"
-                                                            VerticalAlignment="Center">
-                                                    <Panel Width="20"
+                                                <DockPanel Classes="drop-zone"
+                                                           Background="Transparent"
+                                                           VerticalAlignment="Center">
+                                                    <Panel DockPanel.Dock="Left"
+                                                           Width="20"
                                                            Height="20"
+                                                           Margin="0,0,8,0"
                                                            VerticalAlignment="Center">
                                                         <Image Source="{Binding Icon}"
                                                                Width="18"
@@ -1162,12 +1184,19 @@
                                                         </Border>
                                                     </Panel>
 
-                                                    <TextBlock Text="{Binding Name}"
-                                                               VerticalAlignment="Center"
-                                                               FontSize="13"
-                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <Border DockPanel.Dock="Right"
+                                                            Background="#444444"
+                                                            CornerRadius="4"
+                                                            Padding="4,1"
+                                                            IsVisible="{Binding IsHidden}"
+                                                            Margin="6,0,0,0">
+                                                        <TextBlock Text="{markup:Translate Key=Hidden}"
+                                                                   Foreground="#CCCCCC"
+                                                                   FontSize="10"/>
+                                                    </Border>
 
-                                                    <Border Background="#D35400"
+                                                    <Border DockPanel.Dock="Right"
+                                                            Background="#D35400"
                                                             CornerRadius="4"
                                                             Padding="4,1"
                                                             IsVisible="{Binding IsAccessDenied}"
@@ -1178,16 +1207,11 @@
                                                                    FontWeight="Bold"/>
                                                     </Border>
 
-                                                    <Border Background="#444444"
-                                                            CornerRadius="4"
-                                                            Padding="4,1"
-                                                            IsVisible="{Binding IsHidden}"
-                                                            Margin="6,0,0,0">
-                                                        <TextBlock Text="{markup:Translate Key=Hidden}"
-                                                                   Foreground="#CCCCCC"
-                                                                   FontSize="10"/>
-                                                    </Border>
-                                                </StackPanel>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="13"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </DockPanel>
                                             </Panel>
 
                                             <TextBlock Grid.Column="1"
@@ -1274,16 +1298,30 @@
                                                VerticalAlignment="Center"/>
                                 </StackPanel>
 
-                                <Button Grid.Column="1"
-                                        Click="OnEmptyTrashClick"
-                                        Background="#C0392B"
-                                        Foreground="White"
-                                        Padding="10,4"
-                                        CornerRadius="5"
-                                        FontSize="11">
-                                    <TextBlock Text="Empty Trash"
-                                               VerticalAlignment="Center"/>
-                                </Button>
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="6">
+                                    <Button Click="OnRecoverPane2Click"
+                                            IsEnabled="{Binding Pane2SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                            Background="#2E5E3A"
+                                            Foreground="White"
+                                            Padding="10,4"
+                                            CornerRadius="5"
+                                            FontSize="11">
+                                        <TextBlock Text="Recover Selected"
+                                                   VerticalAlignment="Center"/>
+                                    </Button>
+
+                                    <Button Click="OnEmptyTrashClick"
+                                            Background="#C0392B"
+                                            Foreground="White"
+                                            Padding="10,4"
+                                            CornerRadius="5"
+                                            FontSize="11">
+                                        <TextBlock Text="Empty Trash"
+                                                   VerticalAlignment="Center"/>
+                                    </Button>
+                                </StackPanel>
                             </Grid>
                         </Border>
 
@@ -1548,6 +1586,7 @@
                                                             HorizontalAlignment="Center">
                                                     <TextBlock Text="{Binding Name}"
                                                                FontSize="13"
+                                                               Foreground="White"
                                                                TextAlignment="Center"
                                                                HorizontalAlignment="Center"
                                                                TextWrapping="Wrap"
@@ -1697,13 +1736,13 @@
                                               Classes.drop-target="{Binding IsDropTarget}">
                                             <Panel Grid.Column="0"
                                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
-                                                <StackPanel Orientation="Horizontal"
-                                                            Classes="drop-zone"
-                                                            Background="Transparent"
-                                                            Spacing="8"
-                                                            VerticalAlignment="Center">
-                                                    <Panel Width="20"
+                                                <DockPanel Classes="drop-zone"
+                                                           Background="Transparent"
+                                                           VerticalAlignment="Center">
+                                                    <Panel DockPanel.Dock="Left"
+                                                           Width="20"
                                                            Height="20"
+                                                           Margin="0,0,8,0"
                                                            VerticalAlignment="Center">
                                                         <Image Source="{Binding Icon}"
                                                                Width="18"
@@ -1720,12 +1759,19 @@
                                                         </Border>
                                                     </Panel>
 
-                                                    <TextBlock Text="{Binding Name}"
-                                                               VerticalAlignment="Center"
-                                                               FontSize="13"
-                                                               TextTrimming="CharacterEllipsis"/>
+                                                    <Border DockPanel.Dock="Right"
+                                                            Background="#444444"
+                                                            CornerRadius="4"
+                                                            Padding="4,1"
+                                                            IsVisible="{Binding IsHidden}"
+                                                            Margin="6,0,0,0">
+                                                        <TextBlock Text="{markup:Translate Key=Hidden}"
+                                                                   Foreground="#CCCCCC"
+                                                                   FontSize="10"/>
+                                                    </Border>
 
-                                                    <Border Background="#D35400"
+                                                    <Border DockPanel.Dock="Right"
+                                                            Background="#D35400"
                                                             CornerRadius="4"
                                                             Padding="4,1"
                                                             IsVisible="{Binding IsAccessDenied}"
@@ -1736,16 +1782,11 @@
                                                                    FontWeight="Bold"/>
                                                     </Border>
 
-                                                    <Border Background="#444444"
-                                                            CornerRadius="4"
-                                                            Padding="4,1"
-                                                            IsVisible="{Binding IsHidden}"
-                                                            Margin="6,0,0,0">
-                                                        <TextBlock Text="{markup:Translate Key=Hidden}"
-                                                                   Foreground="#CCCCCC"
-                                                                   FontSize="10"/>
-                                                    </Border>
-                                                </StackPanel>
+                                                    <TextBlock Text="{Binding Name}"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="13"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </DockPanel>
                                             </Panel>
 
                                             <TextBlock Grid.Column="1"
