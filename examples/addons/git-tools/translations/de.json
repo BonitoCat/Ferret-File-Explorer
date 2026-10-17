@@ -1,0 +1,7 @@
+{
+  "AddonName": "Git-Werkzeuge",
+  "AddonDescription": "Zeigt den Git-Status des aktuellen Ordners an und initialisiert neue Repositories.",
+  "GitStatus": "Git-Status",
+  "GitInit": "Git-Repository initialisieren",
+  "GitInitConfirm": "Hier ein neues Git-Repository initialisieren?"
+}

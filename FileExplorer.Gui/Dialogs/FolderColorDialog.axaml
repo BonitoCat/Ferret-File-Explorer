@@ -1,0 +1,73 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.FolderColorDialog"
+        Title="{markup:Translate Key=CustomFolderColor}"
+        Width="620"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Window.Styles>
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"/>
+    </Window.Styles>
+
+    <Grid RowDefinitions="*,Auto"
+          Margin="20">
+
+        <Grid Grid.Row="0"
+              ColumnDefinitions="*,Auto">
+
+            <ColorView Grid.Column="0"
+                       x:Name="Picker"
+                       ColorSpectrumShape="Ring"
+                       IsAlphaEnabled="False"
+                       IsAlphaVisible="False"
+                       ColorChanged="OnColorChanged"/>
+
+            <StackPanel Grid.Column="1"
+                        Margin="20,0,0,0"
+                        Spacing="8"
+                        VerticalAlignment="Top">
+                <TextBlock Text="{markup:Translate Key=Preview}"
+                           FontSize="12"
+                           Foreground="#8A8A8A"
+                           HorizontalAlignment="Center"/>
+
+                <Image x:Name="PreviewImage"
+                       Width="96"
+                       Height="96"/>
+
+                <TextBlock x:Name="HexText"
+                           FontFamily="monospace"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10"
+                    Margin="0,16,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button Content="{markup:Translate Key=Apply}"
+                    Click="OnApplyClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

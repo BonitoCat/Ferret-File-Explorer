@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=File Explorer
+GenericName=File Manager
+Comment=Nemo-inspired dark desktop file explorer
+Exec=AppRun %U
+Icon=icon
+Terminal=false
+Type=Application
+StartupNotify=true
+StartupWMClass=fe-file-explorer
+Categories=System;Utility;FileManager;
+MimeType=inode/directory;
+Keywords=files;folder;explorer;browser;manager;

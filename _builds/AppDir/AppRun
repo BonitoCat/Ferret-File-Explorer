@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+HERE="$(dirname "$(readlink -f "$0")")"
+CLI="$HERE/usr/bin/fe"
+GUI="$HERE/usr/bin/fe-gui"
+
+if [ "$1" = "--cli" ] || [ "$1" = "-c" ]; then
+    shift
+    exec "$CLI" "$@"
+fi
+
+if [ "$1" = "--gui" ] || [ "$1" = "-g" ] || [ ! -t 1 ]; then
+    if [ "$1" = "--gui" ] || [ "$1" = "-g" ]; then
+        shift
+    fi
+    if [ -x "$GUI" ]; then
+        exec "$GUI" "$@"
+    fi
+fi
+
+exec "$CLI" "$@"

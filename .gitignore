@@ -55,7 +55,5 @@ nunit-*.xml
 
 # Rider
 .idea
-FileExplorer/builds/fe-linux-x64/usr/local/bin/*
-FileExplorer/builds/fe-linux-x64.deb
-FileExplorer/builds/fe-arm64
-FileExplorer/builds/fe.exe
+_builds/fe-linux-x64/usr/local/bin/
+_builds/output

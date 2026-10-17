@@ -1,0 +1,119 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.ConflictDialog"
+        Title="{markup:Translate Key=ConflictTitle}"
+        Width="600"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto"
+          Margin="20">
+
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Spacing="14">
+
+            <Image Source="{markup:Icon Key=warning}"
+                   Width="36"
+                   Height="36"
+                   VerticalAlignment="Top"/>
+
+            <StackPanel Spacing="6"
+                        MaxWidth="500">
+
+                <TextBlock x:Name="HeaderText"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"/>
+
+                <TextBlock x:Name="MessageText"
+                           FontSize="13"
+                           Foreground="#AAAAAA"
+                           TextWrapping="Wrap"/>
+            </StackPanel>
+        </StackPanel>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="Auto,*"
+              RowDefinitions="Auto,Auto"
+              Margin="50,16,0,0">
+
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=ConflictOriginal}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Margin="0,0,14,6"/>
+
+            <TextBlock x:Name="OriginalInfoText"
+                       Grid.Row="0"
+                       Grid.Column="1"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,6"/>
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=ConflictIncoming}"
+                       FontSize="12"
+                       FontWeight="SemiBold"
+                       Margin="0,0,14,0"/>
+
+            <TextBlock x:Name="IncomingInfoText"
+                       Grid.Row="1"
+                       Grid.Column="1"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       TextWrapping="Wrap"/>
+        </Grid>
+
+        <CheckBox x:Name="ApplyToAllCheckBox"
+                  Grid.Row="2"
+                  Content="{markup:Translate Key=ConflictApplyToAll}"
+                  FontSize="13"
+                  Margin="50,14,0,0"/>
+
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,20,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button Content="{markup:Translate Key=ConflictSkip}"
+                    Click="OnSkipClick"
+                    Background="#333333"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button Content="{markup:Translate Key=ConflictDuplicate}"
+                    Click="OnDuplicateClick"
+                    Background="#333333"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button x:Name="ReplaceButton"
+                    Content="{markup:Translate Key=ConflictReplace}"
+                    Click="OnReplaceClick"
+                    Background="#C0392B"
+                    Foreground="White"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button x:Name="MergeButton"
+                    Content="{markup:Translate Key=ConflictMerge}"
+                    Click="OnMergeClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    MinWidth="70"
+                    HorizontalContentAlignment="Center"/>
+        </StackPanel>
+    </Grid>
+</Window>

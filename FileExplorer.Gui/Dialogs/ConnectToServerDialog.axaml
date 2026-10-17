@@ -1,0 +1,237 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.ConnectToServerDialog"
+        Title="{markup:Translate Key=ConnectToServer}"
+        Width="460"
+        Height="470"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto"
+          Margin="20">
+
+        <StackPanel Grid.Row="0"
+                    Spacing="4"
+                    Margin="0,0,0,16">
+
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+
+                <Image Source="{markup:Icon Key=network}"
+                       Width="20"
+                       Height="20"/>
+
+                <TextBlock Text="{markup:Translate Key=ConnectToServer}"
+                           FontSize="15"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+
+            <TextBlock Text="{markup:Translate Key=ConnectDescription}"
+                       FontSize="12"
+                       Foreground="#888888"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto">
+
+            <Grid ColumnDefinitions="110,*"
+                  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                  Margin="0,0,8,0">
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Text="{markup:Translate Key=Server}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Margin="0,6"/>
+
+                <TextBox Grid.Row="0"
+                         Grid.Column="1"
+                         x:Name="ServerBox"
+                         CornerRadius="6"
+                         FontSize="12"
+                         Watermark="{markup:Translate Key=ServerWatermark}"
+                         Margin="0,4"/>
+
+                <TextBlock Grid.Row="1"
+                           Grid.Column="0"
+                           Text="{markup:Translate Key=Protocol}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Margin="0,6"/>
+
+                <ComboBox Grid.Row="1"
+                          Grid.Column="1"
+                          x:Name="ProtocolComboBox"
+                          HorizontalAlignment="Stretch"
+                          CornerRadius="6"
+                          FontSize="12"
+                          Margin="0,4">
+
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolSftp}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolSmb}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolFtp}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolFtpAnonymous}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolDav}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolDavs}"/>
+                </ComboBox>
+
+                <TextBlock Grid.Row="2"
+                           Grid.Column="0"
+                           Text="{markup:Translate Key=Port}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Margin="0,6"/>
+
+                <TextBox Grid.Row="2"
+                         Grid.Column="1"
+                         x:Name="PortBox"
+                         CornerRadius="6"
+                         FontSize="12"
+                         Text="22"
+                         Margin="0,4"/>
+
+                <TextBlock Grid.Row="3"
+                           Grid.Column="0"
+                           Text="{markup:Translate Key=Folder}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Margin="0,6"/>
+
+                <TextBox Grid.Row="3"
+                         Grid.Column="1"
+                         x:Name="PathBox"
+                         CornerRadius="6"
+                         FontSize="12"
+                         Watermark="{markup:Translate Key=FolderWatermark}"
+                         Margin="0,4"/>
+
+                <TextBlock Grid.Row="4"
+                           Grid.Column="0"
+                           x:Name="DomainLabel"
+                           Text="{markup:Translate Key=Domain}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Margin="0,6"
+                           IsVisible="False"/>
+
+                <TextBox Grid.Row="4"
+                         Grid.Column="1"
+                         x:Name="DomainBox"
+                         CornerRadius="6"
+                         FontSize="12"
+                         Watermark="{markup:Translate Key=DomainWatermark}"
+                         Margin="0,4"
+                         IsVisible="False"/>
+
+                <TextBlock Grid.Row="5"
+                           Grid.Column="0"
+                           x:Name="UserLabel"
+                           Text="{markup:Translate Key=Username}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Margin="0,6"/>
+
+                <TextBox Grid.Row="5"
+                         Grid.Column="1"
+                         x:Name="UserBox"
+                         CornerRadius="6"
+                         FontSize="12"
+                         Watermark="{markup:Translate Key=UsernameWatermark}"
+                         Margin="0,4"/>
+
+                <TextBlock Grid.Row="6"
+                           Grid.Column="0"
+                           x:Name="PasswordLabel"
+                           Text="{markup:Translate Key=Password}"
+                           VerticalAlignment="Center"
+                           FontSize="12"
+                           Margin="0,6"/>
+
+                <TextBox Grid.Row="6"
+                         Grid.Column="1"
+                         x:Name="PasswordBox"
+                         CornerRadius="6"
+                         FontSize="12"
+                         PasswordChar="•"
+                         Watermark="{markup:Translate Key=PasswordWatermark}"
+                         Margin="0,4">
+                    <TextBox.InnerRightContent>
+                        <Button x:Name="TogglePasswordButton"
+                                Width="30"
+                                Height="30"
+                                Margin="0,0,2,0"
+                                Padding="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Click="OnTogglePasswordClick">
+                            <Image x:Name="TogglePasswordIcon"
+                                   Width="16"
+                                   Height="16"/>
+                        </Button>
+                    </TextBox.InnerRightContent>
+                </TextBox>
+
+                <CheckBox Grid.Row="7"
+                          Grid.Column="1"
+                          x:Name="AnonymousCheckBox"
+                          Content="{markup:Translate Key=Anonymous}"
+                          FontSize="12"
+                          Margin="0,6"/>
+            </Grid>
+        </ScrollViewer>
+
+        <StackPanel Grid.Row="2"
+                    Spacing="6"
+                    Margin="0,10,0,0">
+
+            <ProgressBar x:Name="ProgressBar"
+                         IsIndeterminate="True"
+                         Height="3"
+                         IsVisible="False"/>
+
+            <TextBlock x:Name="StatusLabel"
+                       Foreground="#FF6B6B"
+                       FontSize="12"
+                       TextWrapping="Wrap"
+                       IsVisible="False"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="3"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,16,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333338"
+                    MinWidth="80"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"
+                    CornerRadius="6"/>
+
+            <Button Content="{markup:Translate Key=Connect}"
+                    x:Name="ConnectButton"
+                    Click="OnConnectClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    MinWidth="85"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"
+                    CornerRadius="6"/>
+        </StackPanel>
+    </Grid>
+</Window>

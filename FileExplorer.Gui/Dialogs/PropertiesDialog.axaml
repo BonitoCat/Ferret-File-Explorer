@@ -1,0 +1,623 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.PropertiesDialog"
+        Title="{markup:Translate Key=Properties}"
+        Width="580"
+        Height="640"
+        MinWidth="480"
+        MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Background="#242426"
+        Foreground="#E0E0E0"
+        Focusable="True">
+
+    <Window.Styles>
+        <Style Selector="TabItem">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="MinHeight" Value="34"/>
+            <Setter Property="Padding" Value="12,4"/>
+        </Style>
+
+        <Style Selector="TextBlock.label">
+            <Setter Property="Foreground" Value="#8A8A8A"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalAlignment" Value="Top"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+        </Style>
+
+        <Style Selector="SelectableTextBlock.value">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#777777"/>
+            <Setter Property="Margin" Value="0,6,0,2"/>
+        </Style>
+
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#1C1C1E"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+
+        <Style Selector="Button.small">
+            <Setter Property="Padding" Value="8,3"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Background" Value="#333333"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="#E57373"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto"
+          Margin="20">
+
+        <Grid Grid.Row="0"
+              ColumnDefinitions="Auto,*"
+              Margin="0,0,0,14">
+
+            <Image Grid.Column="0"
+                   x:Name="ItemIcon"
+                   Width="56"
+                   Height="56"
+                   Margin="0,0,16,0"
+                   VerticalAlignment="Center"/>
+
+            <StackPanel Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Spacing="4">
+
+                <TextBox x:Name="NameBox"
+                         FontSize="15"
+                         FontWeight="SemiBold"
+                         Background="#1C1C1E"
+                         BorderBrush="#383838"
+                         KeyDown="OnNameBoxKeyDown"/>
+
+                <TextBlock x:Name="TypeLabel"
+                           FontSize="12"
+                           Foreground="#888888"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <TextBlock x:Name="RenameErrorText"
+                           Classes="error"
+                           IsVisible="False"/>
+            </StackPanel>
+        </Grid>
+
+        <TabControl Grid.Row="1"
+                    x:Name="Tabs"
+                    Padding="0,8,0,0">
+
+            <TabItem Header="{markup:Translate Key=General}">
+                <ScrollViewer>
+                    <StackPanel Spacing="12">
+
+                        <Border Classes="card">
+                            <Grid x:Name="GeneralGrid"
+                                  ColumnDefinitions="120,*"
+                                  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                                  Classes="rows"
+                                  Margin="0,0,0,-10">
+
+                                <TextBlock Grid.Row="0"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=Size}"/>
+
+                                <StackPanel Grid.Row="0"
+                                            Grid.Column="1"
+                                            Spacing="2">
+                                    <SelectableTextBlock x:Name="SizeValue"
+                                                         Classes="value"/>
+
+                                    <TextBlock x:Name="SizeStatusText"
+                                               FontSize="11"
+                                               Foreground="#777777"
+                                               IsVisible="False"/>
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           x:Name="ContentsLabel"
+                                           Text="{markup:Translate Key=Contents}"/>
+
+                                <SelectableTextBlock Grid.Row="1"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="ContentsValue"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=LocationLabel}"/>
+
+                                <Grid Grid.Row="2"
+                                      Grid.Column="1"
+                                      ColumnDefinitions="*,Auto">
+                                    <SelectableTextBlock Grid.Column="0"
+                                                         Classes="value"
+                                                         x:Name="LocationValue"/>
+
+                                    <Button Grid.Column="1"
+                                            Classes="small"
+                                            Content="{markup:Translate Key=CopyPath}"
+                                            Margin="8,0,0,0"
+                                            VerticalAlignment="Top"
+                                            Click="OnCopyPathClick"/>
+                                </Grid>
+
+                                <TextBlock Grid.Row="3"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           x:Name="LinkLabel"
+                                           Text="{markup:Translate Key=LinkTarget}"/>
+
+                                <SelectableTextBlock Grid.Row="3"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="LinkValue"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           x:Name="DimensionsLabel"
+                                           Text="{markup:Translate Key=Dimensions}"/>
+
+                                <SelectableTextBlock Grid.Row="4"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="DimensionsValue"/>
+
+                                <TextBlock Grid.Row="5"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           x:Name="OpensWithLabel"
+                                           Text="{markup:Translate Key=OpensWith}"/>
+
+                                <SelectableTextBlock Grid.Row="5"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="OpensWithValue"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Classes="card">
+                            <Grid ColumnDefinitions="120,*"
+                                  RowDefinitions="Auto,Auto,Auto"
+                                  Classes="rows"
+                                  Margin="0,0,0,-10">
+
+                                <TextBlock Grid.Row="0"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=Created}"/>
+
+                                <SelectableTextBlock Grid.Row="0"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="CreatedValue"/>
+
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=Modified}"/>
+
+                                <SelectableTextBlock Grid.Row="1"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="ModifiedValue"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=Accessed}"/>
+
+                                <SelectableTextBlock Grid.Row="2"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="AccessedValue"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Classes="card">
+                            <StackPanel Spacing="8">
+                                <Grid ColumnDefinitions="120,*">
+                                    <TextBlock Grid.Column="0"
+                                               Classes="label"
+                                               Text="{markup:Translate Key=Volume}"/>
+
+                                    <SelectableTextBlock Grid.Column="1"
+                                                         Classes="value"
+                                                         x:Name="VolumeValue"/>
+                                </Grid>
+
+                                <ProgressBar x:Name="VolumeBar"
+                                             Height="6"
+                                             MinHeight="6"
+                                             CornerRadius="3"
+                                             Minimum="0"
+                                             Maximum="100"
+                                             Foreground="#3584E4"
+                                             Background="#333333"/>
+
+                                <TextBlock x:Name="VolumeFreeText"
+                                           FontSize="12"
+                                           Foreground="#8A8A8A"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="{markup:Translate Key=Permissions}">
+                <ScrollViewer>
+                    <StackPanel Spacing="12">
+
+                        <Border Classes="card">
+                            <Grid ColumnDefinitions="120,*"
+                                  RowDefinitions="Auto,Auto,Auto"
+                                  Classes="rows"
+                                  Margin="0,0,0,-10">
+
+                                <TextBlock Grid.Row="0"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=Owner}"/>
+
+                                <SelectableTextBlock Grid.Row="0"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="OwnerValue"/>
+
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Margin="0,6,12,0"
+                                           Text="{markup:Translate Key=Group}"/>
+
+                                <ComboBox Grid.Row="1"
+                                          Grid.Column="1"
+                                          x:Name="GroupCombo"
+                                          MinWidth="200"
+                                          SelectionChanged="OnGroupChanged"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=YourAccess}"/>
+
+                                <SelectableTextBlock Grid.Row="2"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="YourAccessValue"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Classes="card">
+                            <Grid ColumnDefinitions="120,*"
+                                  RowDefinitions="Auto,Auto,Auto,Auto"
+                                  Classes="rows"
+                                  Margin="0,0,0,-10">
+
+                                <TextBlock Grid.Row="0"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Margin="0,6,12,0"
+                                           Text="{markup:Translate Key=OwnerAccess}"/>
+
+                                <ComboBox Grid.Row="0"
+                                          Grid.Column="1"
+                                          x:Name="OwnerAccessCombo"
+                                          MinWidth="220"
+                                          PlaceholderText="{markup:Translate Key=Custom}"
+                                          SelectionChanged="OnAccessComboChanged"/>
+
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Margin="0,6,12,0"
+                                           Text="{markup:Translate Key=GroupAccess}"/>
+
+                                <ComboBox Grid.Row="1"
+                                          Grid.Column="1"
+                                          x:Name="GroupAccessCombo"
+                                          MinWidth="220"
+                                          PlaceholderText="{markup:Translate Key=Custom}"
+                                          SelectionChanged="OnAccessComboChanged"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Margin="0,6,12,0"
+                                           Text="{markup:Translate Key=OthersAccess}"/>
+
+                                <ComboBox Grid.Row="2"
+                                          Grid.Column="1"
+                                          x:Name="OthersAccessCombo"
+                                          MinWidth="220"
+                                          PlaceholderText="{markup:Translate Key=Custom}"
+                                          SelectionChanged="OnAccessComboChanged"/>
+
+                                <CheckBox Grid.Row="3"
+                                          Grid.Column="1"
+                                          x:Name="ExecutableCheckBox"
+                                          Content="{markup:Translate Key=AllowExecuting}"
+                                          IsCheckedChanged="OnExecutableChanged"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Classes="section"
+                                           Text="{markup:Translate Key=Advanced}"/>
+
+                                <Grid ColumnDefinitions="120,Auto,*">
+                                    <TextBlock Grid.Column="0"
+                                               Classes="label"
+                                               Margin="0,6,12,0"
+                                               Text="{markup:Translate Key=Mode}"/>
+
+                                    <TextBox Grid.Column="1"
+                                             x:Name="OctalBox"
+                                             Width="80"
+                                             FontFamily="monospace"
+                                             KeyDown="OnOctalKeyDown"
+                                             LostFocus="OnOctalLostFocus"/>
+
+                                    <TextBlock Grid.Column="2"
+                                               x:Name="SymbolicText"
+                                               FontFamily="monospace"
+                                               FontSize="13"
+                                               Margin="12,0,0,0"
+                                               VerticalAlignment="Center"/>
+                                </Grid>
+
+                                <WrapPanel Orientation="Horizontal">
+                                    <CheckBox x:Name="SetUidCheckBox"
+                                              Content="{markup:Translate Key=SetUserId}"
+                                              Margin="0,0,16,0"
+                                              IsCheckedChanged="OnSpecialBitChanged"/>
+
+                                    <CheckBox x:Name="SetGidCheckBox"
+                                              Content="{markup:Translate Key=SetGroupId}"
+                                              Margin="0,0,16,0"
+                                              IsCheckedChanged="OnSpecialBitChanged"/>
+
+                                    <CheckBox x:Name="StickyCheckBox"
+                                              Content="{markup:Translate Key=Sticky}"
+                                              IsCheckedChanged="OnSpecialBitChanged"/>
+                                </WrapPanel>
+
+                                <Button x:Name="ApplyRecursiveButton"
+                                        Classes="small"
+                                        Content="{markup:Translate Key=ApplyPermissionsRecursive}"
+                                        Click="OnApplyRecursiveClick"/>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock x:Name="PermissionsErrorText"
+                                   Classes="error"
+                                   IsVisible="False"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem x:Name="OpenWithTab"
+                     Header="{markup:Translate Key=OpenWithTab}">
+                <Grid RowDefinitions="Auto,*,Auto"
+                      Classes="rows"
+                      Margin="0,0,0,-10">
+
+                    <TextBlock Grid.Row="0"
+                               x:Name="OpenWithHeader"
+                               FontSize="13"
+                               Foreground="#AAAAAA"
+                               TextWrapping="Wrap"/>
+
+                    <ListBox Grid.Row="1"
+                             x:Name="AppsListBox"
+                             Background="#1C1C1E"
+                             CornerRadius="8"
+                             DoubleTapped="OnAppDoubleTapped"/>
+
+                    <StackPanel Grid.Row="2"
+                                Orientation="Horizontal"
+                                Spacing="8">
+                        <Button Classes="small"
+                                Content="{markup:Translate Key=SetAsDefault}"
+                                Click="OnSetDefaultAppClick"/>
+
+                        <Button Classes="small"
+                                Content="{markup:Translate Key=OpenWithSelected}"
+                                Click="OnOpenWithSelectedClick"/>
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="{markup:Translate Key=Details}">
+                <ScrollViewer>
+                    <StackPanel Spacing="12">
+
+                        <Border Classes="card">
+                            <Grid ColumnDefinitions="120,*"
+                                  RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto"
+                                  Classes="rows"
+                                  Margin="0,0,0,-10">
+
+                                <TextBlock Grid.Row="0"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=MimeType}"/>
+
+                                <SelectableTextBlock Grid.Row="0"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="MimeValue"/>
+
+                                <TextBlock Grid.Row="1"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=SizeOnDisk}"/>
+
+                                <SelectableTextBlock Grid.Row="1"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="DiskSizeValue"/>
+
+                                <TextBlock Grid.Row="2"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=Inode}"/>
+
+                                <SelectableTextBlock Grid.Row="2"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="InodeValue"/>
+
+                                <TextBlock Grid.Row="3"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=HardLinks}"/>
+
+                                <SelectableTextBlock Grid.Row="3"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="LinksValue"/>
+
+                                <TextBlock Grid.Row="4"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=MountPoint}"/>
+
+                                <SelectableTextBlock Grid.Row="4"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="MountValue"/>
+
+                                <TextBlock Grid.Row="5"
+                                           Grid.Column="0"
+                                           Classes="label"
+                                           Text="{markup:Translate Key=Filesystem}"/>
+
+                                <SelectableTextBlock Grid.Row="5"
+                                                     Grid.Column="1"
+                                                     Classes="value"
+                                                     x:Name="FileSystemValue"/>
+                            </Grid>
+                        </Border>
+
+                        <Border Classes="card"
+                                x:Name="ChecksumCard">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0"
+                                               Classes="section"
+                                               Text="{markup:Translate Key=Checksums}"/>
+
+                                    <Button Grid.Column="1"
+                                            x:Name="ChecksumButton"
+                                            Classes="small"
+                                            Content="{markup:Translate Key=Calculate}"
+                                            Click="OnCalculateChecksumsClick"/>
+                                </Grid>
+
+                                <Grid x:Name="ChecksumGrid"
+                                      ColumnDefinitions="70,*,Auto"
+                                      RowDefinitions="Auto,Auto,Auto"
+                                      Classes="rows"
+                                      Margin="0,0,0,-8">
+
+                                    <TextBlock Grid.Row="0"
+                                               Grid.Column="0"
+                                               Classes="label"
+                                               Text="MD5"/>
+
+                                    <SelectableTextBlock Grid.Row="0"
+                                                         Grid.Column="1"
+                                                         x:Name="Md5Value"
+                                                         FontFamily="monospace"
+                                                         FontSize="12"
+                                                         TextWrapping="Wrap"
+                                                         Text="-"/>
+
+                                    <Button Grid.Row="0"
+                                            Grid.Column="2"
+                                            Classes="small"
+                                            Content="{markup:Translate Key=Copy}"
+                                            Tag="md5"
+                                            Margin="8,0,0,0"
+                                            Click="OnCopyChecksumClick"/>
+
+                                    <TextBlock Grid.Row="1"
+                                               Grid.Column="0"
+                                               Classes="label"
+                                               Text="SHA-1"/>
+
+                                    <SelectableTextBlock Grid.Row="1"
+                                                         Grid.Column="1"
+                                                         x:Name="Sha1Value"
+                                                         FontFamily="monospace"
+                                                         FontSize="12"
+                                                         TextWrapping="Wrap"
+                                                         Text="-"/>
+
+                                    <Button Grid.Row="1"
+                                            Grid.Column="2"
+                                            Classes="small"
+                                            Content="{markup:Translate Key=Copy}"
+                                            Tag="sha1"
+                                            Margin="8,0,0,0"
+                                            Click="OnCopyChecksumClick"/>
+
+                                    <TextBlock Grid.Row="2"
+                                               Grid.Column="0"
+                                               Classes="label"
+                                               Text="SHA-256"/>
+
+                                    <SelectableTextBlock Grid.Row="2"
+                                                         Grid.Column="1"
+                                                         x:Name="Sha256Value"
+                                                         FontFamily="monospace"
+                                                         FontSize="12"
+                                                         TextWrapping="Wrap"
+                                                         Text="-"/>
+
+                                    <Button Grid.Row="2"
+                                            Grid.Column="2"
+                                            Classes="small"
+                                            Content="{markup:Translate Key=Copy}"
+                                            Tag="sha256"
+                                            Margin="8,0,0,0"
+                                            Click="OnCopyChecksumClick"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <Button Grid.Row="2"
+                x:Name="CloseButton"
+                Content="{markup:Translate Key=Close}"
+                Click="OnCloseClick"
+                Background="#3584E4"
+                Foreground="White"
+                HorizontalAlignment="Right"
+                Margin="0,14,0,0"
+                Padding="20,6"/>
+    </Grid>
+</Window>

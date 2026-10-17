@@ -90,11 +90,6 @@ public static class MimeUtils
             result = result.Trim();
         }
 
-        if (IsArchiveMime(result))
-        {
-            return null;
-        }
-
         PathCache[path] = result;
         return result;
     }
@@ -168,13 +163,34 @@ public static class MimeUtils
 
             case ".pdf":
                 return "application/pdf";
+                
+            case ".zip":
+                return "application/zip";
+            case ".7z":
+                return "application/x-7z-compressed";
+            case ".rar":
+                return "application/x-rar";
+            case ".tar":
+                return "application/x-tar";
+            case ".gz":
+                return "application/gzip";
+            case ".bz2":
+                return "application/x-bzip2";
+            case ".xz":
+                return "application/x-xz";
+            case ".zst":
+                return "application/zstd";
+            case ".lz4":
+                return "application/x-lz4";
+            case ".iso":
+                return "application/x-iso9660-image";
 
             default:
                 return null;
         }
     }
     
-    private static bool IsArchiveMime(string? mime)
+    public static bool IsArchiveMime(string? mime)
     {
         if (string.IsNullOrWhiteSpace(mime))
         {

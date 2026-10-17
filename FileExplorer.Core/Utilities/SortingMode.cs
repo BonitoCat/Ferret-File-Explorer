@@ -1,4 +1,4 @@
-namespace FileExplorer.Core.Models;
+namespace FileExplorer.Core.Utilities;
 
 public enum SortingMode
 {

@@ -2,8 +2,1478 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        xmlns:vm="using:FileExplorer.Gui.ViewModels"
+        xmlns:m="using:FileExplorer.Gui.Models"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:controls="using:FileExplorer.Gui.Controls"
+        mc:Ignorable="d"
+        d:DesignWidth="1100"
+        d:DesignHeight="700"
         x:Class="FileExplorer.Gui.MainWindow"
-        Title="FileExplorer.Gui">
-    Welcome to Avalonia!
+        x:DataType="vm:MainWindowViewModel"
+        KeyDown="OnWindowKeyDown"
+        Title="Ferret"
+        Icon="/Assets/folder.ico"
+        Width="1050"
+        Height="700"
+        MinWidth="650"
+        MinHeight="420"
+        DragDrop.AllowDrop="True"
+        Background="#1E1E1E"
+        Foreground="#E0E0E0">
+    
+    <Window.Styles>
+        <Style Selector="Border.symlink-badge">
+            <Setter Property="Background" Value="#2B2B30"/>
+            <Setter Property="BorderBrush" Value="#E0E0E0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style Selector="Border.symlink-badge > Path">
+            <Setter Property="Stroke" Value="#E0E0E0"/>
+            <Setter Property="StrokeLineCap" Value="Round"/>
+            <Setter Property="StrokeJoin" Value="Round"/>
+        </Style>
+
+        <Style Selector="Button.view-toggle">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Button.view-toggle.active">
+            <Setter Property="Background" Value="#383838"/>
+        </Style>
+
+        <Style Selector="Button.crumb">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Button.crumb.current">
+            <Setter Property="Background" Value="#383838"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <Style Selector="Button.crumb-scroll">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="4,3"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.crumb-scroll:disabled /template/ ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Button.crumb-scroll:disabled">
+            <Setter Property="Opacity" Value="0.35"/>
+        </Style>
+
+        <Style Selector="Border.drop-target">
+            <Setter Property="Background" Value="#2A4B7C"/>
+            <Setter Property="BorderBrush" Value="#3584E4"/>
+            <Setter Property="BorderThickness" Value="1.5"/>
+        </Style>
+
+        <Style Selector="Border.pane-box">
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Border.pane-box.active">
+            <Setter Property="BorderBrush" Value="#2A4B7C"/>
+        </Style>
+
+        <Style Selector="ListBox.file-list">
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="Background" Value="#1A1A1C"/>
+            <Setter Property="DragDrop.AllowDrop" Value="True"/>
+        </Style>
+
+        <Style Selector="ListBox.file-list ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2A4B7C"/>
+        </Style>
+
+        <Style Selector="Border.col-resize">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Cursor" Value="SizeWestEast"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+        </Style>
+    </Window.Styles>
+
+    <Window.Resources>
+        <DataTemplate x:Key="FilePaneTemplate"
+                      x:DataType="vm:PaneViewModel">
+            <Border CornerRadius="6"
+                    Classes="pane-box"
+                    Classes.active="{Binding IsActive}">
+                <Grid RowDefinitions="Auto,Auto,*">
+
+                    <!-- Trash Action Banner -->
+                    <Border Grid.Row="0"
+                            Background="#2B1A1A"
+                            BorderBrush="#552222"
+                            BorderThickness="0,0,0,1"
+                            Padding="12,8"
+                            IsVisible="{Binding IsInTrash}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <Image Source="{markup:Icon Key=trash}"
+                                       Width="18"
+                                       Height="18"/>
+
+                                <TextBlock Text="{markup:Translate Key=Trash}"
+                                           FontWeight="SemiBold"
+                                           FontSize="13"
+                                           Foreground="#E0E0E0"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8">
+                                <Button Click="OnRecoverClick"
+                                        IsEnabled="{Binding IsItemSelected}"
+                                        Background="#2E5E3A"
+                                        Foreground="White"
+                                        Padding="12,5"
+                                        CornerRadius="6"
+                                        FontSize="12">
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="6">
+                                        <Image Source="{markup:Icon Key=trash-restore}"
+                                               Width="14"
+                                               Height="14"/>
+
+                                        <TextBlock Text="{markup:Translate Key=RecoverSelected}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Click="OnEmptyTrashClick"
+                                        Background="#C0392B"
+                                        Foreground="White"
+                                        Padding="12,5"
+                                        CornerRadius="6"
+                                        FontSize="12">
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="6">
+                                        <Image Source="{markup:Icon Key=trash-empty}"
+                                               Width="14"
+                                               Height="14"/>
+
+                                        <TextBlock Text="{markup:Translate Key=EmptyTrash}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Column Headers (Only for List View) -->
+                    <Border Grid.Row="1"
+                            Background="#212123"
+                            BorderBrush="#2C2C2C"
+                            BorderThickness="0,0,0,1"
+                            Padding="12,6"
+                            IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsListView}">
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,*">
+                            <Panel Grid.Column="0"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
+                                <TextBlock Text="{markup:Translate Key=Name}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+
+                                <Border Tag="Name"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="1"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}">
+                                <TextBlock Text="{markup:Translate Key=Size}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           TextAlignment="Right"
+                                           Margin="0,0,16,0"
+                                           VerticalAlignment="Center"/>
+
+                                <Border Tag="Size"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="2"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}">
+                                <TextBlock Text="{markup:Translate Key=Type}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"/>
+
+                                <Border Tag="Type"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="3">
+                                <TextBlock Text="{markup:Translate Key=Modified}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"/>
+                            </Panel>
+                        </Grid>
+                    </Border>
+
+                    <!-- File List Panel with RubberBand Overlay -->
+                    <Panel Grid.Row="2"
+                           ClipToBounds="True">
+                        <Panel.ContextMenu>
+                            <ContextMenu Opening="OnFileContextMenuOpening">
+
+                                <!-- New submenu: shown on empty space or folder -->
+                                <MenuItem Header="{markup:Translate Key=New}"
+                                          Tag="new"
+                                          IsVisible="{Binding CanCreateNew}">
+                                    <MenuItem Header="{markup:Translate Key=NewFolder}"
+                                              Click="OnNewFolderClick"
+                                              InputGesture="Ctrl+Shift+N"/>
+
+                                    <MenuItem Header="{markup:Translate Key=NewFile}"
+                                              Click="OnNewFileClick"
+                                              InputGesture="Ctrl+Alt+N"/>
+                                </MenuItem>
+
+                                <Separator IsVisible="{Binding CanCreateNew}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Open}"
+                                          Tag="open"
+                                          Click="OnMenuOpenClick"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=OpenWith}"
+                                          Tag="open-with"
+                                          Click="OnMenuOpenWithClick"
+                                          IsVisible="{Binding IsFileSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
+                                          Tag="open-as-root"
+                                          Click="OnMenuOpenAsRootClick"/>
+
+                                <MenuItem Header="{markup:Translate Key=OpenTerminal}"
+                                          Tag="open-terminal"
+                                          Click="OnMenuOpenTerminalClick"/>
+
+                                <Separator IsVisible="{Binding CanCopyPath}"/>
+
+                                <MenuItem Header="{markup:Translate Key=CopyPathToClipboard}"
+                                          Tag="copy-path"
+                                          Click="OnMenuCopyPathClick"
+                                          IsVisible="{Binding CanCopyPath}"/>
+
+                                <Separator/>
+
+                                <MenuItem Header="{markup:Translate Key=Cut}"
+                                          Tag="cut"
+                                          Click="OnMenuCutClick"
+                                          InputGesture="Ctrl+X"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Copy}"
+                                          Tag="copy"
+                                          Click="OnMenuCopyClick"
+                                          InputGesture="Ctrl+C"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Paste}"
+                                          Tag="paste"
+                                          Click="OnMenuPasteClick"
+                                          InputGesture="Ctrl+V"/>
+
+                                <MenuItem Header="{markup:Translate Key=Duplicate}"
+                                          Tag="duplicate"
+                                          Click="OnMenuDuplicateClick"
+                                          InputGesture="Ctrl+D"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Rename}"
+                                          Tag="rename"
+                                          Click="OnMenuRenameClick"
+                                          InputGesture="F2"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Compress}"
+                                          Tag="compress"
+                                          Click="OnMenuCompressClick"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=ExtractHere}"
+                                          Tag="extract-here"
+                                          Click="OnMenuExtractHereClick"
+                                          IsVisible="{Binding CanExtractSelection}"/>
+
+                                <Separator IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Trash}"
+                                          Tag="trash"
+                                          Click="OnMenuTrashClick"
+                                          InputGesture="Delete"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=DeletePermanent}"
+                                          Tag="delete-permanent"
+                                          Click="OnMenuDeletePermanentClick"
+                                          InputGesture="Shift+Delete"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <Separator IsVisible="{Binding CanBookmarkSelection}"/>
+
+                                <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
+                                          Tag="bookmark"
+                                          Click="OnMenuBookmarkClick"
+                                          IsVisible="{Binding CanBookmarkSelection}"/>
+
+                                <MenuItem x:Name="FolderColorMenuItem"
+                                          Header="{markup:Translate Key=FolderColor}"
+                                          Tag="folder-color"
+                                          IsVisible="{Binding CanColorSelection}"/>
+
+                                <MenuItem Header="{markup:Translate Key=SharingOptions}"
+                                          Tag="share"
+                                          Click="OnMenuSharingOptionsClick"
+                                          IsVisible="{Binding IsFolderSelected}"/>
+
+                                <Separator/>
+
+                                <MenuItem Header="{markup:Translate Key=Properties}"
+                                          Tag="properties"
+                                          Click="OnMenuPropertiesClick"
+                                          InputGesture="Alt+Enter"/>
+                            </ContextMenu>
+                        </Panel.ContextMenu>
+
+                        <ProgressBar Height="2"
+                                     VerticalAlignment="Top"
+                                     IsIndeterminate="True"
+                                     IsVisible="{Binding IsLoading}"
+                                     Background="Transparent"
+                                     Foreground="#3584E4"
+                                     ZIndex="100"/>
+
+                        <!-- GRID VIEW -->
+                        <ListBox x:Name="GridFilesListBox"
+                                 Classes="file-list"
+                                 ItemsSource="{Binding Items}"
+                                 SelectionMode="Multiple"
+                                 SelectedItem="{Binding SelectedItem}"
+                                 SelectionChanged="OnFileSelectionChanged"
+                                 DoubleTapped="OnFileDoubleTapped"
+                                 KeyDown="OnFileKeyDown"
+                                 GotFocus="OnPaneGotFocus"
+                                 AttachedToVisualTree="OnFileListAttached"
+                                 IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsGridView}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <controls:StretchWrapPanel ItemWidth="128"
+                                                               ItemHeight="136"/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="CornerRadius" Value="8"/>
+                                    <Setter Property="Padding" Value="4"/>
+                                    <Setter Property="Margin" Value="4"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                </Style>
+                            </ListBox.Styles>
+
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FileItemViewModel">
+                                    <Border Width="120"
+                                            Height="128"
+                                            CornerRadius="8"
+                                            Opacity="{Binding DisplayOpacity}"
+                                            Classes.drop-target="{Binding IsDropTarget}">
+                                        <Grid RowDefinitions="80,*"
+                                              Margin="4">
+                                            <Panel Grid.Row="0"
+                                                   Classes="drop-zone"
+                                                   Background="Transparent"
+                                                   Width="76"
+                                                   Height="76"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center">
+                                                <Image Source="{Binding Icon}"
+                                                       Width="68"
+                                                       Height="68"
+                                                       IsVisible="{Binding !HasThumbnail}"/>
+
+                                                <Border CornerRadius="6"
+                                                        ClipToBounds="True"
+                                                        IsVisible="{Binding HasThumbnail}">
+                                                    <Image Source="{Binding Thumbnail}"
+                                                           Width="68"
+                                                           Height="68"
+                                                           Stretch="UniformToFill"/>
+                                                </Border>
+
+                                                <Border Classes="symlink-badge"
+                                                        IsVisible="{Binding IsSymlink}"
+                                                        Width="22"
+                                                        Height="22"
+                                                        CornerRadius="11"
+                                                        Margin="0,0,2,2"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Bottom">
+                                                    <Path Data="M0,8 L8,0 M2,0 L8,0 L8,6"
+                                                          StrokeThickness="1.8"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                                </Border>
+                                            </Panel>
+
+                                            <StackPanel Grid.Row="1"
+                                                        Spacing="2"
+                                                        HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="13"
+                                                           Foreground="White"
+                                                           TextAlignment="Center"
+                                                           HorizontalAlignment="Center"
+                                                           TextWrapping="Wrap"
+                                                           MaxLines="2"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxWidth="110"/>
+
+                                                <Border Background="#D35400"
+                                                        CornerRadius="3"
+                                                        Padding="3,1"
+                                                        IsVisible="{Binding IsAccessDenied}"
+                                                        HorizontalAlignment="Center">
+                                                    <TextBlock Text="{markup:Translate Key=AccessDenied}"
+                                                               Foreground="White"
+                                                               FontSize="9"
+                                                               FontWeight="Bold"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- LIST / DETAILS VIEW -->
+                        <ListBox x:Name="ListFilesListBox"
+                                 Classes="file-list"
+                                 ItemsSource="{Binding Items}"
+                                 SelectionMode="Multiple"
+                                 SelectedItem="{Binding SelectedItem}"
+                                 SelectionChanged="OnFileSelectionChanged"
+                                 DoubleTapped="OnFileDoubleTapped"
+                                 KeyDown="OnFileKeyDown"
+                                 GotFocus="OnPaneGotFocus"
+                                 AttachedToVisualTree="OnFileListAttached"
+                                 IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsListView}">
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="CornerRadius" Value="6"/>
+                                    <Setter Property="Padding" Value="8,5"/>
+                                    <Setter Property="Margin" Value="4,1"/>
+                                </Style>
+                            </ListBox.Styles>
+
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FileItemViewModel">
+                                    <Grid ColumnDefinitions="Auto,Auto,Auto,*"
+                                          Opacity="{Binding DisplayOpacity}"
+                                          Classes.drop-target="{Binding IsDropTarget}">
+                                        <Panel Grid.Column="0"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
+                                            <DockPanel Classes="drop-zone"
+                                                       Background="Transparent"
+                                                       VerticalAlignment="Center">
+                                                <Panel DockPanel.Dock="Left"
+                                                       Width="20"
+                                                       Height="20"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center">
+                                                    <Image Source="{Binding Icon}"
+                                                           Width="18"
+                                                           Height="18"
+                                                           IsVisible="{Binding !HasThumbnail}"/>
+
+                                                    <Border CornerRadius="3"
+                                                            ClipToBounds="True"
+                                                            IsVisible="{Binding HasThumbnail}">
+                                                        <Image Source="{Binding Thumbnail}"
+                                                               Width="18"
+                                                               Height="18"
+                                                               Stretch="UniformToFill"/>
+                                                    </Border>
+
+                                                    <Border Classes="symlink-badge"
+                                                            IsVisible="{Binding IsSymlink}"
+                                                            Width="11"
+                                                            Height="11"
+                                                            CornerRadius="6"
+                                                            Margin="0,0,-2,-2"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Bottom">
+                                                        <Path Data="M0,4 L4,0 M1,0 L4,0 L4,3"
+                                                              StrokeThickness="1.2"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </Panel>
+
+                                                <Border DockPanel.Dock="Right"
+                                                        Background="#444444"
+                                                        CornerRadius="4"
+                                                        Padding="4,1"
+                                                        IsVisible="{Binding IsHidden}"
+                                                        Margin="6,0,0,0">
+                                                    <TextBlock Text="{markup:Translate Key=Hidden}"
+                                                               Foreground="#CCCCCC"
+                                                               FontSize="10"/>
+                                                </Border>
+
+                                                <Border DockPanel.Dock="Right"
+                                                        Background="#D35400"
+                                                        CornerRadius="4"
+                                                        Padding="4,1"
+                                                        IsVisible="{Binding IsAccessDenied}"
+                                                        Margin="6,0,0,0">
+                                                    <TextBlock Text="{markup:Translate Key=AccessDenied}"
+                                                               Foreground="White"
+                                                               FontSize="10"
+                                                               FontWeight="Bold"/>
+                                                </Border>
+
+                                                <TextBlock Text="{Binding Name}"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="13"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                        </Panel>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}"
+                                                   Text="{Binding SizeString}"
+                                                   Foreground="#999999"
+                                                   VerticalAlignment="Center"
+                                                   TextAlignment="Right"
+                                                   Margin="0,0,16,0"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}"
+                                                   Text="{Binding TypeString}"
+                                                   Foreground="#999999"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <TextBlock Grid.Column="3"
+                                                   Text="{Binding ModifiedString}"
+                                                   Foreground="#888888"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- RubberBand Selection Overlay -->
+                        <Canvas ClipToBounds="True"
+                                IsHitTestVisible="False">
+                            <Border BorderBrush="#3584E4"
+                                    BorderThickness="1.5"
+                                    Background="#333584E4"
+                                    CornerRadius="2"
+                                    IsVisible="False"/>
+                        </Canvas>
+                    </Panel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
+
+        <!-- Top Menu Bar -->
+        <Border Grid.Row="0"
+                IsVisible="{Binding !IsPickerMode}"
+                Background="#1E1E20"
+                BorderBrush="#2C2C2C"
+                BorderThickness="0,0,0,1">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <Menu x:Name="MainMenu"
+                      Grid.Column="0">
+
+                    <!-- File Menu -->
+                    <MenuItem Header="{markup:Translate Key=File}">
+                    <MenuItem Header="{markup:Translate Key=NewWindow}"
+                              Click="OnMenuNewWindowClick"
+                              InputGesture="Ctrl+N"/>
+
+                    <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
+                              Click="OnMenuOpenAsRootClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=ConnectToServer}"
+                              Click="OnMenuConnectToServerClick"
+                              InputGesture="Ctrl+K"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=NewFolder}"
+                              Click="OnNewFolderClick"
+                              InputGesture="Ctrl+Shift+N"/>
+                              
+                    <MenuItem Header="{markup:Translate Key=NewFile}"
+                              Click="OnNewFileClick"
+                              InputGesture="Ctrl+Alt+N"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=Properties}"
+                              Click="OnMenuPropertiesClick"
+                              InputGesture="Alt+Enter"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=Close}"
+                              Click="OnMenuCloseClick"
+                              InputGesture="Ctrl+Q"/>
+                </MenuItem>
+
+                <!-- Edit Menu -->
+                <MenuItem Header="{markup:Translate Key=Edit}">
+                    <MenuItem Header="{markup:Translate Key=Cut}"
+                              Click="OnMenuCutClick"
+                              InputGesture="Ctrl+X"/>
+
+                    <MenuItem Header="{markup:Translate Key=Copy}"
+                              Click="OnMenuCopyClick"
+                              InputGesture="Ctrl+C"/>
+
+                    <MenuItem Header="{markup:Translate Key=Paste}"
+                              Click="OnMenuPasteClick"
+                              InputGesture="Ctrl+V"/>
+
+                    <MenuItem Header="{markup:Translate Key=Duplicate}"
+                              Click="OnMenuDuplicateClick"
+                              InputGesture="Ctrl+D"/>
+
+                    <MenuItem Header="{markup:Translate Key=Rename}"
+                              Click="OnMenuRenameClick"
+                              InputGesture="F2"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=SelectAll}"
+                              Click="OnSelectAllClick"
+                              InputGesture="Ctrl+A"/>
+                </MenuItem>
+
+                <!-- View Menu -->
+                <MenuItem Header="{markup:Translate Key=View}">
+                    <MenuItem Header="{markup:Translate Key=Reload}"
+                              Click="OnRefreshClick"
+                              InputGesture="F5"/>
+
+                    <MenuItem Header="{markup:Translate Key=ShowHidden}"
+                              Click="OnToggleHiddenClick"
+                              InputGesture="Ctrl+H"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=DualPane}"
+                              Click="OnToggleDualPaneClick"
+                              InputGesture="F3"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=IconView}"
+                              Click="OnSetGridViewClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=ListView}"
+                              Click="OnSetListViewClick"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=PreviewPane}"
+                              Click="OnTogglePreviewPaneClick"/>
+                </MenuItem>
+
+                <!-- Go Menu -->
+                <MenuItem Header="{markup:Translate Key=Go}">
+                    <MenuItem Header="{markup:Translate Key=Back}"
+                              Click="OnBackClick"
+                              InputGesture="Alt+Left"/>
+
+                    <MenuItem Header="{markup:Translate Key=Forward}"
+                              Click="OnForwardClick"
+                              InputGesture="Alt+Right"/>
+
+                    <MenuItem Header="{markup:Translate Key=Up}"
+                              Click="OnUpClick"
+                              InputGesture="Alt+Up"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=Home}"
+                              Click="OnGoHomeClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=Root}"
+                              Click="OnGoRootClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=Location}"
+                              Click="OnTogglePathEditingClick"
+                              InputGesture="Ctrl+L"/>
+                </MenuItem>
+
+                <!-- Addons Menu -->
+                <MenuItem x:Name="AddonsMenuItem"
+                          Header="{markup:Translate Key=Addons}">
+                    <MenuItem Header="{markup:Translate Key=ManageAddons}"
+                              Click="OnMenuManageAddonsClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=InstallAddonFolder}"
+                              Click="OnMenuInstallAddonFolderClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=InstallAddonZip}"
+                              Click="OnMenuInstallAddonZipClick"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=OpenAddonsFolder}"
+                              Click="OnMenuOpenAddonsFolderClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=ReloadAddons}"
+                              Click="OnMenuReloadAddonsClick"/>
+                </MenuItem>
+
+                <!-- Help Menu -->
+                <MenuItem Header="{markup:Translate Key=Help}">
+                    <MenuItem Header="{markup:Translate Key=Shortcuts}"
+                              Click="OnMenuShortcutsClick"/>
+                </MenuItem>
+            </Menu>
+
+            <Border Grid.Column="2"
+                    IsVisible="{Binding IsPrivilegedProcess}"
+                    Background="#3B1818"
+                    BorderBrush="#C0392B"
+                    BorderThickness="1"
+                    CornerRadius="4"
+                    Margin="0,0,12,0"
+                    Padding="8,2"
+                    VerticalAlignment="Center">
+                <TextBlock Text="{markup:Translate Key=RootBadge}"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="#FF9E9E"/>
+            </Border>
+        </Grid>
+    </Border>
+
+        <!-- Top Toolbar -->
+        <Border Grid.Row="1"
+                Background="#242426"
+                BorderBrush="#333333"
+                BorderThickness="0,0,0,1"
+                Padding="8,6">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+
+                <!-- Navigation controls -->
+                <StackPanel Grid.Column="0"
+                            Orientation="Horizontal"
+                            Spacing="4"
+                            VerticalAlignment="Center">
+                    <Button Click="OnBackClick"
+                            IsEnabled="{Binding CanGoBack}"
+                            ToolTip.Tip="{markup:Translate Key=Back}"
+                            Background="Transparent">
+                        <Image Source="{markup:Icon Key=arrow-left}"
+                               Width="16"
+                               Height="16"/>
+                    </Button>
+
+                    <Button Click="OnForwardClick"
+                            IsEnabled="{Binding CanGoForward}"
+                            ToolTip.Tip="{markup:Translate Key=Forward}"
+                            Background="Transparent">
+                        <Image Source="{markup:Icon Key=arrow-left}"
+                               Width="16"
+                               Height="16"
+                               RenderTransform="rotate(180deg)"/>
+                    </Button>
+
+                    <Button Click="OnUpClick"
+                            IsEnabled="{Binding CanGoUp}"
+                            ToolTip.Tip="{markup:Translate Key=Up}"
+                            Background="Transparent">
+                        <Image Source="{markup:Icon Key=arrow-left}"
+                               Width="16"
+                               Height="16"
+                               RenderTransform="rotate(90deg)"/>
+                    </Button>
+
+                    <Button Click="OnRefreshClick"
+                            ToolTip.Tip="{markup:Translate Key=Reload}"
+                            Background="Transparent">
+                        <Image Source="{markup:Icon Key=refresh}"
+                               Width="16"
+                               Height="16"/>
+                    </Button>
+                </StackPanel>
+
+                <!-- Breadcrumb Bar / Path Box -->
+                <Grid Grid.Column="1"
+                      Margin="8,0"
+                      VerticalAlignment="Center">
+
+                    <!-- Clickable Breadcrumb Bar -->
+                    <Border Background="#18181A"
+                            BorderBrush="#383838"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="4,2"
+                            PointerPressed="OnBreadcrumbBarPointerPressed"
+                            IsVisible="{Binding !IsPathEditing}">
+                        <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                            <Button Grid.Column="0"
+                                    x:Name="BreadcrumbScrollLeftButton"
+                                    Classes="crumb-scroll"
+                                    Click="OnBreadcrumbScrollLeftClick"
+                                    IsVisible="False">
+                                <Image Source="{markup:Icon Key=arrow-left}"
+                                       Width="12"
+                                       Height="12"/>
+                            </Button>
+
+                            <ScrollViewer Grid.Column="1"
+                                          x:Name="BreadcrumbsScrollViewer"
+                                          HorizontalScrollBarVisibility="Hidden"
+                                          VerticalScrollBarVisibility="Disabled"
+                                          ScrollChanged="OnBreadcrumbsScrollChanged">
+                                <ItemsControl x:Name="BreadcrumbsItemsControl"
+                                              ItemsSource="{Binding Breadcrumbs}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal"
+                                                        Spacing="2"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="m:BreadcrumbItem">
+                                            <StackPanel Orientation="Horizontal"
+                                                        Spacing="2">
+                                                <Button Tag="{Binding FullPath}"
+                                                        Click="OnBreadcrumbClick"
+                                                        Classes="crumb"
+                                                        Classes.current="{Binding IsCurrent}"
+                                                        BorderThickness="0"
+                                                        CornerRadius="4"
+                                                        Padding="6,3"
+                                                        FontSize="12">
+                                                    <TextBlock Text="{Binding Name}"/>
+                                                </Button>
+
+                                                <TextBlock Text="/"
+                                                           Foreground="#666666"
+                                                           VerticalAlignment="Center"
+                                                           Margin="2,0"
+                                                           IsVisible="{Binding !IsLast}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+
+                            <Button Grid.Column="2"
+                                    x:Name="BreadcrumbScrollRightButton"
+                                    Classes="crumb-scroll"
+                                    Click="OnBreadcrumbScrollRightClick"
+                                    IsVisible="False">
+                                <Image Source="{markup:Icon Key=arrow-left}"
+                                       Width="12"
+                                       Height="12"
+                                       RenderTransform="rotate(180deg)"/>
+                            </Button>
+
+                            <Button Grid.Column="3"
+                                    Click="OnTogglePathEditingClick"
+                                    ToolTip.Tip="{markup:Translate Key=Location}"
+                                    Background="Transparent"
+                                    Padding="4"
+                                    CornerRadius="4">
+                                <Image Source="{markup:Icon Key=edit}"
+                                       Width="13"
+                                       Height="13"/>
+                            </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Manual Text Path Box -->
+                    <TextBox x:Name="PathTextBox"
+                             Text="{Binding CurrentPath, Mode=OneWay}"
+                             KeyDown="OnPathKeyDown"
+                             LostFocus="OnPathLostFocus"
+                             Background="#18181A"
+                             BorderBrush="#383838"
+                             CornerRadius="6"
+                             FontSize="13"
+                             Padding="10,6"
+                             IsVisible="{Binding IsPathEditing}"/>
+                </Grid>
+
+                <!-- Search Box -->
+                <TextBox Grid.Column="2"
+                         x:Name="SearchTextBox"
+                         Text="{Binding SearchQuery}"
+                         Watermark="{markup:Translate Key=SearchWatermark}"
+                         Width="170"
+                         Margin="0,0,8,0"
+                         VerticalAlignment="Center"
+                         Background="#18181A"
+                         BorderBrush="#383838"
+                         CornerRadius="6"
+                         FontSize="13"
+                         Padding="8,6"
+                         KeyDown="OnSearchKeyDown"/>
+
+                <!-- Toolbar Actions & View Mode Toggles -->
+                <StackPanel Grid.Column="3"
+                            Orientation="Horizontal"
+                            Spacing="4"
+                            VerticalAlignment="Center">
+
+                    <!-- Grid / List View Toggle Group -->
+                    <Border Background="#18181A"
+                            CornerRadius="6"
+                            BorderBrush="#383838"
+                            BorderThickness="1"
+                            Margin="0,0,4,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Click="OnSetGridViewClick"
+                                    Classes="view-toggle"
+                                    Classes.active="{Binding IsGridView}"
+                                    ToolTip.Tip="{markup:Translate Key=IconView}"
+                                    CornerRadius="5,0,0,5"
+                                    Padding="7,5">
+                                <Image Source="{markup:Icon Key=view-grid}"
+                                       Width="14"
+                                       Height="14"/>
+                            </Button>
+
+                            <Button Click="OnSetListViewClick"
+                                    Classes="view-toggle"
+                                    Classes.active="{Binding IsListView}"
+                                    ToolTip.Tip="{markup:Translate Key=ListView}"
+                                    CornerRadius="0,5,5,0"
+                                    Padding="7,5">
+                                <Image Source="{markup:Icon Key=view-list}"
+                                       Width="14"
+                                       Height="14"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <Button Click="OnToggleDualPaneClick"
+                            IsVisible="{Binding !IsPickerMode}"
+                            Classes="view-toggle"
+                            Classes.active="{Binding IsDualPane}"
+                            ToolTip.Tip="{markup:Translate Key=DualPane}"
+                            CornerRadius="6"
+                            Padding="6">
+                        <Image Source="{markup:Icon Key=split-pane}"
+                               Width="15"
+                               Height="15"/>
+                    </Button>
+
+                    <ToggleButton IsChecked="{Binding ShowHiddenFiles}"
+                                  ToolTip.Tip="{markup:Translate Key=ShowHidden}"
+                                  Background="Transparent"
+                                  CornerRadius="6">
+                        <Image Source="{markup:Icon Key=eye}"
+                               Width="16"
+                               Height="16"/>
+                    </ToggleButton>
+
+                    <ToggleButton IsChecked="{Binding ShowDetailsPane}"
+                                  ToolTip.Tip="{markup:Translate Key=PreviewPane}"
+                                  Background="Transparent"
+                                  CornerRadius="6">
+                        <Image Source="{markup:Icon Key=preview}"
+                               Width="16"
+                               Height="16"/>
+                    </ToggleButton>
+
+                    <Button Click="OnOpenTerminalClick"
+                            ToolTip.Tip="{markup:Translate Key=OpenTerminal}"
+                            Background="Transparent">
+                        <Image Source="{markup:Icon Key=terminal}"
+                               Width="16"
+                               Height="16"/>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Main Content Area -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="210"
+                                  MinWidth="150"/>
+                <ColumnDefinition Width="4"/>
+                <ColumnDefinition Width="*"
+                                  MinWidth="200"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Sidebar (Places, Bookmarks, Devices, Network) with Drag & Drop Reordering -->
+            <Border Grid.Column="0"
+                    Background="#18181A"
+                    Padding="6,8">
+                <ListBox x:Name="SidebarListBox"
+                         ItemsSource="{Binding Places}"
+                         SelectionChanged="OnPlaceSelected"
+                         Background="Transparent"
+                         DragDrop.AllowDrop="True"
+                         CornerRadius="6"
+                         AutoScrollToSelectedItem="False"
+                         Focusable="True">
+                    <ListBox.Styles>
+                        <Style Selector="ListBoxItem"
+                               x:DataType="m:PlaceItem">
+                            <Setter Property="IsVisible"
+                                    Value="{Binding IsVisible}"/>
+                            <Setter Property="CornerRadius"
+                                    Value="6"/>
+                            <Setter Property="Padding"
+                                    Value="0"/>
+                            <Setter Property="Margin"
+                                    Value="0,1"/>
+                            <Setter Property="HorizontalContentAlignment"
+                                    Value="Stretch"/>
+                        </Style>
+
+                        <Style Selector="Button.sidebar-action-btn">
+                            <Setter Property="Background"
+                                    Value="Transparent"/>
+                            <Setter Property="CornerRadius"
+                                    Value="4"/>
+                            <Setter Property="Padding"
+                                    Value="6,4"/>
+                            <Setter Property="BorderThickness"
+                                    Value="0"/>
+                        </Style>
+
+                        <Style Selector="Button.sidebar-action-btn:pointerover">
+                            <Setter Property="Background"
+                                    Value="#383838"/>
+                        </Style>
+                    </ListBox.Styles>
+
+                    <ListBox.ContextMenu>
+                        <ContextMenu x:Name="SidebarContextMenu"
+                                     Opening="OnSidebarContextMenuOpening"
+                                     Closed="OnSidebarContextMenuClosed">
+                            <MenuItem x:Name="SidebarOpenMenuItem"
+                                      Header="{markup:Translate Key=Open}"
+                                      Click="OnSidebarOpenClick"/>
+
+                            <MenuItem x:Name="SidebarConnectMenuItem"
+                                      Header="{markup:Translate Key=Connect}"
+                                      Click="OnSidebarConnectClick"/>
+
+                            <MenuItem x:Name="SidebarDismountMenuItem"
+                                      Header="{markup:Translate Key=Dismount}"
+                                      Click="OnSidebarDismountClick"/>
+
+                            <MenuItem x:Name="SidebarConnectToServerMenuItem"
+                                      Header="{markup:Translate Key=ConnectToServer}"
+                                      Click="OnSidebarConnectToServerClick"/>
+
+                            <MenuItem x:Name="SidebarResetPlacesMenuItem"
+                                      Header="{markup:Translate Key=ResetLayout}"
+                                      Click="OnSidebarResetPlacesClick"/>
+
+                            <Separator x:Name="SidebarSeparator"/>
+
+                            <MenuItem x:Name="SidebarRemoveBookmarkMenuItem"
+                                      Header="{markup:Translate Key=RemoveBookmark}"
+                                      Click="OnSidebarRemoveBookmarkClick"/>
+
+                            <MenuItem x:Name="SidebarRenameServerMenuItem"
+                                      Header="{markup:Translate Key=RenameConnection}"
+                                      Click="OnSidebarRenameServerClick"/>
+
+                            <MenuItem x:Name="SidebarRemoveServerMenuItem"
+                                      Header="{markup:Translate Key=RemoveServer}"
+                                      Click="OnSidebarRemoveServerClick"/>
+                        </ContextMenu>
+                    </ListBox.ContextMenu>
+
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="m:PlaceItem">
+                            <Grid Margin="0,1">
+
+                                <!-- Top drop line indicator -->
+                                <Rectangle Height="2"
+                                           Fill="#3584E4"
+                                           VerticalAlignment="Top"
+                                           Margin="4,0"
+                                           IsVisible="{Binding ShowDropLineAbove}"/>
+
+                                <Border CornerRadius="6"
+                                        Padding="8,5"
+                                        Classes.drop-target="{Binding IsDropTarget}">
+                                    <Panel>
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              IsVisible="{Binding IsHeader}"
+                                              Background="Transparent"
+                                              Cursor="Hand">
+                                            <StackPanel Grid.Column="0"
+                                                        Orientation="Horizontal"
+                                                        Spacing="4"
+                                                        VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Chevron}"
+                                                           FontSize="9"
+                                                           Foreground="#777777"
+                                                           VerticalAlignment="Center"
+                                                           Margin="4,6,0,2"/>
+
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontWeight="Bold"
+                                                           FontSize="11"
+                                                           Foreground="#777777"
+                                                           Margin="0,6,6,2"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+
+                                            <Button Grid.Column="1"
+                                                    Classes="sidebar-action-btn"
+                                                    Click="OnSidebarConnectToServerClick"
+                                                    IsVisible="{Binding IsNetworkHeader}"
+                                                    Cursor="Hand"
+                                                    ToolTip.Tip="{markup:Translate Key=ConnectToServer}">
+                                                <Image Source="{markup:Icon Key=network}"
+                                                       Width="14"
+                                                       Height="14"
+                                                       Opacity="0.7"/>
+                                            </Button>
+                                        </Grid>
+
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              IsVisible="{Binding !IsHeader}">
+                                            <Grid Grid.Column="0"
+                                                  ColumnDefinitions="Auto,*"
+                                                  Margin="0,0,6,0">
+                                                <Image Grid.Column="0"
+                                                       Source="{Binding Icon}"
+                                                       Width="16"
+                                                       Height="16"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center"/>
+
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Name}"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           FontSize="13"/>
+                                            </Grid>
+
+                                            <Button Grid.Column="1"
+                                                    Classes="sidebar-action-btn"
+                                                    Click="OnSidebarDismountButtonClick"
+                                                    IsVisible="{Binding CanDismount}"
+                                                    Cursor="Hand"
+                                                    ToolTip.Tip="{markup:Translate Key=Dismount}">
+                                                <Image Source="{markup:Icon Key=disk}"
+                                                       Width="14"
+                                                       Height="14"
+                                                       Opacity="0.6"/>
+                                            </Button>
+                                        </Grid>
+                                    </Panel>
+                                </Border>
+
+                                <!-- Bottom drop line indicator -->
+                                <Rectangle Height="2"
+                                           Fill="#3584E4"
+                                           VerticalAlignment="Bottom"
+                                           Margin="4,0"
+                                           IsVisible="{Binding ShowDropLineBelow}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- Splitter between Sidebar and Panes -->
+            <GridSplitter Grid.Column="1"
+                          Width="4"
+                          Background="#282828"
+                          ResizeDirection="Columns"/>
+
+            <!-- File Panes Area (Supports Single Pane or F3 Dual Pane) -->
+            <Grid Grid.Column="2"
+                  x:Name="FilePanesGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"
+                                      MinWidth="200"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="0"
+                                      MinWidth="{Binding SecondaryPaneMinWidth}"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Pane 1 (Primary Pane) -->
+                <ContentControl Grid.Column="0"
+                                Content="{Binding Pane1}"
+                                ContentTemplate="{StaticResource FilePaneTemplate}"/>
+
+                <!-- Dual Pane Splitter -->
+                <GridSplitter Grid.Column="1"
+                              Width="4"
+                              Background="#282828"
+                              ResizeDirection="Columns"
+                              IsVisible="{Binding IsDualPane}"/>
+
+                <!-- Pane 2 (F3 Dual Pane Secondary Pane) -->
+                <ContentControl Grid.Column="2"
+                                Content="{Binding Pane2}"
+                                ContentTemplate="{StaticResource FilePaneTemplate}"
+                                IsVisible="{Binding IsDualPane}"/>
+            </Grid>
+
+            <!-- Splitter between Files and Preview -->
+            <GridSplitter Grid.Column="3"
+                          Background="#282828"
+                          ResizeDirection="Columns"
+                          IsVisible="{Binding ShowDetailsPane}"/>
+
+            <!-- Details & Preview Pane -->
+            <Border Grid.Column="4"
+                    Width="240"
+                    Background="#18181A"
+                    BorderBrush="#2A2A2A"
+                    BorderThickness="1,0,0,0"
+                    Padding="14"
+                    IsVisible="{Binding ShowDetailsPane}">
+                <ScrollViewer>
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{markup:Translate Key=PreviewDetails}"
+                                   FontWeight="Bold"
+                                   Foreground="#AAAAAA"
+                                   FontSize="12"/>
+
+                        <!-- Image Preview -->
+                        <Border Background="#121212"
+                                CornerRadius="8"
+                                Padding="6"
+                                IsVisible="{Binding HasImagePreview}">
+                            <Image Source="{Binding PreviewImage}"
+                                   MaxHeight="200"
+                                   Stretch="Uniform"/>
+                        </Border>
+
+                        <!-- Details Text -->
+                        <TextBlock Text="{Binding PreviewDetails}"
+                                   TextWrapping="Wrap"
+                                   Foreground="#CCCCCC"
+                                   FontSize="12"
+                                   LineHeight="20"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+        </Grid>
+
+        <!-- File Operation Progress Panel (Nemo Style) -->
+        <Border Grid.Row="3"
+                Background="#232326"
+                BorderBrush="#2F2F35"
+                BorderThickness="0,1,0,1"
+                Padding="16,10"
+                IsVisible="{Binding IsOperationInProgress}">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  RowDefinitions="Auto,Auto,Auto">
+
+                <!-- Icon -->
+                <Panel Grid.Row="0"
+                       Grid.RowSpan="3"
+                       Grid.Column="0"
+                       Width="36"
+                       Height="36"
+                       Margin="0,0,14,0"
+                       VerticalAlignment="Center">
+                    <Image Source="{Binding OperationIcon}"
+                           Width="26"
+                           Height="26"/>
+                </Panel>
+
+                <!-- Top Row: Title and Speed/ETA -->
+                <Grid Grid.Row="0"
+                      Grid.Column="1"
+                      ColumnDefinitions="*,Auto"
+                      Margin="0,0,0,6">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding OperationTitle}"
+                               FontWeight="SemiBold"
+                               FontSize="13"
+                               Foreground="#FFFFFF"
+                               TextTrimming="CharacterEllipsis"/>
+
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding OperationSpeedAndEta}"
+                               FontSize="12"
+                               Foreground="#84B4FA"
+                               FontWeight="Medium"
+                               Margin="12,0,0,0"/>
+                </Grid>
+
+                <!-- Middle Row: Progress Bar -->
+                <ProgressBar Grid.Row="1"
+                             Grid.Column="1"
+                             Minimum="0"
+                             Maximum="100"
+                             Value="{Binding OperationPercent}"
+                             Height="6"
+                             CornerRadius="3"
+                             Background="#38383E"
+                             Foreground="#3584E4"
+                             Margin="0,0,0,6"/>
+
+                <!-- Bottom Row: Count / Size and Current File -->
+                <Grid Grid.Row="2"
+                      Grid.Column="1"
+                      ColumnDefinitions="Auto,*,Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding OperationItemsProgress}"
+                               FontSize="12"
+                               Foreground="#CCCCCC"/>
+
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding OperationCurrentFileName}"
+                               FontSize="12"
+                               Foreground="#88888E"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="300"/>
+                </Grid>
+
+                <!-- Cancel Button -->
+                <Button Grid.Row="0"
+                        Grid.RowSpan="3"
+                        Grid.Column="2"
+                        Click="OnCancelOperationClick"
+                        Background="Transparent"
+                        BorderBrush="#44444A"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="10,6"
+                        Margin="16,0,0,0"
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6">
+                        <Image Source="{markup:Icon Key=close}"
+                               Width="12"
+                               Height="12"/>
+
+                        <TextBlock Text="{markup:Translate Key=Cancel}"
+                                   FontSize="12"
+                                   Foreground="#EEEEEE"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Picker Action Bar -->
+        <Border Grid.Row="4"
+                IsVisible="{Binding IsPickerMode}"
+                Background="#202022"
+                BorderBrush="#2C2C2C"
+                BorderThickness="0,1,0,0"
+                Padding="16,10">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+
+                <TextBlock Grid.Column="0"
+                           Text="{Binding PickerTargetLabel}"
+                           VerticalAlignment="Center"
+                           FontSize="13"
+                           Foreground="#AAAAAA"
+                           Margin="0,0,12,0"/>
+
+                <TextBox Grid.Column="1"
+                         Text="{Binding PickerSelectedName, Mode=TwoWay}"
+                         KeyDown="OnPickerTextBoxKeyDown"
+                         VerticalAlignment="Center"
+                         FontSize="13"
+                         CornerRadius="6"
+                         Margin="0,0,16,0"/>
+
+                <Button Grid.Column="2"
+                        Content="{markup:Translate Key=Cancel}"
+                        Click="OnPickerCancelClick"
+                        Background="#333333"
+                        Foreground="#DDDDDD"
+                        Padding="16,7"
+                        Margin="0,0,8,0"
+                        CornerRadius="6"/>
+
+                <Button Grid.Column="3"
+                        Content="{Binding PickerActionButtonText}"
+                        Click="OnPickerConfirmClick"
+                        Background="#3584E4"
+                        Foreground="White"
+                        FontWeight="SemiBold"
+                        Padding="18,7"
+                        CornerRadius="6"/>
+            </Grid>
+        </Border>
+
+        <!-- Status Bar -->
+        <Border Grid.Row="5"
+                IsVisible="{Binding !IsPickerMode}"
+                Background="#18181A"
+                BorderBrush="#2A2A2A"
+                BorderThickness="0,1,0,0"
+                Padding="12,4">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding StatusText}"
+                           Foreground="#888888"
+                           FontSize="12"
+                           VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
+    </Grid>
 </Window>

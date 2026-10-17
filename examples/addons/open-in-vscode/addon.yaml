@@ -1,0 +1,15 @@
+id: open-in-vscode
+name: $AddonName
+description: $AddonDescription
+version: 1.0.0
+author: BonitoCat
+
+actions:
+  - id: open
+    title: $OpenInVsCode
+    location: context-menu
+    after: open-terminal
+    targets: [file, folder, background]
+    command: code
+    args: ["{paths}"]
+    shortcut: Ctrl+Alt+C

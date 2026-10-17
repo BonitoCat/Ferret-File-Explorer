@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "FileExplorer.Cli": {
+      "commandName": "Project"
+    }
+  }
+}
