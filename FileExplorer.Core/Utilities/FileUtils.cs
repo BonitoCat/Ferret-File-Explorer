@@ -5,6 +5,7 @@ namespace FileExplorer.Core.Utilities;
 public static partial class FileUtils
 {
     private const int XOk = 1;
+    private static readonly string[] CompoundExtensions = [".tar.gz", ".tar.bz2", ".tar.xz", ".tar.zst"];
 
     [LibraryImport("libc.so.6", EntryPoint = "access", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int LinuxAccess(string pathname, int mode);
@@ -160,6 +161,18 @@ public static partial class FileUtils
         {
             return false;
         }
+    }
+
+    public static int GetNameLength(string fileName)
+    {
+        string? compound = CompoundExtensions.FirstOrDefault(e => fileName.EndsWith(e, StringComparison.OrdinalIgnoreCase) && fileName.Length > e.Length);
+        if (compound != null)
+        {
+            return fileName.Length - compound.Length;
+        }
+
+        int dot = fileName.LastIndexOf('.');
+        return dot > 0 ? dot : fileName.Length;
     }
 
     public static string FormatSize(long bytes)

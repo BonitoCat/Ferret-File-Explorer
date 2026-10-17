@@ -46,6 +46,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private double _colTypeWidth = 110;
     private double _colModifiedWidth = 140;
     public event Action<string>? ScriptOpenRequested;
+    public event Action<NetworkConnectionInfo>? NetworkLoginRequested;
+    public event Action<PaneViewModel, string, bool>? NetworkServerLoginRequested;
     public Func<TransferConflict, Task<ConflictResolution>>? ConflictResolver { get; set; }
     private bool _isPathEditing;
     private PaneViewModel _activePane;
@@ -163,6 +165,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public PaneViewModel Pane1 { get; }
     public PaneViewModel Pane2 { get; }
     public IEnumerable<PaneViewModel> Panes => [Pane1, Pane2];
+
+    private static readonly TimeSpan TransferSettleTimeout = TimeSpan.FromMinutes(10);
     public IEnumerable<FileItemViewModel> AllItems => Pane1.Items.Concat(Pane2.Items);
 
     public PaneViewModel ActivePane
@@ -385,6 +389,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         pane.PropertyChanged += OnPanePropertyChanged;
         pane.ContentChanged += OnPaneContentChanged;
         pane.SelectionChanged += OnPaneContentChanged;
+        pane.LoadFailed += OnPaneLoadFailed;
+        pane.LoginRequired += OnPaneLoginRequired;
         return pane;
     }
 
@@ -409,6 +415,21 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 OnActiveSelectedItemChanged();
                 break;
         }
+    }
+
+    private void OnPaneLoginRequired(PaneViewModel pane, string path, bool rejected)
+    {
+        NetworkServerLoginRequested?.Invoke(pane, path, rejected);
+    }
+
+    private void OnPaneLoadFailed(PaneViewModel pane, string error)
+    {
+        if (pane != ActivePane)
+        {
+            return;
+        }
+
+        StatusText = LocalizationService.Format("NetworkBrowseFailed", error);
     }
 
     private void OnPaneContentChanged(PaneViewModel pane)
@@ -1056,6 +1077,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                             networkPlaces.Add(placeItem);
                         }
 
+                        if (placeItem.IsNetworkBookmark)
+                        {
+                            continue;
+                        }
+
                         string mountToResolve = gvfsMount;
                         PlaceItem itemToUpdate = placeItem;
                         Task.Run(() => ResolveGvfsDisplayNameAsync(mountToResolve, itemToUpdate));
@@ -1085,6 +1111,19 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 });
             }
 
+            if (GioFileLister.IsAvailable)
+            {
+                networkPlaces.Add(new PlaceItem
+                {
+                    Name = LocalizationService.Get("NetworkBrowse"),
+                    Path = NetworkBrowseService.NetworkRoot,
+                    Icon = IconService.Get("network"),
+                    Category = PlaceCategory.Network,
+                    IsMounted = true,
+                    IsVisible = !networkCollapsed,
+                });
+            }
+
             extraPlaces.Add(new PlaceItem
             {
                 Name = LocalizationService.Get("Network"),
@@ -1106,6 +1145,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     .Where(p => p.Category == PlaceCategory.Places)
                     .Concat(extraPlaces)
                     .ToList());
+                UpdateActiveBreadcrumbs();
             });
         });
     }
@@ -1595,6 +1635,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             ClipboardMode mode = isCopy ? ClipboardMode.Copy : ClipboardMode.Cut;
             await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, progress, token), token);
+            List<string> targets = pathList.Select(p => Path.Combine(destinationDirectory, Path.GetFileName(p.TrimEnd('/')))).ToList();
+            OperationSpeedAndEta = LocalizationService.Get("FinishingTransfer");
+            OperationCurrentFileName = "";
+            await WaitForTargetsAsync(targets, token);
             StatusText = LocalizationService.Get($"{operation}Completed");
         }
         catch (OperationCanceledException)
@@ -1609,6 +1653,24 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             IsOperationInProgress = false;
             Refresh();
+        }
+    }
+
+    private static async Task WaitForTargetsAsync(List<string> targets, CancellationToken token)
+    {
+        try
+        {
+            await Task.Run(() =>
+            {
+                foreach (string target in targets)
+                {
+                    token.ThrowIfCancellationRequested();
+                    _ = File.Exists(target) || Directory.Exists(target);
+                }
+            }, token).WaitAsync(TransferSettleTimeout, token);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        {
         }
     }
 
@@ -1638,6 +1700,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         string trashBase = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "Trash");
         string filesDir = Path.Combine(trashBase, "files");
         string infoDir = Path.Combine(trashBase, "info");
+
+        FolderColorService.Remove(filesDir);
 
         if (Directory.Exists(filesDir))
         {
@@ -1677,6 +1741,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         if (string.IsNullOrEmpty(path))
         {
+            return;
+        }
+
+        if (NetworkBrowseService.IsBrowseLocation(path))
+        {
+            Logger.LogI("Navigated to network location");
+            ActivePane.NavigateTo(path);
             return;
         }
 
@@ -1742,6 +1813,42 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private void OpenNetworkShare(FileItemViewModel item)
+    {
+        string uri = item.FullPath;
+        string name = item.Name;
+        StatusText = LocalizationService.Format("ConnectingTo", name);
+
+        Task.Run(async () =>
+        {
+            NetworkMountResult result = await _networkService.ConnectBrowsedShareAsync(uri);
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (result.NeedsCredentials && NetworkLoginRequested != null)
+                {
+                    StatusText = LocalizationService.Format("NetworkLoginRequired", name);
+                    NetworkLoginRequested.Invoke(result.Info);
+                    return;
+                }
+
+                if (!result.Success || !Directory.Exists(result.MountPath))
+                {
+                    StatusText = LocalizationService.Format("NetworkShareMountFailed", name, result.ErrorMessage);
+                    return;
+                }
+
+                OpenMountedShare(result.MountPath);
+            });
+        });
+    }
+
+    public void OpenMountedShare(string mountPath)
+    {
+        LoadPlaces();
+        ResetActiveBreadcrumbTrail();
+        NavigateTo(mountPath);
+    }
+
     public NetworkBookmark? GetNetworkBookmark(string uri)
     {
         return _networkBookmarkService.GetBookmarks().FirstOrDefault(b => string.Equals(b.Uri, uri, StringComparison.OrdinalIgnoreCase));
@@ -1750,6 +1857,17 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void AddNetworkBookmark(NetworkBookmark bookmark)
     {
         _networkBookmarkService.AddBookmark(bookmark);
+        LoadPlaces();
+    }
+
+    public void RenameNetworkBookmark(string uri, string name)
+    {
+        if (!_networkBookmarkService.RenameBookmark(uri, name))
+        {
+            return;
+        }
+
+        Logger.LogI("Renamed network connection");
         LoadPlaces();
     }
 
@@ -1942,6 +2060,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Logger.LogI(item.IsDirectory ? "Opened directory" : "Opened file");
 
+        if (ActivePane.IsVirtual && !NetworkBrowseService.IsBrowseLocation(item.FullPath))
+        {
+            OpenNetworkShare(item);
+            return;
+        }
+
         if (item.IsDirectory)
         {
             ResetActiveBreadcrumbTrail();
@@ -2051,9 +2175,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void RunInTerminal(string path, string[] command)
     {
-        string dir = Path.GetDirectoryName(path) ?? "/";
+        RunInTerminalAt(Path.GetDirectoryName(path) ?? "/", command);
+    }
+
+    public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment = null)
+    {
         string quoted = string.Join(" ", command.Select(QuoteForShell));
-        string shellScript = $"{quoted}; echo; read -n 1 -s -r -p \"[Process finished - press any key to close]\"";
+        string exports = string.Concat((environment ?? new Dictionary<string, string>()).Select(v => $"export {v.Key}={QuoteForShell(v.Value)}; "));
+        string shellScript = $"{exports}{quoted}; echo; read -n 1 -s -r -p \"[Process finished - press any key to close]\"";
         string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
 
         foreach (string candidate in candidates)
@@ -2127,6 +2256,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private List<FileItemViewModel> ResolveTargets(IEnumerable<FileItemViewModel>? selection)
     {
+        if (ActivePane.IsVirtual)
+        {
+            return new();
+        }
+
         List<FileItemViewModel> targets = selection?.ToList() ?? new();
         return targets.Count > 0 ? targets : ActivePane.GetSelection();
     }
@@ -2180,6 +2314,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void Paste(string? targetDirectory = null)
     {
         string dir = targetDirectory ?? CurrentPath;
+        if (NetworkBrowseService.IsBrowseLocation(dir))
+        {
+            return;
+        }
+
         ClipboardMode mode = ClipboardMode.Copy;
         string[] paths = [];
         try
@@ -2233,7 +2372,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void RenameSelected(FileItemViewModel item, string newName)
     {
-        if (string.IsNullOrWhiteSpace(newName) || item.Name == newName)
+        if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(newName) || item.Name == newName)
         {
             return;
         }
@@ -2260,7 +2399,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void CreateFolder(string folderName)
     {
-        if (string.IsNullOrWhiteSpace(folderName))
+        if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(folderName))
         {
             return;
         }
@@ -2273,7 +2412,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void CreateFile(string fileName)
     {
-        if (string.IsNullOrWhiteSpace(fileName))
+        if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(fileName))
         {
             return;
         }
@@ -2338,7 +2477,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    private static List<BreadcrumbItem> BuildBreadcrumbs(string path)
+    private List<BreadcrumbItem> BuildBreadcrumbs(string path)
     {
         List<BreadcrumbItem> crumbs = new();
         if (string.IsNullOrEmpty(path))
@@ -2348,9 +2487,27 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
+        if (NetworkBrowseService.IsBrowseLocation(path))
+        {
+            bool isRoot = NetworkBrowseService.IsNetworkRoot(path);
+            crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("NetworkBrowse"), FullPath = NetworkBrowseService.NetworkRoot, IsLast = isRoot });
+            if (!isRoot)
+            {
+                crumbs.Add(new BreadcrumbItem { Name = NetworkBrowseService.GetLocationName(path), FullPath = path, IsLast = true });
+            }
+
+            return crumbs;
+        }
+
         if (path == "/")
         {
             crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = true });
+            return crumbs;
+        }
+
+        if (TryGetMountCrumb(path, out string mountPath, out string mountName))
+        {
+            AddRootedCrumbs(crumbs, mountPath, mountName, path);
             return crumbs;
         }
 
@@ -2362,22 +2519,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (path.StartsWith(userProfile + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
         {
-            crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Home"), FullPath = userProfile, IsLast = false });
-            string relative = path.Substring(userProfile.Length).TrimStart(Path.DirectorySeparatorChar);
-            string[] parts = relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-            string accum = userProfile;
-
-            for (int i = 0; i < parts.Length; i++)
-            {
-                accum = Path.Combine(accum, parts[i]);
-                crumbs.Add(new BreadcrumbItem
-                {
-                    Name = parts[i],
-                    FullPath = accum,
-                    IsLast = i == parts.Length - 1,
-                });
-            }
-
+            AddRootedCrumbs(crumbs, userProfile, LocalizationService.Get("Home"), path);
             return crumbs;
         }
 
@@ -2397,6 +2539,63 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         return crumbs;
+    }
+
+    private static void AddRootedCrumbs(List<BreadcrumbItem> crumbs, string rootPath, string rootName, string path)
+    {
+        string relative = path.Substring(rootPath.Length).TrimStart(Path.DirectorySeparatorChar);
+        string[] parts = relative.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
+        crumbs.Add(new BreadcrumbItem { Name = rootName, FullPath = rootPath, IsLast = parts.Length == 0 });
+
+        string accum = rootPath;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            accum = Path.Combine(accum, parts[i]);
+            crumbs.Add(new BreadcrumbItem
+            {
+                Name = parts[i],
+                FullPath = accum,
+                IsLast = i == parts.Length - 1,
+            });
+        }
+    }
+
+    private bool TryGetMountCrumb(string path, out string mountPath, out string name)
+    {
+        mountPath = "";
+        name = "";
+
+        string gvfsRoot = $"/run/user/{GetUserId()}/gvfs/";
+        if (path.StartsWith(gvfsRoot, StringComparison.Ordinal))
+        {
+            string mountDir = path[gvfsRoot.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
+            if (mountDir.Length == 0)
+            {
+                return false;
+            }
+
+            mountPath = gvfsRoot + mountDir;
+            string mount = mountPath;
+            PlaceItem? place = Places.FirstOrDefault(p => !p.IsHeader && IsSamePath(p.Path, mount));
+            name = place?.Name ?? GetGvfsFastName(mountPath);
+            return true;
+        }
+
+        string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        PlaceItem? device = Places
+            .Where(p => !p.IsHeader && p.Category == PlaceCategory.Devices && p.IsMounted && Path.IsPathRooted(p.Path))
+            .Where(p => NormalizeTrailPath(p.Path) != "/" && !IsSameOrAncestor(p.Path, userProfile))
+            .Where(p => IsSameOrAncestor(p.Path, path))
+            .OrderByDescending(p => NormalizeTrailPath(p.Path).Length)
+            .FirstOrDefault();
+        if (device == null)
+        {
+            return false;
+        }
+
+        mountPath = NormalizeTrailPath(device.Path);
+        name = device.Name;
+        return true;
     }
 
     private const int PreviewDecodeWidth = 400;
@@ -2677,7 +2876,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         _freeSpacePath = path;
         _freeSpaceText = "";
-        if (string.IsNullOrEmpty(path))
+        if (string.IsNullOrEmpty(path) || NetworkBrowseService.IsBrowseLocation(path))
         {
             return "";
         }

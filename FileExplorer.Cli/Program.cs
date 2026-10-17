@@ -122,6 +122,7 @@ public static class Program
            
            Sidebar:
            | Enter / Arrow Right - Open place, mount device or connect to saved server
+           | Network - Browse computers and shares nearby (open shares connect directly, others ask for a login)
            | Delete - Remove bookmark / saved server
            | Shift + Up / Down Arrow - Move entry within its section (saved, shared with the GUI)
            | Ctrl + Shift + Up / Down Arrow - Move whole section (saved, shared with the GUI)
@@ -372,33 +373,13 @@ public static class Program
             ZIndex = -1,
         });
 
+        parts.Add(GetPathBarPart());
+
         for (int ctxIndex = 0; ctxIndex < _contexts.Count; ctxIndex++)
         {
             EntryContext context = _contexts[ctxIndex];
             parts.AddRange(context.Menu.Render());
-            
-            bool isSelected = ctxIndex == _selectedContextIndex && !Sidebar.IsFocused;
-            bool isSidebarTarget = ctxIndex == _selectedContextIndex && Sidebar.IsFocused;
-            Color topBarColor = isSidebarTarget ? new Color(120, 180, 255) : isSelected ? Color.White : Color.LightGray;
-            
-            int maxWidth = context.Menu.MaxWidth;
-            string cwdText = $" File-Explorer ({(context.Cwd == _bookmarkService.BookmarkDir ? "Bookmarks" : context.Cwd)})";
-            if (cwdText.Length > maxWidth)
-            {
-                cwdText = " ..." + cwdText.Substring(cwdText.Length - maxWidth + 4);
-            }
-            string pathFill = cwdText + new string(' ', Math.Max(0, maxWidth - cwdText.Length));
-            
-            parts.Add(new RenderPart 
-            {
-                X = context.Menu.X,
-                Y = 0,
-                Text = pathFill,
-                Foreground = topBarColor,
-                Background = Environment.IsPrivilegedProcess ? Color.Red.Transform(-50, 40, 50) : Color.Reset,
-                ZIndex = -2,
-            });
-            
+
             if (context.IsLoading)
             {
                 parts.Add(new RenderPart
@@ -443,6 +424,32 @@ public static class Program
         }
 
         return parts;
+    }
+
+    private static RenderPart GetPathBarPart()
+    {
+        EntryContext context = SelectedContext;
+        int x = _contexts[0].Menu.X;
+        int width = Math.Max(Console.WindowWidth - x, 0);
+
+        string location = context.Cwd == _bookmarkService.BookmarkDir ? "Bookmarks"
+            : FolderUtils.IsNetworkView(context.Cwd) ? NetworkUtils.GetTitle(context.Cwd)
+            : Sidebar.GetDisplayPath(context.Cwd);
+        string text = $" File-Explorer ({location})";
+        if (text.Length > width)
+        {
+            text = " ..." + text[Math.Max(text.Length - width + 4, 0)..];
+        }
+
+        return new RenderPart
+        {
+            X = x,
+            Y = 0,
+            Text = text.Length > width ? text[..width] : text.PadRight(width),
+            Foreground = Sidebar.IsFocused ? new Color(120, 180, 255) : Color.White,
+            Background = Environment.IsPrivilegedProcess ? Color.Red.Transform(-50, 40, 50) : Color.Reset,
+            ZIndex = -2,
+        };
     }
 
     private static EntryContext CreateContext()
@@ -504,7 +511,7 @@ public static class Program
 
             AssignItemRenderers();
             MapKeybinds(SelectedContext);
-            Directory.SetCurrentDirectory(SelectedContext.Cwd);
+            FolderUtils.SetWorkingDirectory(SelectedContext.Cwd);
         }
     }
 
@@ -515,7 +522,7 @@ public static class Program
             _selectedContextIndex = (_selectedContextIndex + indexOffset + _contexts.Count) % _contexts.Count;
             MapKeybinds(SelectedContext);
             AssignItemRenderers();
-            Directory.SetCurrentDirectory(SelectedContext.Cwd);
+            FolderUtils.SetWorkingDirectory(SelectedContext.Cwd);
         }
     }
 
@@ -697,6 +704,11 @@ public static class Program
 
         if (bestMatch != null)
         {
+            if (FolderUtils.IsNetworkView(bestMatch.Context.Cwd) && !bestMatch.WorksInNetworkView)
+            {
+                return;
+            }
+
             bestMatch.OnKeyDown(e);
             return;
         }

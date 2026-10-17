@@ -2,6 +2,7 @@ using FileExplorer.Cli.Context;
 using FileExplorer.Cli.Keybinds;
 using FileExplorer.Cli.Utilities;
 using FileExplorer.Core.Services;
+using FileExplorer.Core.Utilities;
 
 using InputLib;
 
@@ -16,10 +17,11 @@ public sealed class SidebarEntry
     public string? Header { get; init; }
     public PlaceInfo? Place { get; init; }
     public bool IsConnectAction { get; init; }
+    public bool IsNetworkBrowse { get; init; }
     public bool IsSpacer { get; init; }
     public bool IsHeader => Header != null || IsSpacer;
 
-    public string Key => IsSpacer ? $"_{Header}" : Header != null ? $"#{Header}" : IsConnectAction ? "+connect" : $"{Place?.Kind}:{Place?.Path}";
+    public string Key => IsSpacer ? $"_{Header}" : Header != null ? $"#{Header}" : IsConnectAction ? "+connect" : IsNetworkBrowse ? "+network" : $"{Place?.Kind}:{Place?.Path}";
 }
 
 public sealed class SidebarPane
@@ -107,6 +109,29 @@ public sealed class SidebarPane
         });
     }
 
+    public string GetDisplayPath(string path)
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        PlaceInfo? root = _places
+            .Where(p => p.IsMounted && p.Kind is PlaceKind.Devices or PlaceKind.Network && p.Path.StartsWith('/'))
+            .Where(p => p.Path.TrimEnd('/').Length > 0 && !IsSameOrAncestor(p.Path.TrimEnd('/'), home))
+            .Where(p => IsSameOrAncestor(p.Path.TrimEnd('/'), path))
+            .OrderByDescending(p => p.Path.TrimEnd('/').Length)
+            .FirstOrDefault();
+        if (root == null)
+        {
+            return path;
+        }
+
+        string relative = path[root.Path.TrimEnd('/').Length..].Trim('/');
+        return relative.Length == 0 ? root.Name : $"{root.Name}/{relative}";
+    }
+
+    private static bool IsSameOrAncestor(string ancestor, string path)
+    {
+        return path == ancestor || path.StartsWith(ancestor + "/", StringComparison.Ordinal);
+    }
+
     private List<SidebarEntry> BuildEntries(List<PlaceInfo> places)
     {
         List<SidebarEntry> entries = new();
@@ -125,6 +150,11 @@ public sealed class SidebarPane
             }
 
             entries.Add(new() { Header = title });
+            if (kind == PlaceKind.Network && GioFileLister.IsAvailable)
+            {
+                entries.Add(new() { IsNetworkBrowse = true });
+            }
+
             entries.AddRange(section.Select(p => new SidebarEntry { Place = p }));
             if (kind == PlaceKind.Network)
             {
@@ -308,7 +338,7 @@ public sealed class SidebarPane
     public void MoveSelectedSection(int direction)
     {
         SidebarEntry? entry = Menu.SelectedItem?.Value;
-        PlaceKind? kind = entry?.IsConnectAction == true ? PlaceKind.Network : entry?.Place?.Kind;
+        PlaceKind? kind = entry?.IsConnectAction == true || entry?.IsNetworkBrowse == true ? PlaceKind.Network : entry?.Place?.Kind;
         if (kind == null)
         {
             return;
@@ -346,6 +376,11 @@ public sealed class SidebarPane
             return true;
         }
 
+        if (entry.IsNetworkBrowse)
+        {
+            return NavigateTo(context, NetworkBrowseService.NetworkRoot);
+        }
+
         PlaceInfo place = entry.Place!;
         if (place.Kind == PlaceKind.Devices && !place.IsMounted)
         {
@@ -364,7 +399,7 @@ public sealed class SidebarPane
 
     private bool NavigateTo(EntryContext context, string path)
     {
-        if (!Directory.Exists(path))
+        if (!Directory.Exists(path) && !FolderUtils.IsNetworkView(path))
         {
             StatusText = $"Not available: {path}";
             return false;
@@ -373,7 +408,7 @@ public sealed class SidebarPane
         StatusText = "";
         context.Navigation.NavigateTo(path);
         FolderUtils.LoadFolderContent(context, path);
-        Directory.SetCurrentDirectory(path);
+        FolderUtils.SetWorkingDirectory(path);
 
         return true;
     }
@@ -516,10 +551,12 @@ public sealed class SidebarPane
         int index = Menu.IndexOf(entry);
         bool isCursor = IsFocused && index == Menu.SelectedIndex;
         PlaceInfo? place = entry.Place;
-        bool isCurrent = place != null && place.IsMounted && CurrentPath != null && string.Equals(place.Path.TrimEnd('/'), CurrentPath.TrimEnd('/'), StringComparison.Ordinal);
+        bool isCurrent = entry.IsNetworkBrowse
+            ? CurrentPath != null && FolderUtils.IsNetworkView(CurrentPath)
+            : place != null && place.IsMounted && CurrentPath != null && string.Equals(place.Path.TrimEnd('/'), CurrentPath.TrimEnd('/'), StringComparison.Ordinal);
 
-        string icon = entry.IsConnectAction ? "+" : GetIcon(place!);
-        string name = entry.IsConnectAction ? "Connect to server…" : place!.Name;
+        string icon = entry.IsConnectAction ? "+" : entry.IsNetworkBrowse ? "◎" : GetIcon(place!);
+        string name = entry.IsConnectAction ? "Connect to server…" : entry.IsNetworkBrowse ? "Network" : place!.Name;
         string text = Fit($" {(isCursor ? "›" : " ")}{icon} {name}", contentWidth);
 
         Color foreground = isCursor ? Color.Black

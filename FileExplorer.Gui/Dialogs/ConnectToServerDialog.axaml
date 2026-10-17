@@ -216,7 +216,8 @@
             <Button Content="{markup:Translate Key=Cancel}"
                     Click="OnCancelClick"
                     Background="#333338"
-                    Width="80"
+                    MinWidth="80"
+                    Padding="14,6"
                     HorizontalContentAlignment="Center"
                     IsCancel="True"
                     CornerRadius="6"/>
@@ -226,7 +227,8 @@
                     Click="OnConnectClick"
                     Background="#3584E4"
                     Foreground="White"
-                    Width="85"
+                    MinWidth="85"
+                    Padding="14,6"
                     HorizontalContentAlignment="Center"
                     IsDefault="True"
                     CornerRadius="6"/>

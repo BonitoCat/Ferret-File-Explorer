@@ -1,0 +1,7 @@
+{
+  "AddonName": "Git Tools",
+  "AddonDescription": "Show the git status of the current folder and initialize new repositories.",
+  "GitStatus": "Git Status",
+  "GitInit": "Initialize Git Repository",
+  "GitInitConfirm": "Initialize a new git repository here?"
+}

@@ -21,6 +21,7 @@ public class FileItemViewModel : ViewModelBase
     public required string Name { get; init; }
     public required string FullPath { get; init; }
     public required bool IsDirectory { get; init; }
+    public bool IsSymlink { get; init; }
     public required string SizeString { get; init; }
     public required string TypeString { get; init; }
     public required string ModifiedString { get; init; }
@@ -116,6 +117,7 @@ public class FileItemViewModel : ViewModelBase
             Name = entry.FullName,
             FullPath = entry.FullPath,
             IsDirectory = isDir,
+            IsSymlink = entry.IsSymlink,
             FileType = fileType,
             SizeString = sizeStr,
             TypeString = typeStr,

@@ -42,6 +42,36 @@ public partial class ConnectToServerDialog : Window
         }, Tunnel);
     }
 
+    public ConnectToServerDialog(NetworkConnectionInfo login) : this()
+    {
+        ProtocolComboBox.SelectedIndex = login.Protocol switch
+        {
+            NetworkProtocol.Smb => 1,
+            NetworkProtocol.Ftp => 2,
+            NetworkProtocol.Dav => 4,
+            NetworkProtocol.Davs => 5,
+            _ => 0,
+        };
+
+        ServerBox.Text = login.Host;
+        PathBox.Text = login.Path ?? "";
+        DomainBox.Text = login.Domain ?? "";
+        UserBox.Text = string.IsNullOrEmpty(login.Username) ? Environment.UserName : login.Username;
+        AnonymousCheckBox.IsChecked = false;
+        if (login.Port.HasValue)
+        {
+            PortBox.Text = login.Port.Value.ToString();
+        }
+
+        string share = (login.Path ?? "").Trim('/');
+        Title = LocalizationService.Format("NetworkLoginTitle", share.Length > 0 ? share : login.Host, NetworkBrowseService.GetLocationName("smb://" + login.Host));
+
+        Opened += (_, _) =>
+        {
+            PasswordBox.Focus();
+        };
+    }
+
     private void OnProtocolSelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         int index = ProtocolComboBox.SelectedIndex;

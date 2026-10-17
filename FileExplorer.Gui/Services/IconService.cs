@@ -4,6 +4,7 @@ using System.IO;
 using System.Security.Principal;
 using System.Text;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Svg.Skia;
@@ -191,6 +192,45 @@ public static class IconService
     public static void ClearCache()
     {
         _cache.Clear();
+    }
+
+    public static IImage? LoadFile(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            return null;
+        }
+
+        string key = $"file:{path}:{File.GetLastWriteTimeUtc(path).Ticks}";
+        if (_cache.TryGetValue(key, out IImage? cached))
+        {
+            return cached;
+        }
+
+        IImage? loaded = null;
+        try
+        {
+            if (path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+            {
+                using FileStream stream = File.OpenRead(path);
+                SvgSource? source = SvgSource.LoadFromStream(stream, null);
+                loaded = source != null ? new SvgImage { Source = source } : null;
+            }
+            else
+            {
+                loaded = new Bitmap(path);
+            }
+        }
+        catch
+        {
+        }
+
+        if (loaded != null)
+        {
+            _cache[key] = loaded;
+        }
+
+        return loaded;
     }
 
     private static IImage? LoadIcon(string iconName)

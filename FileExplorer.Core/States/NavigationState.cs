@@ -1,3 +1,5 @@
+using FileExplorer.Core.Services;
+
 namespace FileExplorer.Core.States;
 
 public class NavigationState
@@ -9,14 +11,14 @@ public class NavigationState
 
     public NavigationState(string initialPath)
     {
-        CurrentPath = Path.GetFullPath(initialPath);
+        CurrentPath = Normalize(initialPath);
         _history.Add(CurrentPath);
         _historyIndex = 0;
     }
 
     public void NavigateTo(string path)
     {
-        path = Path.GetFullPath(path);
+        path = Normalize(path);
 
         try
         {
@@ -46,7 +48,9 @@ public class NavigationState
 
     public void NavigateUp()
     {
-        string? parent = Path.GetDirectoryName(CurrentPath);
+        string? parent = NetworkBrowseService.IsBrowseLocation(CurrentPath)
+            ? NetworkBrowseService.GetParent(CurrentPath)
+            : Path.GetDirectoryName(CurrentPath);
         if (parent != null)
         {
             NavigateTo(parent);
@@ -69,6 +73,11 @@ public class NavigationState
             _historyIndex++;
             CurrentPath = _history[_historyIndex];
         }
+    }
+
+    private static string Normalize(string path)
+    {
+        return path.Contains("://", StringComparison.Ordinal) ? path : Path.GetFullPath(path);
     }
 
     public bool CanGoBack => _historyIndex > 0;

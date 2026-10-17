@@ -1,0 +1,5 @@
+{
+  "AddonName": "Open in VS Code",
+  "AddonDescription": "Adds an “Open in VS Code” entry to the context menu.",
+  "OpenInVsCode": "Open in VS Code"
+}

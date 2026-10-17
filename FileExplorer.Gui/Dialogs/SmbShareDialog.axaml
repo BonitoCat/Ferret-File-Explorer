@@ -1,0 +1,134 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.SmbShareDialog"
+        Title="{markup:Translate Key=SharingOptions}"
+        Width="480"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <StackPanel Margin="20"
+                Spacing="12">
+
+        <TextBlock x:Name="HeaderText"
+                   FontSize="14"
+                   FontWeight="SemiBold"
+                   TextTrimming="CharacterEllipsis"/>
+
+        <Border x:Name="UnavailableBorder"
+                IsVisible="False"
+                Background="#3B2A18"
+                BorderBrush="#C98A2B"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="10,8">
+            <StackPanel Spacing="8">
+                <TextBlock x:Name="UnavailableText"
+                           TextWrapping="Wrap"
+                           FontSize="12"
+                           Foreground="#F0C890"/>
+
+                <Button x:Name="SetupButton"
+                        IsVisible="False"
+                        Click="OnSetupClick"
+                        Background="#C98A2B"
+                        Foreground="White"
+                        CornerRadius="6"
+                        HorizontalAlignment="Left"/>
+            </StackPanel>
+        </Border>
+
+        <CheckBox x:Name="ShareCheckBox"
+                  Content="{markup:Translate Key=ShareThisFolder}"
+                  IsCheckedChanged="OnShareCheckedChanged"/>
+
+        <Grid x:Name="SettingsGrid"
+              ColumnDefinitions="Auto,*"
+              RowDefinitions="Auto,Auto"
+              Margin="24,0,0,0">
+
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=ShareName}"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       Margin="0,0,12,8"
+                       VerticalAlignment="Center"/>
+
+            <TextBox x:Name="NameTextBox"
+                     Grid.Row="0"
+                     Grid.Column="1"
+                     FontSize="13"
+                     CornerRadius="6"
+                     Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=ShareComment}"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       Margin="0,0,12,0"
+                       VerticalAlignment="Center"/>
+
+            <TextBox x:Name="CommentTextBox"
+                     Grid.Row="1"
+                     Grid.Column="1"
+                     FontSize="13"
+                     CornerRadius="6"/>
+        </Grid>
+
+        <StackPanel x:Name="OptionsPanel"
+                    Spacing="4"
+                    Margin="24,0,0,0">
+
+            <CheckBox x:Name="WritableCheckBox"
+                      Content="{markup:Translate Key=ShareAllowWrite}"/>
+
+            <CheckBox x:Name="GuestCheckBox"
+                      Content="{markup:Translate Key=ShareAllowGuests}"
+                      IsCheckedChanged="OnGuestCheckedChanged"/>
+        </StackPanel>
+
+        <TextBlock x:Name="ParentWarningText"
+                   IsVisible="False"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="#F0C890"
+                   Margin="24,0,0,0"/>
+
+        <TextBlock x:Name="ErrorText"
+                   IsVisible="False"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="#FF7B72"/>
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,4,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    CornerRadius="6"
+                    IsCancel="True"/>
+
+            <Button x:Name="ApplyButton"
+                    Content="{markup:Translate Key=OK}"
+                    Click="OnApplyClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    CornerRadius="6"
+                    IsDefault="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -136,6 +136,7 @@ public partial class FileSystemService
                         byte dType = Marshal.ReadByte(entryPtr, 18);
                         string fullPath = Path.Combine(path, name);
                         bool isDir = dType == 4;
+                        bool isSymlink = dType == 10 || (dType == 0 && IsSymlinkPath(fullPath));
 
                         if (dType == 0 || dType == 10)
                         {
@@ -182,6 +183,7 @@ public partial class FileSystemService
                                 IsCompressed = (attributes & FileAttributes.Compressed) != 0,
                                 IsReadOnly = (attributes & FileAttributes.ReadOnly) != 0,
                                 IsSystem = (attributes & FileAttributes.System) != 0,
+                                IsSymlink = isSymlink,
                                 CreationTime = creationTime,
                                 LastAccessTime = lastAccessTime,
                                 LastWriteTime = lastWriteTime,
@@ -243,6 +245,7 @@ public partial class FileSystemService
                                 IsCompressed = (attributes & FileAttributes.Compressed) != 0,
                                 IsReadOnly = false,
                                 IsSystem = (attributes & FileAttributes.System) != 0,
+                                IsSymlink = isSymlink,
                                 CreationTime = creationTime,
                                 LastAccessTime = lastAccessTime,
                                 LastWriteTime = lastWriteTime,
@@ -579,6 +582,18 @@ public partial class FileSystemService
         }
 
         file.IsAccurateType = true;
+    }
+
+    private static bool IsSymlinkPath(string path)
+    {
+        try
+        {
+            return new FileInfo(path).LinkTarget != null;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool TryEnumerateWithGio(

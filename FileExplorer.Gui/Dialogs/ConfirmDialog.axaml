@@ -41,7 +41,8 @@
                     Content="{markup:Translate Key=Cancel}"
                     Click="OnCancelClick"
                     Background="#333333"
-                    Width="80"
+                    MinWidth="80"
+                    Padding="14,6"
                     HorizontalContentAlignment="Center"
                     IsCancel="True"/>
 
@@ -50,7 +51,8 @@
                     Click="OnConfirmClick"
                     Background="#3584E4"
                     Foreground="White"
-                    Width="80"
+                    MinWidth="80"
+                    Padding="14,6"
                     HorizontalContentAlignment="Center"
                     IsDefault="True"/>
         </StackPanel>

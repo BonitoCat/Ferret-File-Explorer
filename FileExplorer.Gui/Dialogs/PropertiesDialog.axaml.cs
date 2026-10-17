@@ -281,7 +281,9 @@ public partial class PropertiesDialog : Window
 
         if (!_canEditPermissions)
         {
-            ShowPermissionMessage(LocalizationService.Format("OnlyOwnerCanChange", stat.Owner));
+            ShowPermissionMessage(stat.Owner == "root"
+                ? LocalizationService.Get("OnlyRootCanChange")
+                : LocalizationService.Format("OnlyOwnerCanChange", stat.Owner));
         }
     }
 
@@ -802,6 +804,7 @@ public partial class PropertiesDialog : Window
             if (_isDirectory)
             {
                 Directory.Move(_path, target);
+                FolderColorService.Move(_path, target);
             }
             else
             {

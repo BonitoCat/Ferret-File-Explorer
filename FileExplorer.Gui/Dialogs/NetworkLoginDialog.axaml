@@ -1,0 +1,101 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.NetworkLoginDialog"
+        Title="{markup:Translate Key=NetworkServerLoginTitle}"
+        Width="400"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <StackPanel Margin="20"
+                Spacing="12">
+
+        <TextBlock x:Name="PromptText"
+                   TextWrapping="Wrap"
+                   FontSize="13"/>
+
+        <Grid ColumnDefinitions="Auto,*"
+              RowDefinitions="Auto,Auto,Auto">
+
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=Username}"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       Margin="0,0,12,8"
+                       VerticalAlignment="Center"/>
+
+            <TextBox x:Name="UserTextBox"
+                     Grid.Row="0"
+                     Grid.Column="1"
+                     FontSize="13"
+                     CornerRadius="6"
+                     Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=Password}"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       Margin="0,0,12,8"
+                       VerticalAlignment="Center"/>
+
+            <TextBox x:Name="PasswordTextBox"
+                     Grid.Row="1"
+                     Grid.Column="1"
+                     FontSize="13"
+                     CornerRadius="6"
+                     PasswordChar="•"
+                     Margin="0,0,0,8"/>
+
+            <TextBlock Grid.Row="2"
+                       Grid.Column="0"
+                       Text="{markup:Translate Key=Domain}"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       Margin="0,0,12,0"
+                       VerticalAlignment="Center"/>
+
+            <TextBox x:Name="DomainTextBox"
+                     Grid.Row="2"
+                     Grid.Column="1"
+                     FontSize="13"
+                     CornerRadius="6"
+                     Watermark="{markup:Translate Key=DomainWatermark}"/>
+        </Grid>
+
+        <TextBlock x:Name="ErrorText"
+                   IsVisible="False"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="#FF7B72"/>
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,4,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    CornerRadius="6"
+                    IsCancel="True"/>
+
+            <Button Content="{markup:Translate Key=Connect}"
+                    Click="OnConnectClick"
+                    Background="#3584E4"
+                    Foreground="White"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    CornerRadius="6"
+                    IsDefault="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

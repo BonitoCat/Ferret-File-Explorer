@@ -113,6 +113,13 @@ public partial class App : Application
         }
 
         string raw = args[0].Trim();
+        if (raw.StartsWith("trash:", StringComparison.OrdinalIgnoreCase))
+        {
+            string trash = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "Trash", "files");
+            Directory.CreateDirectory(trash);
+            return trash;
+        }
+
         try
         {
             string resolved = Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) && uri.IsFile

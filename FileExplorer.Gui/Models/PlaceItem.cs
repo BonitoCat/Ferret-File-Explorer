@@ -18,19 +18,45 @@ public class PlaceItem : ViewModelBase
     private bool _isDropTarget;
     private bool _isVisible = true;
     private bool _isCollapsed;
+    private string _path = "";
+    private bool _isMounted = true;
 
     public required string Name { get; set; }
-    public required string Path { get; set; }
+
+    public required string Path
+    {
+        get => _path;
+        set
+        {
+            if (SetProperty(ref _path, value))
+            {
+                OnPropertyChanged(nameof(CanDismount));
+            }
+        }
+    }
+
     public IImage? Icon { get; set; }
     public string IconSvg { get; set; } = "";
     public bool IsBookmark { get; init; }
     public bool IsHeader { get; init; }
     public bool IsNetworkBookmark { get; set; }
-    public bool IsMounted { get; set; } = true;
+
+    public bool IsMounted
+    {
+        get => _isMounted;
+        set
+        {
+            if (SetProperty(ref _isMounted, value))
+            {
+                OnPropertyChanged(nameof(CanDismount));
+            }
+        }
+    }
+
     public string? RemoteUri { get; set; }
     public string? DevicePath { get; set; }
     public PlaceCategory Category { get; init; } = PlaceCategory.Places;
-    public bool CanDismount => !IsHeader && IsMounted && (Category == PlaceCategory.Devices || Category == PlaceCategory.Network) && !string.IsNullOrEmpty(Path) && Path != "/" && !Path.StartsWith("sftp://") && !Path.StartsWith("smb://") && !Path.StartsWith("ftp://") && !Path.StartsWith("dav://") && !Path.StartsWith("davs://") && !Path.StartsWith("/dev/");
+    public bool CanDismount => !IsHeader && IsMounted && (Category == PlaceCategory.Devices || Category == PlaceCategory.Network) && !string.IsNullOrEmpty(Path) && Path != "/" && !Path.StartsWith("sftp://") && !Path.StartsWith("smb://") && !Path.StartsWith("ftp://") && !Path.StartsWith("dav://") && !Path.StartsWith("davs://") && !Path.StartsWith("network:") && !Path.StartsWith("/dev/");
     public bool IsNetworkHeader => IsHeader && Category == PlaceCategory.Network;
 
     public bool IsVisible

@@ -1,0 +1,19 @@
+id: git-tools
+name: $AddonName
+description: $AddonDescription
+version: 1.0.0
+author: BonitoCat
+script: scripts/git.sh
+
+actions:
+  - id: status
+    title: $GitStatus
+    location: addons-menu
+    shortcut: Ctrl+Alt+G
+
+  - id: init
+    title: $GitInit
+    location: context-menu
+    targets: [folder, background]
+    multiple: false
+    confirm: $GitInitConfirm

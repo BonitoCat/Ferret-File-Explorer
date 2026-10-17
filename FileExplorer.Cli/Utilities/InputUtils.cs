@@ -30,6 +30,11 @@ public static class InputUtils
 
     public static string? Input(this EntryContext context, string prompt, string defaultText = "", bool mask = false)
     {
+        return Input(context, prompt, defaultText, mask, null);
+    }
+
+    public static string? Input(this EntryContext context, string prompt, string defaultText, bool mask, int? selectLength)
+    {
         if (!prompt.StartsWith(' '))
         {
             prompt = ' ' + prompt;
@@ -46,8 +51,8 @@ public static class InputUtils
         System.Text.StringBuilder builder = new(defaultText);
         string? result = null;
 
-        int cursor = builder.Length;
-        int? selectionStart = null;
+        int cursor = selectLength.HasValue ? Math.Clamp(selectLength.Value, 0, builder.Length) : builder.Length;
+        int? selectionStart = selectLength.HasValue ? 0 : null;
 
         string label = prompt.Trim().TrimEnd(':').TrimEnd();
 
@@ -88,7 +93,10 @@ public static class InputUtils
             Console.Write("\x1b[2K\x1b[38;2;110;110;120m  Enter confirm   Esc cancel\x1b[0m");
 
             Console.SetCursorPosition(head.Length + cursor - offset, Console.WindowHeight - 2);
-            TerminalHelper.ShowCursor();
+            if (!selectionStart.HasValue || selectionStart.Value == cursor)
+            {
+                TerminalHelper.ShowCursor();
+            }
         }
 
         void DeleteSelection()
@@ -173,6 +181,15 @@ public static class InputUtils
                 break;
             }
             
+            bool hasSelection = selectionStart.HasValue && selectionStart.Value != cursor;
+            if (hasSelection && !isShift && !isCtrl && keyInfo.Key is ConsoleKey.LeftArrow or ConsoleKey.RightArrow)
+            {
+                cursor = keyInfo.Key == ConsoleKey.LeftArrow ? Math.Min(cursor, selectionStart!.Value) : Math.Max(cursor, selectionStart!.Value);
+                selectionStart = null;
+                Redraw();
+                continue;
+            }
+
             if (keyInfo.Key == ConsoleKey.LeftArrow)
             {
                 HandleMovement(() =>

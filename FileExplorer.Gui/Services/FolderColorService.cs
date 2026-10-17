@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.IO;
-using System.Text.Json;
-using FileExplorer.Core.Utilities;
+using FileExplorer.Core.Services;
 
 namespace FileExplorer.Gui.Services;
 
@@ -27,68 +23,23 @@ public static class FolderColorService
         ("Dark", "#5C6370"),
     ];
 
-    private static readonly string FilePath = Path.Combine(AppPaths.DataDir, "folder_colors.json");
-
-    private static readonly Lazy<ConcurrentDictionary<string, string>> Colors = new(Load);
-
     public static string? Get(string path)
     {
-        return Colors.Value.TryGetValue(Normalize(path), out string? color) ? color : null;
+        return FolderColorStore.Get(path);
     }
 
     public static void Set(IEnumerable<string> paths, string? hex)
     {
-        foreach (string path in paths)
-        {
-            string key = Normalize(path);
-            if (string.IsNullOrEmpty(hex))
-            {
-                Colors.Value.TryRemove(key, out _);
-            }
-            else
-            {
-                Colors.Value[key] = hex.ToUpperInvariant();
-            }
-        }
-
-        Save();
+        FolderColorStore.Set(paths, hex);
     }
 
-    private static string Normalize(string path)
+    public static void Move(string oldPath, string newPath)
     {
-        string trimmed = path.TrimEnd('/');
-        return string.IsNullOrEmpty(trimmed) ? "/" : trimmed;
+        FolderColorStore.Move(oldPath, newPath);
     }
 
-    private static ConcurrentDictionary<string, string> Load()
+    public static void Remove(string path)
     {
-        try
-        {
-            if (File.Exists(FilePath))
-            {
-                Dictionary<string, string>? data = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(FilePath));
-                if (data != null)
-                {
-                    return new(data, StringComparer.Ordinal);
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return new(StringComparer.Ordinal);
-    }
-
-    private static void Save()
-    {
-        try
-        {
-            AppPaths.EnsureDir(AppPaths.DataDir);
-            File.WriteAllText(FilePath, JsonSerializer.Serialize(Colors.Value, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch
-        {
-        }
+        FolderColorStore.Remove(path);
     }
 }

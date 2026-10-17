@@ -1,7 +1,0 @@
-Package: fe-linux-arm64
-Version: 3.0.0-pre-release-3
-Section: utils
-Architecture: arm64
-Maintainer: BonitoCat
-Description: Advanced terminal and desktop file explorer (CLI + GUI)
-Depends: wl-clipboard, xclip, libx11-6, libx11-dev, libmagic1, libmagic-dev, libfontconfig1

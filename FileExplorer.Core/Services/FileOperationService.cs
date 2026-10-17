@@ -7,6 +7,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Models;
+using FileExplorer.Core.Utilities;
+using FileLib;
 using LoggerLib;
 using SearchOption = System.IO.SearchOption;
 
@@ -23,6 +25,7 @@ public class FileOperationService
         {
             if (Directory.Exists(path))
             {
+                bool hasColors = FolderColorStore.HasAny(path);
                 if (permanent)
                 {
                     Directory.Delete(path, true);
@@ -35,6 +38,11 @@ public class FileOperationService
                         Arguments = $"trash \"{path}\"",
                         UseShellExecute = false
                     })?.WaitForExit();
+                }
+
+                if (hasColors)
+                {
+                    ForgetFolderColors(path, permanent);
                 }
             }
             else if (File.Exists(path))
@@ -85,6 +93,66 @@ public class FileOperationService
         return failed;
     }
 
+    private static void ForgetFolderColors(string path, bool permanent)
+    {
+        if (Directory.Exists(path))
+        {
+            return;
+        }
+
+        string? trashedPath = permanent ? null : FindTrashedPath(path);
+        if (trashedPath != null)
+        {
+            FolderColorStore.Move(path, trashedPath);
+            return;
+        }
+
+        FolderColorStore.Remove(path);
+    }
+
+    private static string? FindTrashedPath(string originalPath)
+    {
+        string fullPath = NormalizePath(originalPath);
+        foreach (string trashDir in GetTrashDirs(fullPath))
+        {
+            string infoDir = Path.Combine(trashDir, "info");
+            if (!Directory.Exists(infoDir))
+            {
+                continue;
+            }
+
+            try
+            {
+                string? infoFile = new DirectoryInfo(infoDir).EnumerateFiles("*.trashinfo")
+                    .OrderByDescending(f => f.LastWriteTimeUtc)
+                    .Where(f => ReadTrashInfoPath(f.FullName, trashDir) == fullPath)
+                    .Select(f => f.Name)
+                    .FirstOrDefault();
+                if (infoFile != null)
+                {
+                    return Path.Combine(trashDir, "files", Path.GetFileNameWithoutExtension(infoFile));
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> GetTrashDirs(string path)
+    {
+        yield return Path.Combine(DirectoryHelper.GetAppDataDirPath(false), "Trash");
+
+        uint uid = UnixStat.CurrentUid;
+        for (string? dir = Path.GetDirectoryName(path); !string.IsNullOrEmpty(dir); dir = Path.GetDirectoryName(dir))
+        {
+            yield return Path.Combine(dir, $".Trash-{uid}");
+            yield return Path.Combine(dir, ".Trash", uid.ToString());
+        }
+    }
+
     private static bool TryRestoreFromTrash(string trashedPath)
     {
         string trimmed = Path.TrimEndingDirectorySeparator(trashedPath);
@@ -122,6 +190,7 @@ public class FileOperationService
         if (Directory.Exists(trimmed))
         {
             Directory.Move(trimmed, originalPath);
+            FolderColorStore.Move(trimmed, originalPath);
         }
         else
         {
@@ -171,6 +240,7 @@ public class FileOperationService
         if (Directory.Exists(oldPath))
         {
             Directory.Move(oldPath, newPath);
+            FolderColorStore.Move(oldPath, newPath);
             _ = Logger.LogI("Directory renamed");
         }
         else if (File.Exists(oldPath))
@@ -233,6 +303,7 @@ public class FileOperationService
             while (File.Exists(newPath) || Directory.Exists(newPath));
 
             CopyDirectory(path, newPath);
+            FolderColorStore.Copy(path, newPath);
             _ = Logger.LogI("Duplicated item");
         }
     }
@@ -297,10 +368,12 @@ public class FileOperationService
                 if (mode == ClipboardMode.Cut)
                 {
                     Directory.Move(path, destPath);
+                    FolderColorStore.Move(path, destPath);
                 }
                 else
                 {
                     CopyDirectory(path, destPath);
+                    FolderColorStore.Copy(path, destPath);
                 }
 
                 count++;
@@ -529,6 +602,32 @@ public class FileOperationService
         {
         }
 
+        if (GioFileCopier.ShouldUse(sourceFile, destFile))
+        {
+            long startBytes = getBytes();
+            await Task.Run(() => GioFileCopier.Copy(sourceFile, destFile, copied =>
+            {
+                setBytes(startBytes + copied);
+                reportProgress(Path.GetFileName(sourceFile));
+            }, cancellationToken), cancellationToken);
+
+            setBytes(startBytes + fileSize);
+            if (mode == ClipboardMode.Cut)
+            {
+                try
+                {
+                    File.Delete(sourceFile);
+                }
+                catch
+                {
+                }
+            }
+
+            setItems(getItems() + 1);
+            reportProgress(Path.GetFileName(sourceFile));
+            return;
+        }
+
         if (mode == ClipboardMode.Cut)
         {
             try
@@ -614,6 +713,7 @@ public class FileOperationService
             try
             {
                 Directory.Move(sourceDir, destDir);
+                FolderColorStore.Move(sourceDir, destDir);
                 long dirBytes = 0;
                 int dirItems = 1;
                 try
@@ -645,6 +745,11 @@ public class FileOperationService
         }
 
         Directory.CreateDirectory(destDir);
+        if (mode == ClipboardMode.Copy)
+        {
+            FolderColorStore.Copy(sourceDir, destDir, false);
+        }
+
         setItems(getItems() + 1);
         reportProgress(Path.GetFileName(sourceDir));
 
@@ -696,6 +801,8 @@ public class FileOperationService
             catch
             {
             }
+
+            FolderColorStore.Move(sourceDir, destDir);
         }
 
         return complete;
@@ -765,6 +872,7 @@ public class FileOperationService
         if (Directory.Exists(path))
         {
             Directory.Delete(path, true);
+            FolderColorStore.Remove(path);
             return;
         }
 

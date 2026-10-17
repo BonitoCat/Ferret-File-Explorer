@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Services;
 using static Avalonia.Interactivity.RoutingStrategies;
 
@@ -9,6 +10,7 @@ namespace FileExplorer.Gui.Dialogs;
 public partial class InputDialog : Window
 {
     public string? ResultText { get; private set; }
+    public bool SelectNameOnly { get; set; }
 
     public InputDialog()
     {
@@ -17,7 +19,7 @@ public partial class InputDialog : Window
         Opened += (_, _) =>
         {
             InputTextBox.Focus();
-            InputTextBox.SelectAll();
+            SelectInitialText();
         };
 
         AddHandler(KeyDownEvent, (_, e) =>
@@ -43,6 +45,19 @@ public partial class InputDialog : Window
             TogglePasswordButton.IsVisible = true;
             UpdatePasswordIcon();
         }
+    }
+
+    private void SelectInitialText()
+    {
+        string text = InputTextBox.Text ?? "";
+        int nameLength = SelectNameOnly ? GetNameLength(text) : text.Length;
+        InputTextBox.SelectionStart = 0;
+        InputTextBox.SelectionEnd = nameLength;
+    }
+
+    public static int GetNameLength(string fileName)
+    {
+        return FileUtils.GetNameLength(fileName);
     }
 
     private void OnTogglePasswordClick(object? sender, RoutedEventArgs e)

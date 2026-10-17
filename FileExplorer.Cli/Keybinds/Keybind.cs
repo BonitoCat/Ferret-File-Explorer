@@ -8,6 +8,7 @@ using FileExplorer.Cli.Utilities;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Services;
+using FileExplorer.Core.Utilities;
 
 using InputLib;
 using InputLib.EventArgs;
@@ -22,12 +23,15 @@ public abstract class Keybind
 {
     public required List<Key> Keys { get; init; }
     public required EntryContext Context { get; init; }
+    public virtual bool WorksInNetworkView => false;
 
     public abstract void OnKeyDown(KeyDownEventArgs e);
 }
 
 public class NavUpKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         if (e.Continuous && Context.Menu.SelectedIndex == 0) return;
@@ -37,6 +41,8 @@ public class NavUpKeybind : Keybind
 
 public class NavDownKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         if (e.Continuous && Context.Menu.SelectedIndex == Context.Menu.Items.Count - 1) return;
@@ -46,37 +52,45 @@ public class NavDownKeybind : Keybind
 
 public class GoBackKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Navigation.GoBack();
         
         FolderUtils.LoadFolderContent(Context, Context.Cwd);
-        Directory.SetCurrentDirectory(Context.Cwd);
+        FolderUtils.SetWorkingDirectory(Context.Cwd);
     }
 }
 
 public class GoForwardKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Navigation.GoForward();
         FolderUtils.LoadFolderContent(Context, Context.Cwd);
-        Directory.SetCurrentDirectory(Context.Cwd);
+        FolderUtils.SetWorkingDirectory(Context.Cwd);
     }
 }
 
 public class NavigateUpKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Navigation.NavigateUp();
         FolderUtils.LoadFolderContent(Context, Context.Cwd, null, () => Context.Menu.SelectedIndex = 0);
-        Directory.SetCurrentDirectory(Context.Cwd);
+        FolderUtils.SetWorkingDirectory(Context.Cwd);
     }
 }
 
 public class ExecuteKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     private readonly FileExecutionService _executionService;
 
     public ExecuteKeybind(FileExecutionService executionService)
@@ -87,6 +101,12 @@ public class ExecuteKeybind : Keybind
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         EntryListItem? selected = Context.Menu.SelectedItem?.Value;
+        if (selected != null && FolderUtils.IsNetworkView(Context.Cwd))
+        {
+            selected.OnClick();
+            return;
+        }
+
         if (selected?.Entry != null)
         {
             if (selected.Entry is FolderEntry folder)
@@ -98,7 +118,7 @@ public class ExecuteKeybind : Keybind
 
                 Context.Navigation.NavigateTo(folder.FullPath);
                 FolderUtils.LoadFolderContent(Context, Context.Cwd, null, selected.DisplayName.Text == ".." ? () => Context.Menu.SelectedIndex = 0 : null);
-                Directory.SetCurrentDirectory(Context.Cwd);
+                FolderUtils.SetWorkingDirectory(Context.Cwd);
             }
             else
             {
@@ -399,7 +419,9 @@ public class RenameKeybind : Keybind
         
         if (selected == null) return;
 
-        string? newName = Context.Input($"Rename '{selected.Entry.FullName}' to: ", selected.Entry.FullName);
+        string name = selected.Entry.FullName;
+        int selectLength = selected.Entry is FolderEntry ? name.Length : FileUtils.GetNameLength(name);
+        string? newName = Context.Input($"Rename '{name}' to: ", name, false, selectLength);
         
         if (!string.IsNullOrWhiteSpace(newName) && newName != selected.Entry.FullName)
         {
@@ -519,6 +541,8 @@ public class CopyPathKeybind : Keybind
 
 public class ReloadKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         FolderUtils.LoadFolderContent(Context, Context.Cwd);
@@ -527,6 +551,8 @@ public class ReloadKeybind : Keybind
 
 public class PageUpKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Menu.MoveSelected(-Context.Menu.ViewRange);
@@ -535,6 +561,8 @@ public class PageUpKeybind : Keybind
 
 public class PageDownKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Menu.MoveSelected(Context.Menu.ViewRange);
@@ -543,6 +571,8 @@ public class PageDownKeybind : Keybind
 
 public class HomeKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Menu.MoveSelected(-Context.Menu.Items.Count);
@@ -551,6 +581,8 @@ public class HomeKeybind : Keybind
 
 public class EndKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Context.Menu.MoveSelected(Context.Menu.Items.Count);
@@ -579,6 +611,8 @@ public class DeselectAllKeybind : Keybind
 
 public class ActionKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     private readonly Action _action;
     
     public ActionKeybind(Action action)
@@ -652,6 +686,8 @@ public class NemoKeybind : Keybind
 
 public class HelpKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         while (Console.KeyAvailable)
@@ -690,10 +726,13 @@ public class HelpKeybind : Keybind
 
 public class DirPathKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         string? newPath = InputUtils.Input(Context, "Path:", Context.Cwd);
-        if (string.IsNullOrEmpty(newPath) || !Directory.Exists(newPath))
+        newPath = newPath?.Trim();
+        if (string.IsNullOrEmpty(newPath) || (!Directory.Exists(newPath) && !FolderUtils.IsNetworkView(newPath)))
         {
             return;
         }
@@ -705,7 +744,7 @@ public class DirPathKeybind : Keybind
 
         Context.Navigation.NavigateTo(newPath);
         FolderUtils.LoadFolderContent(Context, newPath, Context.SearchPattern);
-        Directory.SetCurrentDirectory(newPath);
+        FolderUtils.SetWorkingDirectory(newPath);
     }
 }
 
@@ -753,6 +792,8 @@ public class MultiSelectDownKeybind : Keybind
 
 public class ConnectServerKeybind : Keybind
 {
+    public override bool WorksInNetworkView => true;
+
     public override void OnKeyDown(KeyDownEventArgs e)
     {
         Connect(Context);
@@ -844,7 +885,7 @@ public class ConnectServerKeybind : Keybind
 
             context.Navigation.NavigateTo(mountPath);
             FolderUtils.LoadFolderContent(context, mountPath);
-            Directory.SetCurrentDirectory(mountPath);
+            FolderUtils.SetWorkingDirectory(mountPath);
             Program.Sidebar.Reload();
         });
     }
@@ -882,7 +923,7 @@ public class DismountKeybind : Keybind
                 string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 Context.Navigation.NavigateTo(home);
                 FolderUtils.LoadFolderContent(Context, home);
-                Directory.SetCurrentDirectory(home);
+                FolderUtils.SetWorkingDirectory(home);
             }
         });
     }

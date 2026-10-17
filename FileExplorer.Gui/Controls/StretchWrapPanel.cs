@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Generators;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using static Avalonia.Input.NavigationDirection;
 
@@ -69,7 +70,13 @@ public class StretchWrapPanel : VirtualizingPanel
     protected override Size MeasureOverride(Size availableSize)
     {
         IReadOnlyList<object?> items = Items;
-        Columns = GetColumnCount(availableSize.Width, items.Count);
+        int columns = GetColumnCount(availableSize.Width, items.Count);
+        if (columns != Columns)
+        {
+            KeepAnchorInView(Columns, columns);
+        }
+
+        Columns = columns;
         int rows = (items.Count + Columns - 1) / Columns;
         double width = double.IsInfinity(availableSize.Width) ? Columns * ItemWidth : availableSize.Width;
 
@@ -275,6 +282,35 @@ public class StretchWrapPanel : VirtualizingPanel
         }
 
         return ScrollIntoView(target);
+    }
+
+    private void KeepAnchorInView(int oldColumns, int newColumns)
+    {
+        if (_viewport.Height <= 0 || _viewport.Top <= 0 || ItemHeight <= 0)
+        {
+            return;
+        }
+
+        ScrollViewer? scrollViewer = this.FindAncestorOfType<ScrollViewer>();
+        if (scrollViewer == null)
+        {
+            return;
+        }
+
+        int anchorIndex = (int) Math.Floor(_viewport.Top / ItemHeight) * oldColumns;
+        double rowOffset = _viewport.Top % ItemHeight;
+        double newTop = anchorIndex / newColumns * ItemHeight + rowOffset;
+        double delta = newTop - _viewport.Top;
+        if (Math.Abs(delta) < 0.5)
+        {
+            return;
+        }
+
+        _viewport = _viewport.WithY(newTop);
+        Dispatcher.UIThread.Post(() =>
+        {
+            scrollViewer.Offset = scrollViewer.Offset.WithY(Math.Max(0, scrollViewer.Offset.Y + delta));
+        }, DispatcherPriority.Render);
     }
 
     private (int First, int Last) GetRealizationRange(int count)

@@ -13,12 +13,14 @@ using FileExplorer.Core.Services;
 using FileExplorer.Core.States;
 using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Models;
+using FileExplorer.Gui.Services;
 
 namespace FileExplorer.Gui.ViewModels;
 
 public class PaneViewModel : ViewModelBase, IDisposable
 {
     private readonly FileSystemService _fileService;
+    private readonly NetworkBrowseService _networkBrowser = new();
     private readonly Func<bool> _showHiddenFiles;
 
     private NavigationState? _navigation;
@@ -34,6 +36,8 @@ public class PaneViewModel : ViewModelBase, IDisposable
     public event Action<PaneViewModel>? BeforeLoad;
     public event Action<PaneViewModel>? ContentChanged;
     public event Action<PaneViewModel>? SelectionChanged;
+    public event Action<PaneViewModel, string>? LoadFailed;
+    public event Action<PaneViewModel, string, bool>? LoginRequired;
 
     public PaneViewModel(FileSystemService fileService, Func<bool> showHiddenFiles)
     {
@@ -63,9 +67,15 @@ public class PaneViewModel : ViewModelBase, IDisposable
     }
 
     public bool IsInTrash => IsOpen && _currentPath.Contains("/.local/share/Trash");
+    public bool IsVirtual => NetworkBrowseService.IsBrowseLocation(_currentPath);
     public bool CanGoBack => _navigation?.CanGoBack ?? false;
     public bool CanGoForward => _navigation?.CanGoForward ?? false;
-    public bool CanGoUp => IsOpen && Path.GetDirectoryName(_currentPath) != null;
+    public bool CanGoUp => IsOpen && (IsVirtual ? NetworkBrowseService.GetParent(_currentPath) != null : Path.GetDirectoryName(_currentPath) != null);
+
+    public static bool IsNavigable(string? path)
+    {
+        return NetworkBrowseService.IsBrowseLocation(path) || Directory.Exists(path);
+    }
 
     public FileItemViewModel? SelectedItem
     {
@@ -87,6 +97,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     public bool IsFileSelected => IsItemSelected && !IsFolderSelected;
     public bool IsEmptySpaceSelected => !IsItemSelected;
     public bool CanBookmarkSelection => IsFolderSelected || IsEmptySpaceSelected;
+    public bool CanCopyPath => IsFolderSelected || IsEmptySpaceSelected;
     public bool CanCreateNew => IsEmptySpaceSelected || IsFolderSelected;
     public bool CanColorSelection => IsFolderSelected;
     public bool CanExtractSelection => SelectedItem is FileItemViewModel item && (item.FileType == FileType.Archive || MainWindowViewModel.IsArchiveFile(item.FullPath));
@@ -98,6 +109,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(IsFileSelected));
         OnPropertyChanged(nameof(IsEmptySpaceSelected));
         OnPropertyChanged(nameof(CanBookmarkSelection));
+        OnPropertyChanged(nameof(CanCopyPath));
         OnPropertyChanged(nameof(CanCreateNew));
         OnPropertyChanged(nameof(CanColorSelection));
         OnPropertyChanged(nameof(CanExtractSelection));
@@ -108,6 +120,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(CurrentPath));
         OnPropertyChanged(nameof(IsOpen));
         OnPropertyChanged(nameof(IsInTrash));
+        OnPropertyChanged(nameof(IsVirtual));
         OnPropertyChanged(nameof(CanGoBack));
         OnPropertyChanged(nameof(CanGoForward));
         OnPropertyChanged(nameof(CanGoUp));
@@ -144,7 +157,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     public void NavigateTo(string path)
     {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+        if (string.IsNullOrEmpty(path) || !IsNavigable(path))
         {
             return;
         }
@@ -178,6 +191,17 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     public void GoUp()
     {
+        if (IsVirtual)
+        {
+            string? virtualParent = NetworkBrowseService.GetParent(_currentPath);
+            if (virtualParent != null)
+            {
+                NavigateTo(virtualParent);
+            }
+
+            return;
+        }
+
         string? parent = Path.GetDirectoryName(_currentPath);
         if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
         {
@@ -196,7 +220,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     {
         string? normalized = string.IsNullOrEmpty(searchPattern) ? null : searchPattern;
         string? current = string.IsNullOrEmpty(_searchPattern) ? null : _searchPattern;
-        if (IsLoading || normalized != current || Items.Count == 0)
+        if (IsLoading || normalized != current || Items.Count == 0 || IsVirtual)
         {
             Load(_currentPath, searchPattern);
             return;
@@ -245,7 +269,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     public void Load(string path, string? searchPattern = null)
     {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
+        if (string.IsNullOrEmpty(path) || !IsNavigable(path))
         {
             return;
         }
@@ -265,6 +289,12 @@ public class PaneViewModel : ViewModelBase, IDisposable
         Items.Clear();
         IsLoading = true;
         NotifyPathProperties();
+
+        if (NetworkBrowseService.IsBrowseLocation(path))
+        {
+            LoadNetworkLocation(path, searchPattern, cts);
+            return;
+        }
 
         bool showHidden = _showHiddenFiles();
         Task.Run(() =>
@@ -349,6 +379,79 @@ public class PaneViewModel : ViewModelBase, IDisposable
         }, token);
     }
 
+    private void LoadNetworkLocation(string path, string? searchPattern, CancellationTokenSource cts)
+    {
+        CancellationToken token = cts.Token;
+        string filter = (searchPattern ?? "").Trim('*');
+        Task.Run(async () =>
+        {
+            List<FileItemViewModel> items = new();
+            string? error;
+            bool needsLogin = false;
+            bool loginRejected = false;
+            try
+            {
+                NetworkBrowseResult result = await _networkBrowser.BrowseAsync(path, token);
+                error = result.Error;
+                needsLogin = result.NeedsCredentials;
+                loginRejected = result.CredentialsRejected;
+                items = result.Entries
+                    .Where(e => filter.Length == 0 || e.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
+                    .Select(CreateNetworkItem)
+                    .ToList();
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+            }
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (_loadCts != cts)
+                {
+                    return;
+                }
+
+                Items.AddRange(items);
+                IsLoading = false;
+                ContentChanged?.Invoke(this);
+
+                if (needsLogin && LoginRequired != null)
+                {
+                    LoginRequired.Invoke(this, path, loginRejected);
+                    return;
+                }
+
+                if (!string.IsNullOrEmpty(error))
+                {
+                    LoadFailed?.Invoke(this, error);
+                }
+            }, DispatcherPriority.Background);
+        }, token);
+    }
+
+    private static FileItemViewModel CreateNetworkItem(NetworkBrowseEntry entry)
+    {
+        bool isContainer = entry.Kind == NetworkBrowseKind.Container;
+        return new()
+        {
+            Entry = new FolderEntry { FullName = entry.Name, FullPath = entry.Uri },
+            Name = entry.Name,
+            FullPath = entry.Uri,
+            IsDirectory = true,
+            SizeString = "",
+            TypeString = LocalizationService.Get(isContainer ? "NetworkServer" : "NetworkShare"),
+            ModifiedString = "",
+            IsHidden = false,
+            IsAccessDenied = false,
+            Icon = IconService.Get(isContainer ? "network" : "folder"),
+        };
+    }
+
     private void PostBatch(List<FileItemViewModel> batch, CancellationToken token)
     {
         Dispatcher.UIThread.Post(() =>
@@ -365,7 +468,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     private void RefreshSilent()
     {
-        if (!IsOpen || !Directory.Exists(_currentPath))
+        if (!IsOpen)
         {
             return;
         }
@@ -376,6 +479,11 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
         Task.Run(() =>
         {
+            if (!Directory.Exists(path))
+            {
+                return;
+            }
+
             ClipboardMode clipMode = ClipboardMode.Copy;
             string[] clipPaths = [];
             try

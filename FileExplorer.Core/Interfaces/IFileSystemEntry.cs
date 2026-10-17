@@ -12,6 +12,7 @@ public interface IFileSystemEntry
     public bool IsCompressed { get; set; }
     public bool IsReadOnly { get; set; }
     public bool IsSystem { get; set; }
+    public bool IsSymlink { get; set; }
     
     public DateTime CreationTime { get; set; }
     public DateTime LastAccessTime { get; set; }

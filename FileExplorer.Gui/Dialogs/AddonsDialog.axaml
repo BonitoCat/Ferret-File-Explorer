@@ -1,0 +1,164 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:vm="using:FileExplorer.Gui.ViewModels"
+        x:Class="FileExplorer.Gui.Dialogs.AddonsDialog"
+        Title="{markup:Translate Key=Addons}"
+        Width="680"
+        Height="480"
+        MinWidth="520"
+        MinHeight="340"
+        WindowStartupLocation="CenterOwner"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Window.Styles>
+        <Style Selector="Button.side">
+            <Setter Property="Background"
+                    Value="#333333"/>
+            <Setter Property="CornerRadius"
+                    Value="6"/>
+            <Setter Property="HorizontalAlignment"
+                    Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment"
+                    Value="Center"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto"
+          Margin="20">
+
+        <TextBlock Grid.Row="0"
+                   Text="{markup:Translate Key=AddonsHint}"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="#AAAAAA"
+                   Margin="0,0,0,12"/>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="*,Auto">
+
+            <Border Grid.Column="0"
+                    Background="#1E1E20"
+                    BorderBrush="#333333"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                <Panel>
+                    <ListBox x:Name="AddonsList"
+                             Background="Transparent"
+                             SelectionChanged="OnSelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AddonItemViewModel">
+                                <Grid ColumnDefinitions="Auto,Auto,*"
+                                      Margin="0,4">
+
+                                    <CheckBox Grid.Column="0"
+                                              IsChecked="{Binding IsEnabled}"
+                                              ToolTip.Tip="{markup:Translate Key=AddonEnabled}"
+                                              VerticalAlignment="Top"/>
+
+                                    <Image Grid.Column="1"
+                                           Source="{Binding Icon}"
+                                           IsVisible="{Binding HasIcon}"
+                                           Width="32"
+                                           Height="32"
+                                           Margin="0,0,10,0"
+                                           VerticalAlignment="Top"/>
+
+                                    <StackPanel Grid.Column="2"
+                                                Spacing="2">
+
+                                        <TextBlock Text="{Binding Name}"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="13"/>
+
+                                        <TextBlock Text="{Binding Details}"
+                                                   IsVisible="{Binding HasDetails}"
+                                                   FontSize="11"
+                                                   Foreground="#888888"/>
+
+                                        <TextBlock Text="{Binding Description}"
+                                                   IsVisible="{Binding HasDescription}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   Foreground="#BBBBBB"/>
+
+                                        <TextBlock Text="{Binding Error}"
+                                                   IsVisible="{Binding HasError}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   Foreground="#FF7B72"/>
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock x:Name="EmptyText"
+                               Text="{markup:Translate Key=NoAddonsInstalled}"
+                               TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               FontSize="12"
+                               Foreground="#888888"
+                               Margin="24"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+                </Panel>
+            </Border>
+
+            <StackPanel Grid.Column="1"
+                        Width="200"
+                        Spacing="8"
+                        Margin="12,0,0,0">
+
+                <Button x:Name="MoveUpButton"
+                        Classes="side"
+                        Content="{markup:Translate Key=MoveUp}"
+                        Click="OnMoveUpClick"/>
+
+                <Button x:Name="MoveDownButton"
+                        Classes="side"
+                        Content="{markup:Translate Key=MoveDown}"
+                        Click="OnMoveDownClick"/>
+
+                <Button x:Name="UninstallButton"
+                        Classes="side"
+                        Content="{markup:Translate Key=Uninstall}"
+                        Click="OnUninstallClick"/>
+
+                <Separator Margin="0,4"/>
+
+                <Button Classes="side"
+                        Content="{markup:Translate Key=InstallAddonFolder}"
+                        Click="OnInstallFolderClick"/>
+
+                <Button Classes="side"
+                        Content="{markup:Translate Key=InstallAddonZip}"
+                        Click="OnInstallZipClick"/>
+
+                <Separator Margin="0,4"/>
+
+                <Button Classes="side"
+                        Content="{markup:Translate Key=OpenAddonsFolder}"
+                        Click="OnOpenFolderClick"/>
+
+                <Button Classes="side"
+                        Content="{markup:Translate Key=ReloadAddons}"
+                        Click="OnReloadClick"/>
+            </StackPanel>
+        </Grid>
+
+        <Button Grid.Row="2"
+                Content="{markup:Translate Key=Close}"
+                Click="OnCloseClick"
+                Background="#3584E4"
+                Foreground="White"
+                MinWidth="90"
+                Padding="14,6"
+                HorizontalAlignment="Right"
+                HorizontalContentAlignment="Center"
+                CornerRadius="6"
+                Margin="0,16,0,0"
+                IsCancel="True"/>
+    </Grid>
+</Window>

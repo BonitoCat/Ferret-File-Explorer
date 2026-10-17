@@ -19,6 +19,21 @@ public class FolderUtils
     private static readonly Color FolderColor = new(132, 180, 250);
     private static readonly Color FileColor = Color.White;
     
+    public static bool IsNetworkView(string path)
+    {
+        return NetworkBrowseService.IsBrowseLocation(path);
+    }
+
+    public static void SetWorkingDirectory(string path)
+    {
+        if (IsNetworkView(path) || !Directory.Exists(path))
+        {
+            return;
+        }
+
+        Directory.SetCurrentDirectory(path);
+    }
+
     public static Task LoadFolderContent(EntryContext context, string path, string? searchPattern = null, Action? onLoaded = null)
     {
         context.LoadCts?.Cancel();
@@ -27,7 +42,9 @@ public class FolderUtils
         CancellationToken token = cts.Token;
         bool showHidden = context.ShowHiddenFiles;
 
-        Task<List<EntryListItem>> buildTask = Task.Run(() => BuildItems(context, path, searchPattern, showHidden, token), token);
+        Task<List<EntryListItem>> buildTask = IsNetworkView(path)
+            ? Task.Run(() => NetworkUtils.BuildItems(context, path, token), token)
+            : Task.Run(() => BuildItems(context, path, searchPattern, showHidden, token), token);
         if (buildTask.Wait(150))
         {
             Apply(context, cts, buildTask, path, searchPattern, onLoaded);
@@ -52,7 +69,7 @@ public class FolderUtils
         }
 
         List<EntryListItem> items = task.IsFaulted ? new() : task.Result;
-        bool hasParent = Directory.GetParent(path) != null && string.IsNullOrEmpty(searchPattern);
+        bool hasParent = (IsNetworkView(path) ? NetworkBrowseService.GetParent(path) : Directory.GetParent(path)?.FullName) != null && string.IsNullOrEmpty(searchPattern);
 
         lock (context.Menu.Lock)
         {
@@ -186,7 +203,7 @@ public class FolderUtils
 
         context.Navigation.NavigateTo(entry.Entry.FullPath);
         LoadFolderContent(context, entry.Entry.FullPath, null, entry.DisplayName.Text == ".." ? () => context.Menu.SelectedIndex = 0 : null);
-        Directory.SetCurrentDirectory(entry.Entry.FullPath);
+        SetWorkingDirectory(entry.Entry.FullPath);
     }
 
     public static bool RequiresElevatedAccess(string path)

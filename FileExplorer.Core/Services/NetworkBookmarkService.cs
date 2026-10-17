@@ -87,6 +87,26 @@ public class NetworkBookmarkService
         }
     }
 
+    public bool RenameBookmark(string uri, string name)
+    {
+        string trimmed = name.Trim();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        List<NetworkBookmark> list = GetBookmarks();
+        NetworkBookmark? bookmark = list.FirstOrDefault(b => string.Equals(b.Uri, uri, StringComparison.OrdinalIgnoreCase));
+        if (bookmark == null)
+        {
+            return false;
+        }
+
+        bookmark.Name = trimmed;
+        SaveBookmarks(list);
+        return true;
+    }
+
     public string? GetPassword(string uri)
     {
         return _credentialService.GetCredential(GetCredentialKey(uri));

@@ -18,6 +18,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Rendering;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using FileExplorer.Core.Addons;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Models;
 using FileExplorer.Core.Services;
@@ -87,14 +88,25 @@ public partial class MainWindow : Window
             Title = pickerOptions.Title ?? (pickerOptions.Mode == PickerMode.Folder ? LocalizationService.Get("SelectFolder") : LocalizationService.Get("SelectFile"));
             ViewModel.PickerCompleted += OnPickerCompleted;
         }
+        else if (GuiSettings.WindowMaximized)
+        {
+            WindowState = WindowState.Maximized;
+        }
 
         Closing += (_, _) =>
         {
             PickerResult ??= FilePickerResult.Cancelled();
+            if (pickerOptions == null)
+            {
+                GuiSettings.WindowMaximized = WindowState == WindowState.Maximized;
+            }
         };
 
         ViewModel.ScriptOpenRequested += OnScriptOpenRequested;
+        ViewModel.NetworkLoginRequested += OnNetworkLoginRequested;
+        ViewModel.NetworkServerLoginRequested += OnNetworkServerLoginRequested;
         ViewModel.ConflictResolver = ResolveConflictAsync;
+        InitializeAddons();
 
         foreach (PaneViewModel pane in ViewModel.Panes)
         {
@@ -133,6 +145,7 @@ public partial class MainWindow : Window
         
         Closed += (s, e) =>
         {
+            AddonService.Instance.AddonsChanged -= OnAddonsChanged;
             ViewModel.Dispose();
             GuiInstanceRegistry.Unregister(Environment.ProcessId);
         };
@@ -462,7 +475,7 @@ public partial class MainWindow : Window
     {
         Button? button = sender as Button;
         string? targetPath = button?.Tag as string;
-        if (string.IsNullOrEmpty(targetPath) || !Directory.Exists(targetPath))
+        if (string.IsNullOrEmpty(targetPath) || !PaneViewModel.IsNavigable(targetPath))
         {
             return;
         }
@@ -485,8 +498,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        string path = PathTextBox.Text ?? "";
-        if (Directory.Exists(path))
+        string path = (PathTextBox.Text ?? "").Trim();
+        if (PaneViewModel.IsNavigable(path) || path.Contains("://", StringComparison.Ordinal))
         {
             ViewModel.NavigateTo(path);
             ViewModel.IsPathEditing = false;
@@ -495,8 +508,8 @@ public partial class MainWindow : Window
 
     private void OnPathLostFocus(object? sender, RoutedEventArgs e)
     {
-        string path = PathTextBox.Text ?? "";
-        if (Directory.Exists(path) && path != ViewModel.CurrentPath)
+        string path = (PathTextBox.Text ?? "").Trim();
+        if (PaneViewModel.IsNavigable(path) && path != ViewModel.CurrentPath)
         {
             ViewModel.NavigateTo(path);
         }
@@ -669,7 +682,7 @@ public partial class MainWindow : Window
         }
 
         string placePath = selected.Path;
-        if (await Task.Run(() => Directory.Exists(placePath)))
+        if (await Task.Run(() => PaneViewModel.IsNavigable(placePath)))
         {
             ViewModel.NavigateTo(selected.Path);
 
@@ -912,6 +925,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        SidebarRenameServerMenuItem.IsVisible = selected is { IsHeader: false, Category: PlaceCategory.Network, IsNetworkBookmark: true };
+
         if (selected.IsHeader)
         {
             if (selected.IsNetworkHeader)
@@ -1038,6 +1053,30 @@ public partial class MainWindow : Window
         }
 
         await ConnectToNetworkBookmarkAsync(selected);
+    }
+
+    private async void OnSidebarRenameServerClick(object? sender, RoutedEventArgs e)
+    {
+        PlaceItem? selected = GetContextPlaceItem(sender);
+        if (selected is not { Category: PlaceCategory.Network, IsNetworkBookmark: true })
+        {
+            return;
+        }
+
+        string? uri = selected.RemoteUri ?? selected.Path;
+        if (string.IsNullOrEmpty(uri))
+        {
+            return;
+        }
+
+        InputDialog dialog = new(LocalizationService.Get("RenameConnection"), LocalizationService.Get("ConnectionNamePrompt"), selected.Name);
+        string? result = await dialog.ShowDialog<string?>(this);
+        if (string.IsNullOrWhiteSpace(result) || result.Trim() == selected.Name)
+        {
+            return;
+        }
+
+        ViewModel.RenameNetworkBookmark(uri, result);
     }
 
     private void OnSidebarRemoveServerClick(object? sender, RoutedEventArgs e)
@@ -1201,6 +1240,32 @@ public partial class MainWindow : Window
             ViewModel.LoadPlaces();
             ViewModel.NavigateTo(mountPath);
         }
+    }
+
+    private async void OnNetworkServerLoginRequested(PaneViewModel pane, string path, bool rejected)
+    {
+        NetworkLoginDialog dialog = new(NetworkBrowseService.GetLocationName(path), rejected);
+        NetworkCredentials? credentials = await dialog.ShowDialog<NetworkCredentials?>(this);
+        if (credentials == null || pane.CurrentPath != path)
+        {
+            return;
+        }
+
+        NetworkBrowseService.SetCredentials(path, credentials);
+        pane.Reload();
+    }
+
+    private async void OnNetworkLoginRequested(NetworkConnectionInfo info)
+    {
+        ConnectToServerDialog dialog = new(info);
+        string? mountPath = await dialog.ShowDialog<string?>(this);
+        if (string.IsNullOrEmpty(mountPath) || !Directory.Exists(mountPath))
+        {
+            ViewModel.StatusText = "";
+            return;
+        }
+
+        ViewModel.OpenMountedShare(mountPath);
     }
 
     private async void OnSidebarDismountClick(object? sender, RoutedEventArgs e)
@@ -1371,6 +1436,12 @@ public partial class MainWindow : Window
     private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
     {
         if (TryRedirectArrowKey(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (TryRunAddonShortcut(e))
         {
             e.Handled = true;
             return;
@@ -1682,7 +1753,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_potentialFileDrag && _draggedFile != null)
+        if (_potentialFileDrag && _draggedFile != null && !ViewModel.ActivePane.IsVirtual)
         {
             Point curr = e.GetPosition(this);
             if (Math.Abs(curr.X - _fileDragStart.X) > 6 || Math.Abs(curr.Y - _fileDragStart.Y) > 6)
@@ -1901,6 +1972,11 @@ public partial class MainWindow : Window
         }
 
         ClearDropTargets();
+        if (NetworkBrowseService.IsBrowseLocation(targetDir))
+        {
+            return;
+        }
+
         ViewModel.TransferItemsTo(paths, targetDir, isCopy);
     }
 
@@ -2043,7 +2119,20 @@ public partial class MainWindow : Window
 
     private void OnFileContextMenuOpening(object? sender, CancelEventArgs e)
     {
-        MenuItem? colorMenu = (sender as ContextMenu)?.Items
+        if (sender is not ContextMenu menu)
+        {
+            return;
+        }
+
+        if (ViewModel.ActivePane.IsVirtual)
+        {
+            e.Cancel = true;
+            return;
+        }
+
+        InjectAddonContextItems(menu);
+
+        MenuItem? colorMenu = menu.Items
             .OfType<MenuItem>()
             .FirstOrDefault(m => m.Name == "FolderColorMenuItem");
         if (colorMenu == null || colorMenu.ItemsSource != null)
@@ -2565,7 +2654,10 @@ public partial class MainWindow : Window
 
     private async void OnNewFileClick(object? sender, RoutedEventArgs e)
     {
-        InputDialog dialog = new(LocalizationService.Get("NewFile"), LocalizationService.Get("FileNamePrompt"), LocalizationService.Get("NewFileDefaultName"));
+        InputDialog dialog = new(LocalizationService.Get("NewFile"), LocalizationService.Get("FileNamePrompt"), LocalizationService.Get("NewFileDefaultName"))
+        {
+            SelectNameOnly = true,
+        };
         string? result = await dialog.ShowDialog<string?>(this);
         if (!string.IsNullOrWhiteSpace(result))
         {
@@ -2642,6 +2734,44 @@ public partial class MainWindow : Window
         ViewModel.OpenTerminal(dir);
     }
 
+    private async void OnMenuCopyPathClick(object? sender, RoutedEventArgs e)
+    {
+        if (Clipboard == null)
+        {
+            return;
+        }
+
+        List<string> folders = GetSelectedItems()
+            .Where(i => i.IsDirectory)
+            .Select(i => i.FullPath)
+            .ToList();
+        if (folders.Count == 0)
+        {
+            folders.Add(ViewModel.CurrentPath);
+        }
+
+        await Clipboard.SetTextAsync(string.Join('\n', folders));
+        ViewModel.StatusText = LocalizationService.Get("PathCopied");
+    }
+
+    private async void OnMenuSharingOptionsClick(object? sender, RoutedEventArgs e)
+    {
+        FileItemViewModel? folder = GetSelectedItems().FirstOrDefault(i => i.IsDirectory);
+        if (folder == null)
+        {
+            return;
+        }
+
+        SmbShareDialog dialog = new(folder.FullPath);
+        string? status = await dialog.ShowDialog<string?>(this);
+        if (status == null)
+        {
+            return;
+        }
+
+        ViewModel.StatusText = status;
+    }
+
     private void OnMenuCutClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.CutSelected(GetSelectedItems());
@@ -2670,7 +2800,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        InputDialog dialog = new(LocalizationService.Get("RenameTitle"), LocalizationService.Get("NewNamePrompt"), activeSelected.Name);
+        InputDialog dialog = new(LocalizationService.Get("RenameTitle"), LocalizationService.Get("NewNamePrompt"), activeSelected.Name)
+        {
+            SelectNameOnly = !activeSelected.IsDirectory,
+        };
         string? result = await dialog.ShowDialog<string?>(this);
         if (!string.IsNullOrWhiteSpace(result))
         {
@@ -2741,7 +2874,7 @@ public partial class MainWindow : Window
     private async void OnMenuPropertiesClick(object? sender, RoutedEventArgs e)
     {
         FileItemViewModel? activeSelected = ViewModel.ActivePane.SelectedItem;
-        if (activeSelected != null)
+        if (activeSelected != null && !ViewModel.ActivePane.IsVirtual)
         {
             PropertiesDialog dialog = new(activeSelected);
             await dialog.ShowDialog(this);

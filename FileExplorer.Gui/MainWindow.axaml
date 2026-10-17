@@ -23,6 +23,18 @@
         Foreground="#E0E0E0">
     
     <Window.Styles>
+        <Style Selector="Border.symlink-badge">
+            <Setter Property="Background" Value="#2B2B30"/>
+            <Setter Property="BorderBrush" Value="#E0E0E0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+        </Style>
+
+        <Style Selector="Border.symlink-badge > Path">
+            <Setter Property="Stroke" Value="#E0E0E0"/>
+            <Setter Property="StrokeLineCap" Value="Round"/>
+            <Setter Property="StrokeJoin" Value="Round"/>
+        </Style>
+
         <Style Selector="Button.view-toggle">
             <Setter Property="Background" Value="Transparent"/>
         </Style>
@@ -241,6 +253,7 @@
 
                                 <!-- New submenu: shown on empty space or folder -->
                                 <MenuItem Header="{markup:Translate Key=New}"
+                                          Tag="new"
                                           IsVisible="{Binding CanCreateNew}">
                                     <MenuItem Header="{markup:Translate Key=NewFolder}"
                                               Click="OnNewFolderClick"
@@ -254,61 +267,81 @@
                                 <Separator IsVisible="{Binding CanCreateNew}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Open}"
+                                          Tag="open"
                                           Click="OnMenuOpenClick"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=OpenWith}"
+                                          Tag="open-with"
                                           Click="OnMenuOpenWithClick"
                                           IsVisible="{Binding IsFileSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
+                                          Tag="open-as-root"
                                           Click="OnMenuOpenAsRootClick"/>
 
                                 <MenuItem Header="{markup:Translate Key=OpenTerminal}"
+                                          Tag="open-terminal"
                                           Click="OnMenuOpenTerminalClick"/>
 
-                                <Separator IsVisible="{Binding IsItemSelected}"/>
+                                <Separator IsVisible="{Binding CanCopyPath}"/>
+
+                                <MenuItem Header="{markup:Translate Key=CopyPathToClipboard}"
+                                          Tag="copy-path"
+                                          Click="OnMenuCopyPathClick"
+                                          IsVisible="{Binding CanCopyPath}"/>
+
+                                <Separator/>
 
                                 <MenuItem Header="{markup:Translate Key=Cut}"
+                                          Tag="cut"
                                           Click="OnMenuCutClick"
                                           InputGesture="Ctrl+X"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Copy}"
+                                          Tag="copy"
                                           Click="OnMenuCopyClick"
                                           InputGesture="Ctrl+C"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Paste}"
+                                          Tag="paste"
                                           Click="OnMenuPasteClick"
                                           InputGesture="Ctrl+V"/>
 
                                 <MenuItem Header="{markup:Translate Key=Duplicate}"
+                                          Tag="duplicate"
                                           Click="OnMenuDuplicateClick"
                                           InputGesture="Ctrl+D"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Rename}"
+                                          Tag="rename"
                                           Click="OnMenuRenameClick"
                                           InputGesture="F2"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Compress}"
+                                          Tag="compress"
                                           Click="OnMenuCompressClick"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=ExtractHere}"
+                                          Tag="extract-here"
                                           Click="OnMenuExtractHereClick"
                                           IsVisible="{Binding CanExtractSelection}"/>
 
                                 <Separator IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Trash}"
+                                          Tag="trash"
                                           Click="OnMenuTrashClick"
                                           InputGesture="Delete"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=DeletePermanent}"
+                                          Tag="delete-permanent"
                                           Click="OnMenuDeletePermanentClick"
                                           InputGesture="Shift+Delete"
                                           IsVisible="{Binding IsItemSelected}"/>
@@ -316,16 +349,24 @@
                                 <Separator IsVisible="{Binding CanBookmarkSelection}"/>
 
                                 <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
+                                          Tag="bookmark"
                                           Click="OnMenuBookmarkClick"
                                           IsVisible="{Binding CanBookmarkSelection}"/>
 
                                 <MenuItem x:Name="FolderColorMenuItem"
                                           Header="{markup:Translate Key=FolderColor}"
+                                          Tag="folder-color"
                                           IsVisible="{Binding CanColorSelection}"/>
+
+                                <MenuItem Header="{markup:Translate Key=SharingOptions}"
+                                          Tag="share"
+                                          Click="OnMenuSharingOptionsClick"
+                                          IsVisible="{Binding IsFolderSelected}"/>
 
                                 <Separator/>
 
                                 <MenuItem Header="{markup:Translate Key=Properties}"
+                                          Tag="properties"
                                           Click="OnMenuPropertiesClick"
                                           InputGesture="Alt+Enter"/>
                             </ContextMenu>
@@ -396,6 +437,20 @@
                                                            Width="68"
                                                            Height="68"
                                                            Stretch="UniformToFill"/>
+                                                </Border>
+
+                                                <Border Classes="symlink-badge"
+                                                        IsVisible="{Binding IsSymlink}"
+                                                        Width="22"
+                                                        Height="22"
+                                                        CornerRadius="11"
+                                                        Margin="0,0,2,2"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Bottom">
+                                                    <Path Data="M0,8 L8,0 M2,0 L8,0 L8,6"
+                                                          StrokeThickness="1.8"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
                                                 </Border>
                                             </Panel>
 
@@ -476,6 +531,20 @@
                                                                Width="18"
                                                                Height="18"
                                                                Stretch="UniformToFill"/>
+                                                    </Border>
+
+                                                    <Border Classes="symlink-badge"
+                                                            IsVisible="{Binding IsSymlink}"
+                                                            Width="11"
+                                                            Height="11"
+                                                            CornerRadius="6"
+                                                            Margin="0,0,-2,-2"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Bottom">
+                                                        <Path Data="M0,4 L4,0 M1,0 L4,0 L4,3"
+                                                              StrokeThickness="1.2"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"/>
                                                     </Border>
                                                 </Panel>
 
@@ -687,6 +756,27 @@
                     <MenuItem Header="{markup:Translate Key=Location}"
                               Click="OnTogglePathEditingClick"
                               InputGesture="Ctrl+L"/>
+                </MenuItem>
+
+                <!-- Addons Menu -->
+                <MenuItem x:Name="AddonsMenuItem"
+                          Header="{markup:Translate Key=Addons}">
+                    <MenuItem Header="{markup:Translate Key=ManageAddons}"
+                              Click="OnMenuManageAddonsClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=InstallAddonFolder}"
+                              Click="OnMenuInstallAddonFolderClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=InstallAddonZip}"
+                              Click="OnMenuInstallAddonZipClick"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=OpenAddonsFolder}"
+                              Click="OnMenuOpenAddonsFolderClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=ReloadAddons}"
+                              Click="OnMenuReloadAddonsClick"/>
                 </MenuItem>
 
                 <!-- Help Menu -->
@@ -1043,6 +1133,10 @@
                             <MenuItem x:Name="SidebarRemoveBookmarkMenuItem"
                                       Header="{markup:Translate Key=RemoveBookmark}"
                                       Click="OnSidebarRemoveBookmarkClick"/>
+
+                            <MenuItem x:Name="SidebarRenameServerMenuItem"
+                                      Header="{markup:Translate Key=RenameConnection}"
+                                      Click="OnSidebarRenameServerClick"/>
 
                             <MenuItem x:Name="SidebarRemoveServerMenuItem"
                                       Header="{markup:Translate Key=RemoveServer}"

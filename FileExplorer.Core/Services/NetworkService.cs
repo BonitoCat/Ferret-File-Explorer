@@ -112,7 +112,10 @@ public record NetworkConnectionInfo
     }
 }
 
-public sealed record NetworkMountResult(bool Success, string MountPath, string ErrorMessage, NetworkConnectionInfo Info, string DisplayName);
+public sealed record NetworkMountResult(bool Success, string MountPath, string ErrorMessage, NetworkConnectionInfo Info, string DisplayName)
+{
+    public bool NeedsCredentials { get; init; }
+}
 
 public class NetworkService
 {
@@ -217,8 +220,42 @@ public class NetworkService
             }
         }
 
-        (bool success, string mountPath, string error) = await RunGioMountAsync(info, cancellationToken);
-        return new(success, mountPath, error, info, displayName);
+        (bool success, string mountPath, string error, bool needsCredentials) = await RunGioMountAsync(info, cancellationToken);
+        return new(success, mountPath, error, info, displayName) { NeedsCredentials = needsCredentials };
+    }
+
+    public async Task<NetworkMountResult> ConnectBrowsedShareAsync(string uri, CancellationToken cancellationToken = default)
+    {
+        NetworkConnectionInfo info = ParseUri(uri);
+        if (!string.IsNullOrEmpty(info.Username))
+        {
+            return await ConnectAsync(info, cancellationToken);
+        }
+
+        NetworkCredentials? credentials = NetworkBrowseService.GetCredentials(uri);
+        if (credentials != null)
+        {
+            NetworkMountResult known = await ConnectAsync(info with
+            {
+                Username = credentials.Username,
+                Domain = credentials.Domain,
+                Password = credentials.Password,
+                Anonymous = false,
+            }, cancellationToken);
+            if (known.Success)
+            {
+                return known;
+            }
+        }
+
+        NetworkMountResult anonymous = await ConnectAsync(info with { Anonymous = true }, cancellationToken);
+        if (anonymous.Success || info.Protocol != NetworkProtocol.Smb)
+        {
+            return anonymous;
+        }
+
+        NetworkMountResult login = await ConnectAsync(info with { Anonymous = false }, cancellationToken);
+        return login.Success || login.NeedsCredentials ? login : anonymous;
     }
 
     public static NetworkConnectionInfo NormalizeServerInput(NetworkConnectionInfo info)
@@ -381,7 +418,13 @@ public class NetworkService
         return (info, $"No WebDAV share found on {info.Host}. Enter the share path in the Folder field (e.g. /remote.php/dav/files/USERNAME/ for Nextcloud).");
     }
 
-    private static async Task<(bool Success, string MountPath, string ErrorMessage)> RunGioMountAsync(NetworkConnectionInfo info, CancellationToken cancellationToken)
+    public async Task<NetworkMountResult> MountLocationAsync(NetworkConnectionInfo info, CancellationToken cancellationToken = default)
+    {
+        (bool success, string mountPath, string error, bool needsCredentials) = await RunGioMountAsync(info, cancellationToken, false);
+        return new(success, mountPath, error, info, info.GetDisplayName()) { NeedsCredentials = needsCredentials };
+    }
+
+    private static async Task<(bool Success, string MountPath, string ErrorMessage, bool NeedsCredentials)> RunGioMountAsync(NetworkConnectionInfo info, CancellationToken cancellationToken, bool waitForMountPath = true)
     {
         HashSet<string> beforeMounts = GetGvfsMounts();
         string uri = info.BuildUri();
@@ -433,27 +476,27 @@ public class NetworkService
                 {
                 }
 
-                return (false, "", responder.Question != null ? $"Connection needs confirmation: {responder.Question}" : "Connection timed out.");
+                return (false, "", responder.Question != null ? $"Connection needs confirmation: {responder.Question}" : "Connection timed out.", false);
             }
         }
         catch (Exception ex)
         {
-            return (false, "", ex.Message);
+            return (false, "", ex.Message, false);
         }
 
         if (responder.PasswordMissing)
         {
-            return (false, "", "This server requires a password.");
+            return (false, "", "This server requires a password.", true);
         }
 
         if (responder.AuthenticationFailed)
         {
-            return (false, "", "Authentication failed: wrong username or password.");
+            return (false, "", "Authentication failed: wrong username or password.", true);
         }
 
         if (responder.Question != null)
         {
-            return (false, "", $"Connection was not confirmed: {responder.Question}");
+            return (false, "", $"Connection was not confirmed: {responder.Question}", false);
         }
 
         if (process.ExitCode != 0)
@@ -462,7 +505,7 @@ public class NetworkService
             string? mounted = FindExistingMount(info);
             if (mounted != null && alreadyMounted.Contains("already mounted", StringComparison.OrdinalIgnoreCase))
             {
-                return (true, mounted, "");
+                return (true, mounted, "", false);
             }
 
             string err = CleanGioError(errorBuilder.ToString());
@@ -476,7 +519,12 @@ public class NetworkService
                 err = $"Mount process exited with code {process.ExitCode}";
             }
 
-            return (false, "", err);
+            return (false, "", err, false);
+        }
+
+        if (!waitForMountPath)
+        {
+            return (true, "", "", false);
         }
 
         HashSet<string> afterMounts = beforeMounts;
@@ -509,11 +557,11 @@ public class NetworkService
 
         if (!string.IsNullOrEmpty(newMount))
         {
-            return (true, newMount, "");
+            return (true, newMount, "", false);
         }
 
         string gvfsRoot = $"/run/user/{GetUserId()}/gvfs";
-        return (true, gvfsRoot, "");
+        return (true, gvfsRoot, "", false);
     }
 
     private static async Task ReadPromptStreamAsync(StreamReader reader, StringBuilder log, GioPromptResponder responder)
