@@ -87,13 +87,13 @@ public class FileItemViewModel : ViewModelBase
         bool isAccessDenied = CheckRequiresElevatedAccess(entry, isDir) && !Environment.IsPrivilegedProcess && Environment.UserName != "root";
 
         string sizeStr = "";
-        string typeStr = isDir ? "Folder" : "File";
+        string typeStr = LocalizationService.Get(isDir ? "FolderType" : "FileType");
         FileType fileType = FileType.Unknown;
 
         if (entry is FileEntry file)
         {
             sizeStr = FormatFileSize(file.FileSize);
-            typeStr = file.FileType.ToString();
+            typeStr = LocalizationService.Get($"FileType{file.FileType}");
             fileType = file.FileType;
         }
 
@@ -107,7 +107,7 @@ public class FileItemViewModel : ViewModelBase
         }
         catch
         {
-            modifiedStr = "Unknown";
+            modifiedStr = LocalizationService.Get("Unknown");
         }
 
         FileItemViewModel item = new()

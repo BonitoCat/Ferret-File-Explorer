@@ -827,26 +827,19 @@ public class ConnectServerKeybind : Keybind
         Task.Run(async () =>
         {
             NetworkService networkService = new();
-            (bool success, string mountPath, string error) = await networkService.MountAsync(info);
-            if (!success || !Directory.Exists(mountPath))
+            NetworkMountResult result = await networkService.ConnectAsync(info);
+            string mountPath = result.MountPath;
+            if (!result.Success || !Directory.Exists(mountPath))
             {
-                Program.Sidebar.StatusText = string.IsNullOrWhiteSpace(error) ? "Connection failed" : $"Connection failed: {error}";
+                Program.Sidebar.StatusText = string.IsNullOrWhiteSpace(result.ErrorMessage) ? "Connection failed" : $"Connection failed: {result.ErrorMessage}";
                 return;
-            }
-
-            string bookmarkName = string.IsNullOrEmpty(info.Username)
-                ? $"{protocol.ToString().ToUpperInvariant()}: {info.Host}"
-                : $"{info.Username}@{info.Host}";
-            if (!string.IsNullOrEmpty(info.Path) && info.Path != "/")
-            {
-                bookmarkName += info.Path;
             }
 
             new NetworkBookmarkService().AddBookmark(new()
             {
-                Name = bookmarkName,
-                Uri = info.BuildUri(),
-                Password = info.Password,
+                Name = result.DisplayName,
+                Uri = result.Info.BuildUri(),
+                Password = result.Info.Password,
             });
 
             context.Navigation.NavigateTo(mountPath);

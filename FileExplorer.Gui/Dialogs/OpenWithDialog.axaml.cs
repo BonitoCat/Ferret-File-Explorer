@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using FileExplorer.Core.Models;
 using static Avalonia.Interactivity.RoutingStrategies;
 
+using FileExplorer.Gui.Services;
 namespace FileExplorer.Gui.Dialogs;
 
 public class OpenWithResult
@@ -53,8 +54,8 @@ public partial class OpenWithDialog : Window
         {
             Mode = PickerMode.File,
             InitialPath = initialPath,
-            Title = "Select Application / Executable",
-            ActionButtonText = "Select"
+            Title = LocalizationService.Get("SelectApplication"),
+            ActionButtonText = LocalizationService.Get("Select")
         };
 
         MainWindow picker = new(initialPath, options);

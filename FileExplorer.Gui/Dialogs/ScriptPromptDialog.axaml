@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:markup="using:FileExplorer.Gui.Markup"
         x:Class="FileExplorer.Gui.Dialogs.ScriptPromptDialog"
-        Title="Run Script"
+        Title="{markup:Translate Key=RunScript}"
         Width="560"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -29,7 +29,7 @@
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"/>
 
-                <TextBlock Text="Do you want to run it, or display its contents?"
+                <TextBlock Text="{markup:Translate Key=RunScriptQuestion}"
                            FontSize="13"
                            Foreground="#AAAAAA"
                            TextWrapping="Wrap"/>
@@ -42,24 +42,24 @@
                     Spacing="8"
                     Margin="0,20,0,0">
 
-            <Button Content="Run in Terminal"
+            <Button Content="{markup:Translate Key=RunInTerminal}"
                     Click="OnRunInTerminalClick"
                     Background="#333333"
                     HorizontalContentAlignment="Center"/>
 
-            <Button Content="Show Content"
+            <Button Content="{markup:Translate Key=ShowContent}"
                     Click="OnShowContentClick"
                     Background="#333333"
                     HorizontalContentAlignment="Center"/>
 
-            <Button Content="Cancel"
+            <Button Content="{markup:Translate Key=Cancel}"
                     Click="OnCancelClick"
                     Background="#333333"
                     HorizontalContentAlignment="Center"
                     IsCancel="True"/>
 
             <Button x:Name="RunButton"
-                    Content="Run"
+                    Content="{markup:Translate Key=Run}"
                     Click="OnRunClick"
                     Background="#3584E4"
                     Foreground="White"

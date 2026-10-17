@@ -1,7 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
         x:Class="FileExplorer.Gui.Dialogs.InputDialog"
-        Title="Input"
+        Title="{markup:Translate Key=Input}"
         Width="380"
         Height="160"
         WindowStartupLocation="CenterOwner"
@@ -14,7 +15,7 @@
 
         <TextBlock Grid.Row="0"
                    x:Name="PromptLabel"
-                   Text="Enter text:"
+                   Text="{markup:Translate Key=EnterText}"
                    FontSize="13"
                    Margin="0,0,0,10"/>
 
@@ -47,14 +48,14 @@
                     Spacing="8"
                     Margin="0,12,0,0">
 
-            <Button Content="Cancel"
+            <Button Content="{markup:Translate Key=Cancel}"
                     Click="OnCancelClick"
                     Background="#333333"
                     Width="75"
                     HorizontalContentAlignment="Center"
                     IsCancel="True"/>
 
-            <Button Content="OK"
+            <Button Content="{markup:Translate Key=OK}"
                     Click="OnOkClick"
                     Background="#3584E4"
                     Foreground="White"

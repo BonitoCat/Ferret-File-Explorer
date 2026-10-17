@@ -1,5 +1,5 @@
 Package: fe-linux-arm64
-Version: 3.0.0-pre-release-2
+Version: 3.0.0-pre-release-3
 Section: utils
 Architecture: arm64
 Maintainer: BonitoCat

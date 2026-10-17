@@ -30,7 +30,7 @@
                            VerticalAlignment="Center"/>
             </StackPanel>
 
-            <TextBlock Text="Create a compressed archive from selected files and folders."
+            <TextBlock Text="{markup:Translate Key=CompressDescription}"
                        FontSize="12"
                        Foreground="#888888"/>
         </StackPanel>
@@ -42,7 +42,7 @@
 
             <TextBlock Grid.Row="0"
                        Grid.Column="0"
-                       Text="Archive Name"
+                       Text="{markup:Translate Key=ArchiveName}"
                        VerticalAlignment="Center"
                        FontSize="12"
                        Margin="0,6"/>
@@ -56,7 +56,7 @@
 
             <TextBlock Grid.Row="1"
                        Grid.Column="0"
-                       Text="Format"
+                       Text="{markup:Translate Key=Format}"
                        VerticalAlignment="Center"
                        FontSize="12"
                        Margin="0,6"/>
@@ -69,19 +69,19 @@
                       FontSize="12"
                       Margin="0,4">
 
-                <ComboBoxItem Content=".zip (ZIP Archive)"/>
+                <ComboBoxItem Content="{markup:Translate Key=FormatZip}"/>
 
-                <ComboBoxItem Content=".7z (7-Zip Archive)"/>
+                <ComboBoxItem Content="{markup:Translate Key=Format7z}"/>
 
-                <ComboBoxItem Content=".tar.gz (Tar Gzip Archive)"/>
+                <ComboBoxItem Content="{markup:Translate Key=FormatTarGz}"/>
 
-                <ComboBoxItem Content=".tar.xz (Tar XZ Archive)"/>
+                <ComboBoxItem Content="{markup:Translate Key=FormatTarXz}"/>
 
-                <ComboBoxItem Content=".tar.bz2 (Tar Bzip2 Archive)"/>
+                <ComboBoxItem Content="{markup:Translate Key=FormatTarBz2}"/>
 
-                <ComboBoxItem Content=".tar.zst (Tar Zstandard Archive)"/>
+                <ComboBoxItem Content="{markup:Translate Key=FormatTarZst}"/>
 
-                <ComboBoxItem Content=".tar (Tar Archive)"/>
+                <ComboBoxItem Content="{markup:Translate Key=FormatTar}"/>
             </ComboBox>
 
             <TextBlock Grid.Row="2"
@@ -97,7 +97,7 @@
                      CornerRadius="6"
                      FontSize="12"
                      PasswordChar="•"
-                     Watermark="Optional encryption password"
+                     Watermark="{markup:Translate Key=EncryptionPasswordWatermark}"
                      Margin="0,4">
                 <TextBox.InnerRightContent>
                     <Button x:Name="TogglePasswordButton"
@@ -119,7 +119,7 @@
             <TextBlock Grid.Row="3"
                        Grid.Column="1"
                        x:Name="PasswordHintText"
-                       Text="Password encryption is supported for .zip and .7z formats."
+                       Text="{markup:Translate Key=EncryptionSupportedHint}"
                        FontSize="11"
                        Foreground="#777777"
                        Margin="0,2,0,4"/>

@@ -24,13 +24,13 @@ public sealed class SidebarEntry
 
 public sealed class SidebarPane
 {
-    private static readonly (PlaceKind Kind, string Title)[] Sections =
-    [
-        (PlaceKind.Places, "PLACES"),
-        (PlaceKind.Bookmarks, "BOOKMARKS"),
-        (PlaceKind.Devices, "DEVICES"),
-        (PlaceKind.Network, "NETWORK"),
-    ];
+    private static readonly Dictionary<PlaceKind, string> SectionTitles = new()
+    {
+        [PlaceKind.Places] = "PLACES",
+        [PlaceKind.Bookmarks] = "BOOKMARKS",
+        [PlaceKind.Devices] = "DEVICES",
+        [PlaceKind.Network] = "NETWORK",
+    };
 
     private static readonly Color HeaderColor = new(130, 130, 130);
     private static readonly Color DimColor = new(110, 110, 110);
@@ -40,6 +40,8 @@ public sealed class SidebarPane
     private readonly BookmarkService _bookmarkService = new();
     private readonly NetworkBookmarkService _networkBookmarkService = new();
     private readonly NetworkService _networkService = new();
+    private readonly SidebarOrderService _order = new();
+    private List<PlaceInfo> _places = new();
     private int _reloadVersion;
 
     public TuiListBox<SidebarEntry> Menu { get; }
@@ -87,6 +89,7 @@ public sealed class SidebarPane
             List<PlaceInfo> places;
             try
             {
+                _order.Reload();
                 places = _placesService.GetAll();
             }
             catch
@@ -99,18 +102,18 @@ public sealed class SidebarPane
                 return;
             }
 
+            _places = places;
             ApplyEntries(BuildEntries(places));
         });
     }
 
-    private static List<SidebarEntry> BuildEntries(List<PlaceInfo> places)
+    private List<SidebarEntry> BuildEntries(List<PlaceInfo> places)
     {
         List<SidebarEntry> entries = new();
-        foreach ((PlaceKind kind, string title) in Sections)
+        foreach (PlaceKind kind in _order.GetSectionOrder())
         {
-            List<PlaceInfo> section = places
-                .Where(p => p.Kind == kind)
-                .ToList();
+            string title = SectionTitles[kind];
+            List<PlaceInfo> section = _order.Sort(kind, places.Where(p => p.Kind == kind), SidebarOrderService.GetKey);
             if (section.Count == 0 && kind != PlaceKind.Network)
             {
                 continue;
@@ -205,6 +208,26 @@ public sealed class SidebarPane
 
     public bool HandleKey(Key key, bool ctrl, EntryContext context)
     {
+        return HandleKey(key, ctrl, false, context);
+    }
+
+    public bool HandleKey(Key key, bool ctrl, bool shift, EntryContext context)
+    {
+        if (shift && (key == Key.ArrowUp || key == Key.ArrowDown))
+        {
+            int direction = key == Key.ArrowUp ? -1 : 1;
+            if (ctrl)
+            {
+                MoveSelectedSection(direction);
+            }
+            else
+            {
+                MoveSelectedPlace(direction);
+            }
+
+            return false;
+        }
+
         if (key == Key.ArrowUp)
         {
             MoveSelection(-1);
@@ -259,6 +282,54 @@ public sealed class SidebarPane
         }
 
         return false;
+    }
+
+    public void MoveSelectedPlace(int direction)
+    {
+        PlaceInfo? place = Menu.SelectedItem?.Value?.Place;
+        if (place == null)
+        {
+            return;
+        }
+
+        List<PlaceInfo> section = _order.Sort(place.Kind, _places.Where(p => p.Kind == place.Kind), SidebarOrderService.GetKey);
+        int index = section.IndexOf(place);
+        int target = index + direction;
+        if (index < 0 || target < 0 || target >= section.Count)
+        {
+            return;
+        }
+
+        (section[index], section[target]) = (section[target], section[index]);
+        _order.SetItemOrder(place.Kind, section.Select(SidebarOrderService.GetKey));
+        ApplyEntries(BuildEntries(_places));
+    }
+
+    public void MoveSelectedSection(int direction)
+    {
+        SidebarEntry? entry = Menu.SelectedItem?.Value;
+        PlaceKind? kind = entry?.IsConnectAction == true ? PlaceKind.Network : entry?.Place?.Kind;
+        if (kind == null)
+        {
+            return;
+        }
+
+        List<PlaceKind> visible = _order.GetSectionOrder()
+            .Where(k => k == PlaceKind.Network || _places.Any(p => p.Kind == k))
+            .ToList();
+        int index = visible.IndexOf(kind.Value);
+        int target = index + direction;
+        if (index < 0 || target < 0 || target >= visible.Count)
+        {
+            return;
+        }
+
+        List<PlaceKind> order = _order.GetSectionOrder();
+        int from = order.IndexOf(kind.Value);
+        int to = order.IndexOf(visible[target]);
+        (order[from], order[to]) = (order[to], order[from]);
+        _order.SetSectionOrder(order);
+        ApplyEntries(BuildEntries(_places));
     }
 
     public bool Activate(EntryContext context)

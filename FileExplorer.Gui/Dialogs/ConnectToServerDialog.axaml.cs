@@ -23,6 +23,7 @@ public partial class ConnectToServerDialog : Window
         ProtocolComboBox.SelectedIndex = 0;
         ProtocolComboBox.SelectionChanged += OnProtocolSelectionChanged;
         AnonymousCheckBox.IsCheckedChanged += OnAnonymousCheckedChanged;
+        ServerBox.TextChanged += OnServerTextChanged;
         UpdatePasswordIcon();
 
         Opened += (_, _) =>
@@ -115,6 +116,36 @@ public partial class ConnectToServerDialog : Window
         }
     }
 
+    private void OnServerTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        string text = ServerBox.Text?.Trim() ?? "";
+        if (!text.Contains("://", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        NetworkConnectionInfo parsed = NetworkService.NormalizeServerInput(new() { Host = text, Protocol = (NetworkProtocol) (-1) });
+        int index = parsed.Protocol switch
+        {
+            NetworkProtocol.Sftp => 0,
+            NetworkProtocol.Smb => 1,
+            NetworkProtocol.Ftp => 2,
+            NetworkProtocol.Dav => 4,
+            NetworkProtocol.Davs => 5,
+            _ => -1,
+        };
+
+        if (index >= 0 && ProtocolComboBox.SelectedIndex != index && !(index == 2 && ProtocolComboBox.SelectedIndex == 3))
+        {
+            ProtocolComboBox.SelectedIndex = index;
+        }
+
+        if (parsed.Port.HasValue)
+        {
+            PortBox.Text = parsed.Port.Value.ToString();
+        }
+    }
+
     private void OnAnonymousCheckedChanged(object? sender, RoutedEventArgs e)
     {
         bool isAnonymous = AnonymousCheckBox.IsChecked == true;
@@ -129,7 +160,7 @@ public partial class ConnectToServerDialog : Window
         string server = ServerBox.Text?.Trim() ?? "";
         if (string.IsNullOrEmpty(server))
         {
-            StatusLabel.Text = "Please enter a server hostname or IP address.";
+            StatusLabel.Text = LocalizationService.Get("EnterServerHost");
             StatusLabel.IsVisible = true;
             ServerBox.Focus();
             return;
@@ -170,37 +201,28 @@ public partial class ConnectToServerDialog : Window
             Anonymous = isAnonymous
         };
 
-        (bool success, string mountPath, string error) = await Task.Run(() => _networkService.MountAsync(info));
+        NetworkMountResult result = await Task.Run(() => _networkService.ConnectAsync(info));
 
         ProgressBar.IsVisible = false;
         ConnectButton.IsEnabled = true;
 
-        if (success)
+        if (result.Success)
         {
-            string bookmarkName = !string.IsNullOrEmpty(info.Username)
-                ? $"{info.Username}@{info.Host}"
-                : $"{protocol.ToString().ToUpperInvariant()}: {info.Host}";
-
-            if (!string.IsNullOrEmpty(info.Path) && info.Path != "/")
-            {
-                bookmarkName += info.Path;
-            }
-
             NetworkBookmark bookmark = new()
             {
-                Name = bookmarkName,
-                Uri = info.BuildUri(),
-                Password = info.Password
+                Name = result.DisplayName,
+                Uri = result.Info.BuildUri(),
+                Password = result.Info.Password
             };
 
             await Task.Run(() => new NetworkBookmarkService().AddBookmark(bookmark));
 
-            ResultMountPath = mountPath;
-            Close(mountPath);
+            ResultMountPath = result.MountPath;
+            Close(result.MountPath);
             return;
         }
 
-        StatusLabel.Text = string.IsNullOrEmpty(error) ? "Failed to connect to server." : error;
+        StatusLabel.Text = string.IsNullOrEmpty(result.ErrorMessage) ? LocalizationService.Get("ConnectFailed") : result.ErrorMessage;
         StatusLabel.IsVisible = true;
     }
 

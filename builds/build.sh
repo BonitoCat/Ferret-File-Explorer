@@ -116,6 +116,12 @@ chmod 755 "$SCRIPT_DIR/AppDir/usr/bin/ferret"
 chmod 755 "$SCRIPT_DIR/AppDir/usr/bin/fe-gui"
 chmod 755 "$SCRIPT_DIR/AppDir/AppRun"
 
+for script in "$SCRIPT_DIR"/fe-linux-*/DEBIAN/{preinst,postinst,prerm,postrm}; do
+    if [ -f "$script" ]; then
+        chmod 755 "$script"
+    fi
+done
+
 echo "=========================================="
 echo "Building .deb packages..."
 echo "=========================================="

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -34,15 +35,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private readonly NetworkBookmarkService _networkBookmarkService = new();
     private readonly string _associationsPath;
 
-    private NavigationState _navigation;
-    private NavigationState? _navigation2;
-
-    private string _pane1Path = "";
-    private string _pane2Path = "";
     private string _searchQuery = "";
     private bool _showHiddenFiles = true;
-    private FileItemViewModel? _selectedItem;
-    private FileItemViewModel? _pane2SelectedItem;
     private string _statusText = "";
     private bool _showDetailsPane;
     private bool _isGridView = true;
@@ -51,18 +45,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private double _colSizeWidth = 110;
     private double _colTypeWidth = 110;
     private double _colModifiedWidth = 140;
-    public event Action<int>? BeforeFolderLoad;
     public event Action<string>? ScriptOpenRequested;
+    public Func<TransferConflict, Task<ConflictResolution>>? ConflictResolver { get; set; }
     private bool _isPathEditing;
-    private int _activePane = 1;
-    private CancellationTokenSource? _loadCts;
-    private CancellationTokenSource? _loadPane2Cts;
+    private PaneViewModel _activePane;
     private CancellationTokenSource? _operationCts;
-
-    private FileSystemWatcher? _watcher1;
-    private FileSystemWatcher? _watcher2;
-    private DispatcherTimer? _debounceTimer1;
-    private DispatcherTimer? _debounceTimer2;
 
     private bool _isOperationInProgress;
     private string _operationTitle = "";
@@ -173,6 +160,35 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _operationIcon, value);
     }
 
+    public PaneViewModel Pane1 { get; }
+    public PaneViewModel Pane2 { get; }
+    public IEnumerable<PaneViewModel> Panes => [Pane1, Pane2];
+    public IEnumerable<FileItemViewModel> AllItems => Pane1.Items.Concat(Pane2.Items);
+
+    public PaneViewModel ActivePane
+    {
+        get => _activePane;
+        set
+        {
+            if (_activePane == value)
+            {
+                return;
+            }
+
+            _activePane.IsActive = false;
+            _activePane = value;
+            _activePane.IsActive = true;
+            OnPropertyChanged(nameof(ActivePane));
+            OnActivePathChanged();
+            UpdatePreview(value.SelectedItem);
+
+            if (!string.IsNullOrEmpty(SearchQuery))
+            {
+                value.Reload(SearchQuery);
+            }
+        }
+    }
+
     public bool IsDualPane
     {
         get => _isDualPane;
@@ -185,26 +201,21 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             if (!value)
             {
-                _pane2Path = "";
-                _navigation2 = null;
-                ActivePane = 1;
-                OnPropertyChanged(nameof(IsPane1InTrash));
-                OnPropertyChanged(nameof(IsPane2InTrash));
+                ActivePane = Pane1;
+                Pane2.Close();
             }
 
             _isDualPane = value;
             OnPropertyChanged(nameof(IsDualPane));
-            OnPropertyChanged(nameof(SecondaryPaneWidth));
             OnPropertyChanged(nameof(SecondaryPaneMinWidth));
 
-            if (value && string.IsNullOrEmpty(_pane2Path))
+            if (value && !Pane2.IsOpen)
             {
-                NavigatePane2To(_pane1Path);
+                Pane2.NavigateTo(Pane1.CurrentPath);
             }
         }
     }
 
-    public GridLength SecondaryPaneWidth => IsDualPane ? new(1, GridUnitType.Star) : new(0, GridUnitType.Pixel);
     public double SecondaryPaneMinWidth => IsDualPane ? 200 : 0;
 
     public bool IsPathEditing
@@ -213,176 +224,23 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _isPathEditing, value);
     }
 
-    public int ActivePane
-    {
-        get => _activePane;
-        set
-        {
-            if (SetProperty(ref _activePane, value))
-            {
-                OnPropertyChanged(nameof(IsPane1Active));
-                OnPropertyChanged(nameof(IsPane2Active));
-                OnPropertyChanged(nameof(CurrentPath));
-                OnPropertyChanged(nameof(CanGoBack));
-                OnPropertyChanged(nameof(CanGoForward));
-                OnPropertyChanged(nameof(CanGoUp));
-                OnPropertyChanged(nameof(IsInTrash));
-                UpdateActiveBreadcrumbs();
-                NotifySelectionProperties();
-                UpdateStatus();
-                GuiInstanceRegistry.Update(Environment.ProcessId, CurrentPath);
-
-                if (!string.IsNullOrEmpty(SearchQuery))
-                {
-                    if (value == 2)
-                    {
-                        LoadPane2Folder(_pane2Path, SearchQuery);
-                    }
-                    else
-                    {
-                        LoadFolder(_pane1Path, SearchQuery);
-                    }
-                }
-            }
-        }
-    }
-
-    public bool IsPane1Active => ActivePane == 1;
-    public bool IsPane2Active => ActivePane == 2;
-
-    private bool _isPane1Loading;
-    public bool IsPane1Loading
-    {
-        get => _isPane1Loading;
-        set
-        {
-            if (SetProperty(ref _isPane1Loading, value))
-            {
-                OnPropertyChanged(nameof(IsLoading));
-            }
-        }
-    }
-
-    private bool _isPane2Loading;
-    public bool IsPane2Loading
-    {
-        get => _isPane2Loading;
-        set
-        {
-            if (SetProperty(ref _isPane2Loading, value))
-            {
-                OnPropertyChanged(nameof(IsLoading));
-            }
-        }
-    }
-
-    public bool IsLoading => _isPane1Loading || _isPane2Loading;
-
-    public bool IsItemSelected => (ActivePane == 2 ? Pane2SelectedItem : SelectedItem) != null;
-    public bool IsFolderSelected => (ActivePane == 2 ? Pane2SelectedItem : SelectedItem)?.IsDirectory == true;
-    public bool IsFileSelected => IsItemSelected && !IsFolderSelected;
-    public bool IsEmptySpaceSelected => !IsItemSelected;
-    public bool CanBookmarkSelection => IsFolderSelected || IsEmptySpaceSelected;
-    public bool CanCreateNew => IsEmptySpaceSelected || IsFolderSelected;
-    public bool CanExtractSelection => (ActivePane == 2 ? Pane2SelectedItem : SelectedItem) is FileItemViewModel item && (item.FileType == FileType.Archive || IsArchiveFile(item.FullPath));
-    public bool CanColorSelection => (ActivePane == 2 ? Pane2SelectedItem : SelectedItem)?.IsDirectory == true;
-    public bool Pane2CanColorSelection => Pane2SelectedItem?.IsDirectory == true;
-    public bool Pane2CanExtractSelection => Pane2SelectedItem is FileItemViewModel item && (item.FileType == FileType.Archive || IsArchiveFile(item.FullPath));
-
     public static bool IsArchiveFile(string path)
     {
         string ext = Path.GetExtension(path).ToLowerInvariant();
         return ext == ".zip" || ext == ".7z" || ext == ".tar" || ext == ".gz" || ext == ".xz" || ext == ".bz2" || ext == ".zst" || ext == ".rar" || ext == ".deb" || ext == ".tgz";
     }
 
-    public void NotifySelectionProperties()
-    {
-        OnPropertyChanged(nameof(IsItemSelected));
-        OnPropertyChanged(nameof(IsFolderSelected));
-        OnPropertyChanged(nameof(IsFileSelected));
-        OnPropertyChanged(nameof(IsEmptySpaceSelected));
-        OnPropertyChanged(nameof(CanBookmarkSelection));
-        OnPropertyChanged(nameof(CanCreateNew));
-        OnPropertyChanged(nameof(CanExtractSelection));
-        OnPropertyChanged(nameof(Pane2CanExtractSelection));
-        OnPropertyChanged(nameof(CanColorSelection));
-        OnPropertyChanged(nameof(Pane2CanColorSelection));
-    }
-
     public void ResetPlacesOrder()
     {
+        _sidebarOrder.ResetLayout();
         _sectionOrder = new(DefaultSectionOrder);
-        SaveSectionOrder();
         LoadPlaces();
     }
 
-    public BulkObservableCollection<FileItemViewModel> Items { get; } = new();
-    public BulkObservableCollection<FileItemViewModel> Pane2Items { get; } = new();
     public ObservableCollection<PlaceItem> Places { get; } = new();
-    public ObservableCollection<FileItemViewModel> SelectedItems { get; } = new();
-    public ObservableCollection<FileItemViewModel> Pane2SelectedItems { get; } = new();
     public ObservableCollection<BreadcrumbItem> Breadcrumbs { get; } = new();
-    public ObservableCollection<BreadcrumbItem> Pane2Breadcrumbs { get; } = new();
 
-    public bool IsPane1InTrash => !string.IsNullOrEmpty(_pane1Path) && _pane1Path.Contains("/.local/share/Trash");
-    public bool IsPane2InTrash => !string.IsNullOrEmpty(_pane2Path) && _pane2Path.Contains("/.local/share/Trash");
-
-    public bool IsInTrash
-    {
-        get
-        {
-            string p = CurrentPath;
-            return !string.IsNullOrEmpty(p) && p.Contains("/.local/share/Trash");
-        }
-    }
-
-    public string CurrentPath
-    {
-        get => ActivePane == 2 ? _pane2Path : _pane1Path;
-        set
-        {
-            if (ActivePane == 2)
-            {
-                _pane2Path = value;
-                OnPropertyChanged(nameof(IsPane2InTrash));
-            }
-            else
-            {
-                _pane1Path = value;
-                OnPropertyChanged(nameof(IsPane1InTrash));
-            }
-
-            UpdateActiveBreadcrumbs();
-            OnPropertyChanged(nameof(CurrentPath));
-            OnPropertyChanged(nameof(CanGoUp));
-            OnPropertyChanged(nameof(IsInTrash));
-            GuiInstanceRegistry.Update(Environment.ProcessId, CurrentPath);
-        }
-    }
-
-    public string Pane1Path => _pane1Path;
-
-    public string Pane2Path
-    {
-        get => _pane2Path;
-        set
-        {
-            if (SetProperty(ref _pane2Path, value))
-            {
-                OnPropertyChanged(nameof(IsPane2InTrash));
-                if (ActivePane == 2)
-                {
-                    UpdateActiveBreadcrumbs();
-                    OnPropertyChanged(nameof(CurrentPath));
-                    OnPropertyChanged(nameof(CanGoUp));
-                    OnPropertyChanged(nameof(IsInTrash));
-                    GuiInstanceRegistry.Update(Environment.ProcessId, _pane2Path);
-                }
-
-                OnPropertyChanged(nameof(Pane2CanGoUp));
-            }
-        }
-    }
+    public string CurrentPath => ActivePane.CurrentPath;
 
     public string SearchQuery
     {
@@ -391,14 +249,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _searchQuery, value))
             {
-                if (ActivePane == 2)
-                {
-                    LoadPane2Folder(_pane2Path, value);
-                }
-                else
-                {
-                    LoadFolder(_pane1Path, value);
-                }
+                ActivePane.Reload(value);
             }
         }
     }
@@ -411,54 +262,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             if (SetProperty(ref _showHiddenFiles, value))
             {
                 Logger.LogI($"Toggled hidden files: {value}");
-                LoadFolder(_pane1Path, SearchQuery);
-                if (IsDualPane && !string.IsNullOrEmpty(_pane2Path))
-                {
-                    LoadPane2Folder(_pane2Path);
-                }
-            }
-        }
-    }
-
-    public FileItemViewModel? SelectedItem
-    {
-        get => _selectedItem;
-        set
-        {
-            if (SetProperty(ref _selectedItem, value))
-            {
-                UpdatePreview(value);
-                UpdateStatus();
-                NotifySelectionProperties();
-
-                if (IsPickerMode)
-                {
-                    if (PickerMode == PickerMode.File && value != null && !value.IsDirectory)
-                    {
-                        PickerSelectedName = value.Name;
-                    }
-                    else if (PickerMode == PickerMode.Folder && value != null && value.IsDirectory)
-                    {
-                        PickerSelectedName = value.Name;
-                    }
-                }
-            }
-        }
-    }
-
-    public FileItemViewModel? Pane2SelectedItem
-    {
-        get => _pane2SelectedItem;
-        set
-        {
-            if (SetProperty(ref _pane2SelectedItem, value))
-            {
-                if (ActivePane == 2)
-                {
-                    UpdatePreview(value);
-                    UpdateStatus();
-                }
-                NotifySelectionProperties();
+                ReloadPanes();
             }
         }
     }
@@ -476,7 +280,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             if (SetProperty(ref _showDetailsPane, value) && value)
             {
-                UpdatePreview(ActivePane == 2 ? Pane2SelectedItem : SelectedItem);
+                UpdatePreview(ActivePane.SelectedItem);
             }
         }
     }
@@ -505,13 +309,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _previewDetails, value);
     }
 
-    public bool CanGoBack => (ActivePane == 2 ? _navigation2?.CanGoBack : _navigation.CanGoBack) ?? false;
-    public bool CanGoForward => (ActivePane == 2 ? _navigation2?.CanGoForward : _navigation.CanGoForward) ?? false;
-    public bool CanGoUp => Path.GetDirectoryName(CurrentPath) != null;
-
-    public bool Pane2CanGoBack => _navigation2?.CanGoBack ?? false;
-    public bool Pane2CanGoForward => _navigation2?.CanGoForward ?? false;
-    public bool Pane2CanGoUp => !string.IsNullOrEmpty(Pane2Path) && Path.GetDirectoryName(Pane2Path) != null;
+    public bool CanGoBack => ActivePane.CanGoBack;
+    public bool CanGoForward => ActivePane.CanGoForward;
+    public bool CanGoUp => ActivePane.CanGoUp;
 
     public FilePickerOptions? PickerOptions { get; }
 
@@ -520,9 +320,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public PickerMode PickerMode => PickerOptions?.Mode ?? PickerMode.None;
 
-    public string PickerTargetLabel => PickerMode == PickerMode.Folder ? "Folder:" : "File:";
+    public string PickerTargetLabel => PickerMode == PickerMode.Folder ? LocalizationService.Get("PickerFolderLabel") : LocalizationService.Get("PickerFileLabel");
 
-    public string PickerActionButtonText => PickerOptions?.ActionButtonText ?? (PickerMode == PickerMode.Folder ? "Select Folder" : "Open");
+    public string PickerActionButtonText => PickerOptions?.ActionButtonText ?? (PickerMode == PickerMode.Folder ? LocalizationService.Get("SelectFolder") : LocalizationService.Get("Open"));
 
     private string _pickerSelectedName = string.Empty;
 
@@ -546,9 +346,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         PickerOptions = pickerOptions;
 
+        Pane1 = CreatePane();
+        Pane2 = CreatePane();
+        _activePane = Pane1;
+        Pane1.IsActive = true;
+
         string configDir = AppPaths.DataDir;
         _associationsPath = Path.Combine(configDir, "associations.json");
-        _sectionOrderPath = Path.Combine(configDir, "sidebar_sections");
         LoadSectionOrder();
         Task.Run(() =>
         {
@@ -568,24 +372,84 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             startPath = "/";
         }
 
-        _navigation = new(startPath);
-        _pane1Path = startPath;
-        UpdateActiveBreadcrumbs();
-
         _executionService.OnOpenTerminalForExecutable = path => RunInTerminal(path, [path]);
 
         LoadPlaces();
         StartDeviceMonitoring();
-        LoadFolder(_pane1Path);
+        Pane1.NavigateTo(startPath);
     }
 
-    private string? _pane1Trail;
-    private string? _pane2Trail;
+    private PaneViewModel CreatePane()
+    {
+        PaneViewModel pane = new(_fileService, () => ShowHiddenFiles);
+        pane.PropertyChanged += OnPanePropertyChanged;
+        pane.ContentChanged += OnPaneContentChanged;
+        pane.SelectionChanged += OnPaneContentChanged;
+        return pane;
+    }
+
+    private void OnPanePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender != ActivePane)
+        {
+            return;
+        }
+
+        switch (e.PropertyName)
+        {
+            case nameof(PaneViewModel.CurrentPath):
+                OnActivePathChanged();
+                break;
+
+            case nameof(PaneViewModel.IsLoading):
+                UpdateStatus();
+                break;
+
+            case nameof(PaneViewModel.SelectedItem):
+                OnActiveSelectedItemChanged();
+                break;
+        }
+    }
+
+    private void OnPaneContentChanged(PaneViewModel pane)
+    {
+        if (pane == ActivePane)
+        {
+            UpdateStatus();
+        }
+    }
+
+    private void OnActivePathChanged()
+    {
+        UpdateActiveBreadcrumbs();
+        OnPropertyChanged(nameof(CurrentPath));
+        OnPropertyChanged(nameof(CanGoBack));
+        OnPropertyChanged(nameof(CanGoForward));
+        OnPropertyChanged(nameof(CanGoUp));
+        UpdateStatus();
+        GuiInstanceRegistry.Update(Environment.ProcessId, CurrentPath);
+    }
+
+    private void OnActiveSelectedItemChanged()
+    {
+        FileItemViewModel? selected = ActivePane.SelectedItem;
+        UpdatePreview(selected);
+
+        if (!IsPickerMode || selected == null)
+        {
+            return;
+        }
+
+        if ((PickerMode == PickerMode.File && !selected.IsDirectory) || (PickerMode == PickerMode.Folder && selected.IsDirectory))
+        {
+            PickerSelectedName = selected.Name;
+        }
+    }
 
     public void UpdateActiveBreadcrumbs()
     {
         string current = CurrentPath;
-        string? trail = ActivePane == 2 ? _pane2Trail : _pane1Trail;
+        string? trail = ActivePane.BreadcrumbTrail;
         if (trail == null || !IsSameOrAncestor(current, trail) || !Directory.Exists(trail))
         {
             trail = current;
@@ -603,14 +467,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             crumb.IsCurrent = IsSamePath(crumb.FullPath, current);
         }
 
-        if (ActivePane == 2)
-        {
-            _pane2Trail = trail;
-        }
-        else
-        {
-            _pane1Trail = trail;
-        }
+        ActivePane.BreadcrumbTrail = trail;
 
         Breadcrumbs.Clear();
         foreach (BreadcrumbItem crumb in crumbs)
@@ -621,14 +478,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void ResetActiveBreadcrumbTrail()
     {
-        if (ActivePane == 2)
-        {
-            _pane2Trail = null;
-        }
-        else
-        {
-            _pane1Trail = null;
-        }
+        ActivePane.BreadcrumbTrail = null;
     }
 
     private static bool IsSamePath(string a, string b)
@@ -664,11 +514,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void ToggleDualPane()
     {
         IsDualPane = !IsDualPane;
-        if (!IsDualPane)
-        {
-            ActivePane = 1;
-        }
-
         Logger.LogI($"Toggled dual pane: {IsDualPane}");
     }
 
@@ -679,21 +524,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        if (ActivePane == 2 || _navigation2 == null || string.IsNullOrEmpty(_pane2Path))
+        if (ActivePane == Pane2 || !Pane2.IsOpen)
         {
             ToggleDualPane();
             return;
         }
 
-        NavigationState promotedNavigation = _navigation2;
-        string promotedPath = _pane2Path;
-        string? promotedTrail = _pane2Trail;
-
+        Pane1.TakeOver(Pane2);
         IsDualPane = false;
-
-        _navigation = promotedNavigation;
-        _pane1Trail = promotedTrail;
-        LoadFolder(promotedPath);
 
         Logger.LogI("Closed primary pane, promoted secondary pane");
     }
@@ -705,52 +543,31 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private readonly HashSet<PlaceCategory> _collapsedCategories = new();
     private static readonly PlaceCategory[] DefaultSectionOrder = [PlaceCategory.Places, PlaceCategory.Bookmarks, PlaceCategory.Devices, PlaceCategory.Network];
-    private readonly string _sectionOrderPath;
+    private readonly SidebarOrderService _sidebarOrder = new();
     private List<PlaceCategory> _sectionOrder = new(DefaultSectionOrder);
 
     private void LoadSectionOrder()
     {
-        try
-        {
-            if (!File.Exists(_sectionOrderPath))
-            {
-                return;
-            }
-
-            List<PlaceCategory> loaded = new();
-            foreach (string line in File.ReadAllLines(_sectionOrderPath))
-            {
-                if (Enum.TryParse(line.Trim(), out PlaceCategory category) && !loaded.Contains(category))
-                {
-                    loaded.Add(category);
-                }
-            }
-
-            foreach (PlaceCategory category in DefaultSectionOrder)
-            {
-                if (!loaded.Contains(category))
-                {
-                    loaded.Add(category);
-                }
-            }
-
-            _sectionOrder = loaded;
-        }
-        catch
-        {
-        }
+        _sectionOrder = _sidebarOrder.GetSectionOrder()
+            .Select(k => (PlaceCategory) k)
+            .ToList();
     }
 
     private void SaveSectionOrder()
     {
-        try
-        {
-            AppPaths.EnsureDir(AppPaths.DataDir);
-            File.WriteAllLines(_sectionOrderPath, _sectionOrder.Select(c => c.ToString()));
-        }
-        catch
-        {
-        }
+        _sidebarOrder.SetSectionOrder(_sectionOrder.Select(c => (PlaceKind) c));
+    }
+
+    private void SaveItemOrder(PlaceCategory category)
+    {
+        _sidebarOrder.SetItemOrder((PlaceKind) category, Places
+            .Where(p => p.Category == category && !p.IsHeader)
+            .Select(GetPlaceKey));
+    }
+
+    private static string GetPlaceKey(PlaceItem place)
+    {
+        return SidebarOrderService.GetKey(place.Path, place.RemoteUri, place.DevicePath);
     }
 
     public void MoveSection(PlaceCategory source, PlaceCategory target, bool insertAbove)
@@ -771,8 +588,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void SyncPlaces(List<PlaceItem> target)
     {
+        foreach (IGrouping<PlaceCategory, PlaceItem> group in target.Where(p => !p.IsHeader).GroupBy(p => p.Category))
+        {
+            _sidebarOrder.AppendMissing((PlaceKind) group.Key, group.Select(GetPlaceKey));
+        }
+
         List<PlaceItem> resolved = target
             .OrderBy(p => _sectionOrder.IndexOf(p.Category))
+            .ThenBy(p => p.IsHeader ? -1 : _sidebarOrder.GetItemIndex((PlaceKind) p.Category, GetPlaceKey(p)))
             .Select(t => Places.FirstOrDefault(p => IsSamePlace(p, t)) ?? t)
             .ToList();
 
@@ -857,6 +680,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void LoadPlaces()
     {
+        _sidebarOrder.Reload();
+        LoadSectionOrder();
+
         List<PlaceItem> placesSection = new();
 
         string userProfile = UserDirs.Home;
@@ -1032,7 +858,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
                     extraPlaces.Add(new PlaceItem
                     {
-                        Name = Path.GetFileName(bm),
+                        Name = resolvedPath == "/" ? LocalizationService.Get("Root") : BookmarkService.GetDisplayName(resolvedPath),
                         Path = resolvedPath,
                         Icon = IconService.Get("bookmark"),
                         IsBookmark = true,
@@ -1128,7 +954,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
                     if (string.IsNullOrWhiteSpace(name))
                     {
-                        name = "Drive";
+                        name = LocalizationService.Get("Drive");
                     }
 
                     extraPlaces.Add(new()
@@ -1347,7 +1173,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             string name = !string.IsNullOrWhiteSpace(label) ? label : (!string.IsNullOrWhiteSpace(partlabel) ? partlabel : (!string.IsNullOrWhiteSpace(model) ? model : Path.GetFileName(mountpoint.TrimEnd('/'))));
             if (string.IsNullOrWhiteSpace(name))
             {
-                name = "Drive";
+                name = LocalizationService.Get("Drive");
             }
 
             extraPlaces.Add(new()
@@ -1450,7 +1276,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     string mountPoint = combined.Substring(idx1 + marker1.Length, endIdx - (idx1 + marker1.Length)).Trim();
                     if (Directory.Exists(mountPoint))
                     {
-                        StatusText = $"{LocalizationService.Get("Mounted")} {mountPoint}";
+                        StatusText = LocalizationService.Format("MountedAt", mountPoint);
                         return mountPoint;
                     }
                 }
@@ -1464,19 +1290,19 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 string mountPoint = rest.Split(['\r', '\n', '.'])[0].Trim().Trim('\'', '`', '"');
                 if (Directory.Exists(mountPoint))
                 {
-                    StatusText = $"{LocalizationService.Get("Mounted")} {mountPoint}";
+                    StatusText = LocalizationService.Format("MountedAt", mountPoint);
                     return mountPoint;
                 }
             }
 
             if (process.ExitCode != 0)
             {
-                StatusText = $"{LocalizationService.Get("MountFailed")}: {stderr.Trim()}";
+                StatusText = LocalizationService.Format("MountFailedWithError", stderr.Trim());
             }
         }
         catch (Exception ex)
         {
-            StatusText = $"{LocalizationService.Get("MountFailed")}: {ex.Message}";
+            StatusText = LocalizationService.Format("MountFailedWithError", ex.Message);
         }
 
         return null;
@@ -1617,6 +1443,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         if (prevIndex >= 0)
         {
             Places.Move(index, prevIndex);
+            SaveItemOrder(item.Category);
         }
     }
 
@@ -1646,6 +1473,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         if (nextIndex >= 0)
         {
             Places.Move(index, nextIndex);
+            SaveItemOrder(item.Category);
         }
     }
 
@@ -1677,6 +1505,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         if (newIndex >= 0 && newIndex < Places.Count && newIndex != oldIndex)
         {
             Places.Move(oldIndex, newIndex);
+            SaveItemOrder(source.Category);
         }
     }
 
@@ -1742,11 +1571,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             destName = destinationDirectory;
         }
 
-        string actionVerb = isCopy ? "Copying" : "Moving";
-        string actionNoun = isCopy ? "copied" : "moved";
-        OperationTitle = $"{actionVerb} {pathList.Count} {(pathList.Count == 1 ? "item" : "items")} to '{destName}'...";
-        OperationItemsProgress = $"0 of {pathList.Count} {actionNoun}";
-        OperationSpeedAndEta = "Calculating...";
+        string operation = isCopy ? "Copy" : "Move";
+        OperationTitle = LocalizationService.Format(pathList.Count == 1 ? $"{operation}TitleOne" : $"{operation}TitleMany", pathList.Count, destName);
+        OperationItemsProgress = LocalizationService.Format($"{operation}Progress", 0, pathList.Count);
+        OperationSpeedAndEta = LocalizationService.Get("Calculating");
         OperationPercent = 0;
         OperationCurrentFileName = "";
         OperationIcon = IconService.Get(isCopy ? "copy" : "cut");
@@ -1756,26 +1584,26 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             OperationPercent = p.Percent;
             string sizeText = p.TotalBytes > 0
-                ? $" ({FileUtils.FormatSize(p.TransferredBytes)} of {FileUtils.FormatSize(p.TotalBytes)})"
+                ? LocalizationService.Format("TransferSizeProgress", FileUtils.FormatSize(p.TransferredBytes), FileUtils.FormatSize(p.TotalBytes))
                 : "";
-            OperationItemsProgress = $"{p.TransferredItems} of {p.TotalItems} {actionNoun}{sizeText}";
-            OperationSpeedAndEta = $"{FileUtils.FormatSpeed(p.BytesPerSecond)} — {FileUtils.FormatEta(p.EstimatedRemaining)}";
+            OperationItemsProgress = LocalizationService.Format($"{operation}Progress", p.TransferredItems, p.TotalItems) + sizeText;
+            OperationSpeedAndEta = $"{FileUtils.FormatSpeed(p.BytesPerSecond)} — {FormatEta(p.EstimatedRemaining)}";
             OperationCurrentFileName = p.CurrentItemName;
         });
 
         try
         {
             ClipboardMode mode = isCopy ? ClipboardMode.Copy : ClipboardMode.Cut;
-            await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, progress, token), token);
-            StatusText = $"{actionVerb} completed successfully.";
+            await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, progress, token), token);
+            StatusText = LocalizationService.Get($"{operation}Completed");
         }
         catch (OperationCanceledException)
         {
-            StatusText = $"{actionVerb} cancelled.";
+            StatusText = LocalizationService.Get($"{operation}Cancelled");
         }
         catch (Exception ex)
         {
-            StatusText = $"{actionVerb} failed: {ex.Message}";
+            StatusText = LocalizationService.Format($"{operation}Failed", ex.Message);
         }
         finally
         {
@@ -1845,298 +1673,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Refresh();
     }
 
-    public void LoadFolder(string path, string? searchPattern = null)
-    {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-        {
-            return;
-        }
-
-        _loadCts?.Cancel();
-        _loadCts?.Dispose();
-        CancellationTokenSource cts = new();
-        _loadCts = cts;
-        CancellationToken token = cts.Token;
-
-        _pane1Path = path;
-        UpdateWatcher1(path);
-        OnPropertyChanged(nameof(IsPane1InTrash));
-        BeforeFolderLoad?.Invoke(1);
-        SelectedItem = null;
-        SelectedItems.Clear();
-        Items.Clear();
-        IsPane1Loading = true;
-        StatusText = LocalizationService.Get("Loading") + "...";
-
-        if (ActivePane == 1)
-        {
-            UpdateActiveBreadcrumbs();
-            OnPropertyChanged(nameof(CurrentPath));
-            OnPropertyChanged(nameof(CanGoBack));
-            OnPropertyChanged(nameof(CanGoForward));
-            OnPropertyChanged(nameof(CanGoUp));
-            OnPropertyChanged(nameof(IsInTrash));
-            GuiInstanceRegistry.Update(Environment.ProcessId, _pane1Path);
-        }
-
-        bool showHidden = ShowHiddenFiles;
-        Task.Run(() =>
-        {
-            if (token.IsCancellationRequested)
-            {
-                return;
-            }
-
-            ClipboardMode clipMode = ClipboardMode.Copy;
-            string[] clipPaths = [];
-            try
-            {
-                ClipboardService.ReadPaths(out clipMode, out clipPaths);
-            }
-            catch
-            {
-            }
-
-            List<FileItemViewModel> batch = new();
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            int batchThreshold = 25;
-
-            try
-            {
-                foreach (IFileSystemEntry entry in _fileService.EnumerateFolderEntries(path, searchPattern, token))
-                {
-                    if (token.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
-                    if (!showHidden && entry.IsHidden)
-                    {
-                        continue;
-                    }
-
-                    FileItemViewModel item = FileItemViewModel.FromEntry(entry, token);
-                    if (clipMode == ClipboardMode.Cut && clipPaths.Contains(entry.FullPath))
-                    {
-                        item.IsCut = true;
-                    }
-
-                    batch.Add(item);
-
-                    if (batch.Count >= batchThreshold || stopwatch.ElapsedMilliseconds >= 60)
-                    {
-                        List<FileItemViewModel> toPost = batch;
-                        batch = new();
-                        if (batchThreshold < 120)
-                        {
-                            batchThreshold = Math.Min(batchThreshold * 2, 120);
-                        }
-
-                        stopwatch.Restart();
-
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            if (token.IsCancellationRequested)
-                            {
-                                return;
-                            }
-
-                            Items.AddRange(toPost);
-                            if (ActivePane == 1)
-                            {
-                                StatusText = $"{Items.Count} {LocalizationService.Get("ItemsCount")} ({LocalizationService.Get("Loading")}...)";
-                            }
-                        }, DispatcherPriority.Background);
-
-                        Thread.Sleep(10);
-                    }
-                }
-
-                if (batch.Count > 0)
-                {
-                    List<FileItemViewModel> toPost = batch;
-                    batch = new();
-
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        if (token.IsCancellationRequested)
-                        {
-                            return;
-                        }
-
-                        Items.AddRange(toPost);
-                    }, DispatcherPriority.Background);
-                }
-            }
-            catch
-            {
-                return;
-            }
-            finally
-            {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (_loadCts == cts)
-                    {
-                        IsPane1Loading = false;
-                        if (ActivePane == 1)
-                        {
-                            UpdateStatus();
-                        }
-                    }
-                }, DispatcherPriority.Background);
-            }
-        }, token);
-    }
-
-    public void LoadPane2Folder(string path, string? searchPattern = null)
-    {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-        {
-            return;
-        }
-
-        _loadPane2Cts?.Cancel();
-        _loadPane2Cts?.Dispose();
-        CancellationTokenSource cts = new();
-        _loadPane2Cts = cts;
-        CancellationToken token = cts.Token;
-
-        _pane2Path = path;
-        UpdateWatcher2(path);
-        OnPropertyChanged(nameof(IsPane2InTrash));
-        BeforeFolderLoad?.Invoke(2);
-        Pane2SelectedItem = null;
-        Pane2SelectedItems.Clear();
-        Pane2Items.Clear();
-        IsPane2Loading = true;
-        StatusText = LocalizationService.Get("Loading") + "...";
-
-        if (ActivePane == 2)
-        {
-            UpdateActiveBreadcrumbs();
-            OnPropertyChanged(nameof(CurrentPath));
-            OnPropertyChanged(nameof(CanGoBack));
-            OnPropertyChanged(nameof(CanGoForward));
-            OnPropertyChanged(nameof(CanGoUp));
-            OnPropertyChanged(nameof(IsInTrash));
-            GuiInstanceRegistry.Update(Environment.ProcessId, _pane2Path);
-        }
-
-        OnPropertyChanged(nameof(Pane2CanGoBack));
-        OnPropertyChanged(nameof(Pane2CanGoForward));
-        OnPropertyChanged(nameof(Pane2CanGoUp));
-
-        bool showHidden = ShowHiddenFiles;
-        Task.Run(() =>
-        {
-            if (token.IsCancellationRequested)
-            {
-                return;
-            }
-
-            ClipboardMode clipMode = ClipboardMode.Copy;
-            string[] clipPaths = [];
-            try
-            {
-                ClipboardService.ReadPaths(out clipMode, out clipPaths);
-            }
-            catch
-            {
-            }
-
-            List<FileItemViewModel> batch = new();
-            Stopwatch stopwatch = Stopwatch.StartNew();
-            int batchThreshold = 25;
-
-            try
-            {
-                foreach (IFileSystemEntry entry in _fileService.EnumerateFolderEntries(path, searchPattern, token))
-                {
-                    if (token.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
-                    if (!showHidden && entry.IsHidden)
-                    {
-                        continue;
-                    }
-
-                    FileItemViewModel item = FileItemViewModel.FromEntry(entry, token);
-                    if (clipMode == ClipboardMode.Cut && clipPaths.Contains(entry.FullPath))
-                    {
-                        item.IsCut = true;
-                    }
-
-                    batch.Add(item);
-
-                    if (batch.Count >= batchThreshold || stopwatch.ElapsedMilliseconds >= 60)
-                    {
-                        List<FileItemViewModel> toPost = batch;
-                        batch = new();
-                        if (batchThreshold < 120)
-                        {
-                            batchThreshold = Math.Min(batchThreshold * 2, 120);
-                        }
-
-                        stopwatch.Restart();
-
-                        Dispatcher.UIThread.Post(() =>
-                        {
-                            if (token.IsCancellationRequested)
-                            {
-                                return;
-                            }
-
-                            Pane2Items.AddRange(toPost);
-                            if (ActivePane == 2)
-                            {
-                                StatusText = $"{Pane2Items.Count} {LocalizationService.Get("ItemsCount")} ({LocalizationService.Get("Loading")}...)";
-                            }
-                        }, DispatcherPriority.Background);
-
-                        Thread.Sleep(10);
-                    }
-                }
-
-                if (batch.Count > 0)
-                {
-                    List<FileItemViewModel> toPost = batch;
-                    batch = new();
-
-                    Dispatcher.UIThread.Post(() =>
-                    {
-                        if (token.IsCancellationRequested)
-                        {
-                            return;
-                        }
-
-                        Pane2Items.AddRange(toPost);
-                    }, DispatcherPriority.Background);
-                }
-            }
-            catch
-            {
-                return;
-            }
-            finally
-            {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    if (_loadPane2Cts == cts)
-                    {
-                        IsPane2Loading = false;
-                        if (ActivePane == 2)
-                        {
-                            UpdateStatus();
-                        }
-                    }
-                }, DispatcherPriority.Background);
-            }
-        }, token);
-    }
-
     public void NavigateTo(string path)
     {
         if (string.IsNullOrEmpty(path))
@@ -2161,7 +1697,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 {
                     Dispatcher.UIThread.Post(() =>
                     {
-                        StatusText = $"Connection failed: {error}";
+                        StatusText = LocalizationService.Format("ConnectionFailedWithError", error);
                     });
                 }
             });
@@ -2174,15 +1710,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         Logger.LogI("Navigated to directory");
-
-        if (ActivePane == 2)
-        {
-            NavigatePane2To(path);
-        }
-        else
-        {
-            NavigatePane1To(path);
-        }
+        ActivePane.NavigateTo(path);
     }
 
     public async Task DismountPlaceAsync(PlaceItem item)
@@ -2193,14 +1721,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         string userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (_pane1Path.StartsWith(item.Path, StringComparison.OrdinalIgnoreCase))
+        foreach (PaneViewModel pane in Panes)
         {
-            NavigatePane1To(userHome);
-        }
-
-        if (_pane2Path.StartsWith(item.Path, StringComparison.OrdinalIgnoreCase))
-        {
-            NavigatePane2To(userHome);
+            if (pane.CurrentPath.StartsWith(item.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                pane.NavigateTo(userHome);
+            }
         }
 
         (bool success, string error) = await _networkService.UnmountAsync(item.Path);
@@ -2208,11 +1734,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (success)
         {
-            StatusText = $"{item.Name} {LocalizationService.Get("DismountSuccess")}";
+            StatusText = LocalizationService.Format("DismountedNamed", item.Name);
         }
         else
         {
-            StatusText = $"{LocalizationService.Get("DismountFailed")}: {error}";
+            StatusText = LocalizationService.Format("DismountFailedWithError", error);
         }
     }
 
@@ -2257,135 +1783,22 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                path.StartsWith("davs://", StringComparison.OrdinalIgnoreCase);
     }
 
-    public void NavigatePane1To(string path)
-    {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-        {
-            return;
-        }
-
-        _navigation.NavigateTo(path);
-        LoadFolder(_navigation.CurrentPath);
-    }
-
-    public void NavigatePane2To(string path)
-    {
-        if (string.IsNullOrEmpty(path) || !Directory.Exists(path))
-        {
-            return;
-        }
-
-        _navigation2 ??= new(path);
-        _navigation2.NavigateTo(path);
-        LoadPane2Folder(_navigation2.CurrentPath);
-    }
-
     public void GoBack()
     {
         Logger.LogI("Navigated back");
-
-        if (ActivePane == 2)
-        {
-            GoBackPane2();
-        }
-        else
-        {
-            GoBackPane1();
-        }
-    }
-
-    public void GoBackPane1()
-    {
-        if (!_navigation.CanGoBack)
-        {
-            return;
-        }
-
-        _navigation.GoBack();
-        LoadFolder(_navigation.CurrentPath);
+        ActivePane.GoBack();
     }
 
     public void GoForward()
     {
         Logger.LogI("Navigated forward");
-
-        if (ActivePane == 2)
-        {
-            GoForwardPane2();
-        }
-        else
-        {
-            GoForwardPane1();
-        }
-    }
-
-    public void GoForwardPane1()
-    {
-        if (!_navigation.CanGoForward)
-        {
-            return;
-        }
-
-        _navigation.GoForward();
-        LoadFolder(_navigation.CurrentPath);
+        ActivePane.GoForward();
     }
 
     public void GoUp()
     {
         Logger.LogI("Navigated up");
-
-        if (ActivePane == 2)
-        {
-            GoUpPane2();
-        }
-        else
-        {
-            GoUpPane1();
-        }
-    }
-
-    public void GoUpPane1()
-    {
-        string? parent = Path.GetDirectoryName(_pane1Path);
-        if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
-        {
-            return;
-        }
-
-        NavigatePane1To(parent);
-    }
-
-    public void GoBackPane2()
-    {
-        if (_navigation2 == null || !_navigation2.CanGoBack)
-        {
-            return;
-        }
-
-        _navigation2.GoBack();
-        LoadPane2Folder(_navigation2.CurrentPath);
-    }
-
-    public void GoForwardPane2()
-    {
-        if (_navigation2 == null || !_navigation2.CanGoForward)
-        {
-            return;
-        }
-
-        _navigation2.GoForward();
-        LoadPane2Folder(_navigation2.CurrentPath);
-    }
-
-    public void GoUpPane2()
-    {
-        string? parent = Path.GetDirectoryName(_pane2Path);
-        if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
-        {
-            return;
-        }
-
-        NavigatePane2To(parent);
+        ActivePane.GoUp();
     }
 
     public void Refresh()
@@ -2393,14 +1806,17 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Logger.LogI("Refreshed directory");
         InvalidateFreeSpace();
 
-        LoadFolder(_pane1Path, ActivePane == 1 ? SearchQuery : null);
-        if (IsDualPane && !string.IsNullOrEmpty(_pane2Path))
-        {
-            LoadPane2Folder(_pane2Path, ActivePane == 2 ? SearchQuery : null);
-        }
-
+        ReloadPanes();
         LoadPlaces();
         UpdateActiveBreadcrumbs();
+    }
+
+    private void ReloadPanes()
+    {
+        foreach (PaneViewModel pane in Panes)
+        {
+            pane.Refresh(pane == ActivePane ? SearchQuery : null);
+        }
     }
 
     public void ConfirmCurrentPicker()
@@ -2410,11 +1826,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        FileItemViewModel? selected = ActivePane.SelectedItem;
         if (PickerOptions?.AllowMultiple == true)
         {
-            List<FileItemViewModel> targets = SelectedItems.Count > 0
-                ? SelectedItems.ToList()
-                : (SelectedItem != null ? new List<FileItemViewModel> { SelectedItem } : new List<FileItemViewModel>());
+            List<FileItemViewModel> targets = ActivePane.GetSelection();
 
             if (PickerMode == PickerMode.File)
             {
@@ -2438,9 +1853,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (PickerMode == PickerMode.File)
         {
-            if (SelectedItem != null && !SelectedItem.IsDirectory)
+            if (selected != null && !selected.IsDirectory)
             {
-                PickerCompleted?.Invoke(FilePickerResult.Selected(SelectedItem.FullPath));
+                PickerCompleted?.Invoke(FilePickerResult.Selected(selected.FullPath));
                 return;
             }
 
@@ -2468,9 +1883,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (PickerMode == PickerMode.Folder)
         {
-            if (SelectedItem != null && SelectedItem.IsDirectory)
+            if (selected != null && selected.IsDirectory)
             {
-                PickerCompleted?.Invoke(FilePickerResult.Selected(SelectedItem.FullPath));
+                PickerCompleted?.Invoke(FilePickerResult.Selected(selected.FullPath));
                 return;
             }
 
@@ -2530,15 +1945,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         if (item.IsDirectory)
         {
             ResetActiveBreadcrumbTrail();
-            if (ActivePane == 2)
-            {
-                NavigatePane2To(item.FullPath);
-            }
-            else
-            {
-                NavigateTo(item.FullPath);
-            }
-
+            NavigateTo(item.FullPath);
             return;
         }
 
@@ -2619,7 +2026,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = $"Failed to run script: {ex.Message}";
+            StatusText = LocalizationService.Format("RunScriptFailed", ex.Message);
         }
     }
 
@@ -2638,7 +2045,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
-            StatusText = $"Failed to open file: {ex.Message}";
+            StatusText = LocalizationService.Format("OpenFileFailed", ex.Message);
         }
     }
 
@@ -2684,7 +2091,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
         }
 
-        StatusText = "No terminal emulator found";
+        StatusText = LocalizationService.Get("NoTerminalFound");
     }
 
     private static string QuoteForShell(string value)
@@ -2718,14 +2125,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         catch { }
     }
 
+    private List<FileItemViewModel> ResolveTargets(IEnumerable<FileItemViewModel>? selection)
+    {
+        List<FileItemViewModel> targets = selection?.ToList() ?? new();
+        return targets.Count > 0 ? targets : ActivePane.GetSelection();
+    }
+
     public void CopySelected(IEnumerable<FileItemViewModel>? selection = null)
     {
-        List<FileItemViewModel> targets = (selection ?? SelectedItems).ToList();
-        if (targets.Count == 0 && SelectedItem != null)
-        {
-            targets.Add(SelectedItem);
-        }
-
+        List<FileItemViewModel> targets = ResolveTargets(selection);
         if (targets.Count == 0)
         {
             return;
@@ -2740,12 +2148,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         catch { }
 
-        foreach (FileItemViewModel item in Items)
-        {
-            item.IsCut = false;
-        }
-
-        foreach (FileItemViewModel item in Pane2Items)
+        foreach (FileItemViewModel item in AllItems)
         {
             item.IsCut = false;
         }
@@ -2753,12 +2156,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void CutSelected(IEnumerable<FileItemViewModel>? selection = null)
     {
-        List<FileItemViewModel> targets = (selection ?? SelectedItems).ToList();
-        if (targets.Count == 0 && SelectedItem != null)
-        {
-            targets.Add(SelectedItem);
-        }
-
+        List<FileItemViewModel> targets = ResolveTargets(selection);
         if (targets.Count == 0)
         {
             return;
@@ -2773,12 +2171,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         catch { }
 
-        foreach (FileItemViewModel item in Items)
-        {
-            item.IsCut = paths.Contains(item.FullPath);
-        }
-
-        foreach (FileItemViewModel item in Pane2Items)
+        foreach (FileItemViewModel item in AllItems)
         {
             item.IsCut = paths.Contains(item.FullPath);
         }
@@ -2786,7 +2179,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Paste(string? targetDirectory = null)
     {
-        string dir = targetDirectory ?? (ActivePane == 2 ? Pane2Path : CurrentPath);
+        string dir = targetDirectory ?? CurrentPath;
         ClipboardMode mode = ClipboardMode.Copy;
         string[] paths = [];
         try
@@ -2812,13 +2205,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void DeleteSelected(IEnumerable<FileItemViewModel>? selection = null, bool permanent = false)
     {
-        List<FileItemViewModel> targets = (selection ?? (ActivePane == 2 ? Pane2SelectedItems : SelectedItems)).ToList();
-        FileItemViewModel? activeSelected = ActivePane == 2 ? Pane2SelectedItem : SelectedItem;
-        if (targets.Count == 0 && activeSelected != null)
-        {
-            targets.Add(activeSelected);
-        }
-
+        List<FileItemViewModel> targets = ResolveTargets(selection);
         if (targets.Count == 0)
         {
             return;
@@ -2829,15 +2216,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Refresh();
     }
 
-    public void RestoreSelectedFromTrash(int pane)
+    public void RestoreSelectedFromTrash(PaneViewModel pane)
     {
-        List<FileItemViewModel> targets = (pane == 2 ? Pane2SelectedItems : SelectedItems).ToList();
-        FileItemViewModel? activeSelected = pane == 2 ? Pane2SelectedItem : SelectedItem;
-        if (targets.Count == 0 && activeSelected != null)
-        {
-            targets.Add(activeSelected);
-        }
-
+        List<FileItemViewModel> targets = pane.GetSelection();
         if (targets.Count == 0)
         {
             return;
@@ -2863,13 +2244,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void DuplicateSelected(IEnumerable<FileItemViewModel>? selection = null)
     {
-        List<FileItemViewModel> targets = (selection ?? (ActivePane == 2 ? Pane2SelectedItems : SelectedItems)).ToList();
-        FileItemViewModel? activeSelected = ActivePane == 2 ? Pane2SelectedItem : SelectedItem;
-        if (targets.Count == 0 && activeSelected != null)
-        {
-            targets.Add(activeSelected);
-        }
-
+        List<FileItemViewModel> targets = ResolveTargets(selection);
         if (targets.Count == 0)
         {
             return;
@@ -2890,7 +2265,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        string baseDir = ActivePane == 2 ? Pane2Path : CurrentPath;
+        string baseDir = CurrentPath;
         string fullPath = Path.Combine(baseDir, folderName);
         _operationService.CreateFolder(fullPath);
         Refresh();
@@ -2903,7 +2278,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        string baseDir = ActivePane == 2 ? Pane2Path : CurrentPath;
+        string baseDir = CurrentPath;
         string fullPath = Path.Combine(baseDir, fileName);
         _operationService.CreateFile(fullPath);
         Refresh();
@@ -2923,14 +2298,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void OpenAsRoot(string? targetPath = null)
     {
-        string path = targetPath ?? (ActivePane == 2 ? Pane2Path : CurrentPath);
+        string path = targetPath ?? CurrentPath;
         Logger.LogI("Opened directory as root");
         FileExecutionService.OpenAsRoot(path);
     }
 
     public void OpenTerminal(string? workingDir = null, string? command = null)
     {
-        string dir = workingDir ?? (ActivePane == 2 ? Pane2Path : CurrentPath);
+        string dir = workingDir ?? CurrentPath;
         string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
 
         foreach (string candidate in candidates)
@@ -3082,79 +2457,73 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }, cts.Token).ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 
-    public void SetSelectedItems(IEnumerable<FileItemViewModel> selected)
+    private static string FormatEta(TimeSpan? eta)
     {
-        ObservableCollection<FileItemViewModel> target = ActivePane == 2 ? Pane2SelectedItems : SelectedItems;
-        target.Clear();
-        foreach (FileItemViewModel item in selected)
+        if (!eta.HasValue)
         {
-            target.Add(item);
+            return LocalizationService.Get("Calculating");
         }
 
-        UpdateStatus();
-        NotifySelectionProperties();
-    }
-
-    public void ClearSelection()
-    {
-        if (ActivePane == 2)
+        if (eta.Value.TotalSeconds <= 0)
         {
-            Pane2SelectedItem = null;
-            Pane2SelectedItems.Clear();
-        }
-        else
-        {
-            SelectedItem = null;
-            SelectedItems.Clear();
+            return LocalizationService.Get("EtaAlmostDone");
         }
 
-        UpdateStatus();
-        NotifySelectionProperties();
+        int seconds = (int) Math.Ceiling(eta.Value.TotalSeconds);
+        if (seconds < 5)
+        {
+            return LocalizationService.Get("EtaFewSeconds");
+        }
+
+        if (seconds < 60)
+        {
+            return LocalizationService.Format("EtaSeconds", seconds);
+        }
+
+        int minutes = seconds / 60;
+        int remSec = seconds % 60;
+        if (minutes < 60)
+        {
+            return remSec == 0 ? LocalizationService.Format("EtaMinutes", minutes) : LocalizationService.Format("EtaMinutesSeconds", minutes, remSec);
+        }
+
+        return LocalizationService.Format("EtaHoursMinutes", minutes / 60, minutes % 60);
     }
 
     private void UpdateStatus()
     {
-        int totalItems = ActivePane == 2 ? Pane2Items.Count : Items.Count;
-        ObservableCollection<FileItemViewModel> selectedList = ActivePane == 2 ? Pane2SelectedItems : SelectedItems;
-        int selectedCount = selectedList.Count;
-        FileItemViewModel? activeSelected = ActivePane == 2 ? Pane2SelectedItem : SelectedItem;
-
-        if (selectedCount == 0 && activeSelected != null)
+        PaneViewModel pane = ActivePane;
+        if (pane.IsLoading)
         {
-            selectedCount = 1;
+            StatusText = pane.Items.Count > 0 ? LocalizationService.Format("StatusItemsLoading", pane.Items.Count) : LocalizationService.Get("LoadingEllipsis");
+            return;
         }
 
+        List<FileItemViewModel> selection = pane.GetSelection();
         long selectedBytes = 0;
         int filesWithBytes = 0;
-        if (selectedList.Count > 0)
+        foreach (FileItemViewModel item in selection)
         {
-            foreach (FileItemViewModel item in selectedList)
+            if (item.Entry is FileEntry file)
             {
-                if (item.Entry is FileEntry file)
-                {
-                    selectedBytes += file.FileSize;
-                    filesWithBytes++;
-                }
+                selectedBytes += file.FileSize;
+                filesWithBytes++;
             }
         }
-        else if (activeSelected?.Entry is FileEntry file)
-        {
-            selectedBytes = file.FileSize;
-            filesWithBytes = 1;
-        }
 
-        string activePath = ActivePane == 2 ? Pane2Path : CurrentPath;
-        string freeSpace = GetFreeDiskSpace(activePath);
-        string freeStr = !string.IsNullOrEmpty(freeSpace) ? $" | {freeSpace} {LocalizationService.Get("FreeSpace")}" : "";
+        string freeSpace = GetFreeDiskSpace(pane.CurrentPath);
+        string freeStr = !string.IsNullOrEmpty(freeSpace) ? LocalizationService.Format("StatusFreeSpace", freeSpace) : "";
 
-        if (selectedCount > 0)
+        if (selection.Count > 0)
         {
-            string sizePart = filesWithBytes > 0 ? $", {FileUtils.FormatSize(selectedBytes)}" : "";
-            StatusText = $"{totalItems} {LocalizationService.Get("ItemsCount")} ({selectedCount} {LocalizationService.Get("SelectedCount")}{sizePart}){freeStr}";
+            string selected = filesWithBytes > 0
+                ? LocalizationService.Format("StatusItemsSelectedSize", pane.Items.Count, selection.Count, FileUtils.FormatSize(selectedBytes))
+                : LocalizationService.Format("StatusItemsSelected", pane.Items.Count, selection.Count);
+            StatusText = selected + freeStr;
         }
         else
         {
-            StatusText = $"{totalItems} {LocalizationService.Get("ItemsCount")}{freeStr}";
+            StatusText = LocalizationService.Format("StatusItems", pane.Items.Count) + freeStr;
         }
     }
 
@@ -3212,17 +2581,17 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 return string.Join(" ", parts.Take(Math.Min(2, parts.Length)));
             }
 
-            return "Android Device";
+            return LocalizationService.Get("AndroidDevice");
         }
 
         if (rawName.StartsWith("afc:host=", StringComparison.OrdinalIgnoreCase))
         {
-            return "Apple Device";
+            return LocalizationService.Get("AppleDevice");
         }
 
         if (rawName.StartsWith("gphoto2:host=", StringComparison.OrdinalIgnoreCase))
         {
-            return "Digital Camera";
+            return LocalizationService.Get("DigitalCamera");
         }
 
         if (rawName.StartsWith("sftp:host=", StringComparison.OrdinalIgnoreCase))
@@ -3356,389 +2725,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return $"{size:0.##} {units[unitIndex]}";
     }
 
-    private void UpdateWatcher1(string path)
-    {
-        try
-        {
-            if (_watcher1 == null)
-            {
-                _watcher1 = new()
-                {
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                    IncludeSubdirectories = false,
-                };
-                _watcher1.Created += (s, e) => OnWatcherEvent1(e);
-                _watcher1.Deleted += (s, e) => OnWatcherEvent1(e);
-                _watcher1.Renamed += (s, e) => OnWatcherEvent1(e);
-                _watcher1.Changed += (s, e) => OnWatcherEvent1(e);
-                _watcher1.Error += (s, e) => OnWatcherError1();
-            }
-
-            if (Directory.Exists(path))
-            {
-                _watcher1.EnableRaisingEvents = false;
-                _watcher1.Path = path;
-                _watcher1.EnableRaisingEvents = true;
-            }
-            else
-            {
-                _watcher1.EnableRaisingEvents = false;
-            }
-        }
-        catch
-        {
-            if (_watcher1 != null)
-            {
-                _watcher1.EnableRaisingEvents = false;
-            }
-        }
-    }
-
-    private void UpdateWatcher2(string path)
-    {
-        try
-        {
-            if (_watcher2 == null)
-            {
-                _watcher2 = new()
-                {
-                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                    IncludeSubdirectories = false,
-                };
-                _watcher2.Created += (s, e) => OnWatcherEvent2(e);
-                _watcher2.Deleted += (s, e) => OnWatcherEvent2(e);
-                _watcher2.Renamed += (s, e) => OnWatcherEvent2(e);
-                _watcher2.Changed += (s, e) => OnWatcherEvent2(e);
-                _watcher2.Error += (s, e) => OnWatcherError2();
-            }
-
-            if (Directory.Exists(path))
-            {
-                _watcher2.EnableRaisingEvents = false;
-                _watcher2.Path = path;
-                _watcher2.EnableRaisingEvents = true;
-            }
-            else
-            {
-                _watcher2.EnableRaisingEvents = false;
-            }
-        }
-        catch
-        {
-            if (_watcher2 != null)
-            {
-                _watcher2.EnableRaisingEvents = false;
-            }
-        }
-    }
-
-    private void OnWatcherEvent1(FileSystemEventArgs e)
-    {
-        if (e.ChangeType == WatcherChangeTypes.Deleted)
-        {
-            Dispatcher.UIThread.Post(() =>
-            {
-                FileItemViewModel? item = Items.FirstOrDefault(i => string.Equals(i.FullPath, e.FullPath, StringComparison.OrdinalIgnoreCase) || string.Equals(i.Name, e.Name, StringComparison.OrdinalIgnoreCase));
-                if (item != null)
-                {
-                    Items.Remove(item);
-                    if (SelectedItem == item)
-                    {
-                        SelectedItem = null;
-                    }
-
-                    if (SelectedItems.Contains(item))
-                    {
-                        SelectedItems.Remove(item);
-                    }
-
-                    if (ActivePane == 1)
-                    {
-                        UpdateStatus();
-                    }
-                }
-            });
-        }
-
-        Dispatcher.UIThread.Post(() =>
-        {
-            _debounceTimer1?.Stop();
-            _debounceTimer1 = new()
-            {
-                Interval = TimeSpan.FromMilliseconds(200),
-            };
-            _debounceTimer1.Tick += (s, args) =>
-            {
-                _debounceTimer1.Stop();
-                RefreshPane1Silent();
-            };
-            _debounceTimer1.Start();
-        });
-    }
-
-    private void OnWatcherError1()
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            _debounceTimer1?.Stop();
-            _debounceTimer1 = new()
-            {
-                Interval = TimeSpan.FromMilliseconds(300),
-            };
-            _debounceTimer1.Tick += (s, args) =>
-            {
-                _debounceTimer1.Stop();
-                RefreshPane1Silent();
-            };
-            _debounceTimer1.Start();
-        });
-    }
-
-    private void OnWatcherEvent2(FileSystemEventArgs e)
-    {
-        if (e.ChangeType == WatcherChangeTypes.Deleted)
-        {
-            Dispatcher.UIThread.Post(() =>
-            {
-                FileItemViewModel? item = Pane2Items.FirstOrDefault(i => string.Equals(i.FullPath, e.FullPath, StringComparison.OrdinalIgnoreCase) || string.Equals(i.Name, e.Name, StringComparison.OrdinalIgnoreCase));
-                if (item != null)
-                {
-                    Pane2Items.Remove(item);
-                    if (Pane2SelectedItem == item)
-                    {
-                        Pane2SelectedItem = null;
-                    }
-
-                    if (Pane2SelectedItems.Contains(item))
-                    {
-                        Pane2SelectedItems.Remove(item);
-                    }
-
-                    if (ActivePane == 2)
-                    {
-                        UpdateStatus();
-                    }
-                }
-            });
-        }
-
-        Dispatcher.UIThread.Post(() =>
-        {
-            _debounceTimer2?.Stop();
-            _debounceTimer2 = new()
-            {
-                Interval = TimeSpan.FromMilliseconds(200),
-            };
-            _debounceTimer2.Tick += (s, args) =>
-            {
-                _debounceTimer2.Stop();
-                RefreshPane2Silent();
-            };
-            _debounceTimer2.Start();
-        });
-    }
-
-    private void OnWatcherError2()
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            _debounceTimer2?.Stop();
-            _debounceTimer2 = new()
-            {
-                Interval = TimeSpan.FromMilliseconds(300),
-            };
-            _debounceTimer2.Tick += (s, args) =>
-            {
-                _debounceTimer2.Stop();
-                RefreshPane2Silent();
-            };
-            _debounceTimer2.Start();
-        });
-    }
-
-    private void RefreshPane1Silent()
-    {
-        if (string.IsNullOrEmpty(_pane1Path) || !Directory.Exists(_pane1Path))
-        {
-            return;
-        }
-
-        string path = _pane1Path;
-        string? search = ActivePane == 1 ? (string.IsNullOrEmpty(SearchQuery) ? null : SearchQuery) : null;
-        bool showHidden = ShowHiddenFiles;
-
-        Task.Run(() =>
-        {
-            ClipboardMode clipMode = ClipboardMode.Copy;
-            string[] clipPaths = [];
-            try
-            {
-                ClipboardService.ReadPaths(out clipMode, out clipPaths);
-            }
-            catch
-            {
-            }
-
-            NameComparer comparer = new();
-            List<FileItemViewModel> allItems = new();
-            try
-            {
-                foreach (IFileSystemEntry entry in _fileService.EnumerateFolderEntries(path, search, CancellationToken.None))
-                {
-                    if (!showHidden && entry.IsHidden)
-                    {
-                        continue;
-                    }
-
-                    FileItemViewModel item = FileItemViewModel.FromEntry(entry);
-                    if (clipMode == ClipboardMode.Cut && clipPaths.Contains(entry.FullPath))
-                    {
-                        item.IsCut = true;
-                    }
-
-                    allItems.Add(item);
-                }
-            }
-            catch
-            {
-                return;
-            }
-
-            allItems.Sort((a, b) => a.IsDirectory != b.IsDirectory ? (a.IsDirectory ? -1 : 1) : comparer.Compare(a.Name, b.Name));
-
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (_pane1Path != path)
-                {
-                    return;
-                }
-
-                SyncFolderItems(Items, allItems);
-                if (ActivePane == 1)
-                {
-                    UpdateStatus();
-                }
-            });
-        });
-    }
-
-    private void RefreshPane2Silent()
-    {
-        if (string.IsNullOrEmpty(_pane2Path) || !Directory.Exists(_pane2Path))
-        {
-            return;
-        }
-
-        string path = _pane2Path;
-        string? search = ActivePane == 2 ? (string.IsNullOrEmpty(SearchQuery) ? null : SearchQuery) : null;
-        bool showHidden = ShowHiddenFiles;
-
-        Task.Run(() =>
-        {
-            ClipboardMode clipMode = ClipboardMode.Copy;
-            string[] clipPaths = [];
-            try
-            {
-                ClipboardService.ReadPaths(out clipMode, out clipPaths);
-            }
-            catch
-            {
-            }
-
-            NameComparer comparer = new();
-            List<FileItemViewModel> allItems = new();
-            try
-            {
-                foreach (IFileSystemEntry entry in _fileService.EnumerateFolderEntries(path, search, CancellationToken.None))
-                {
-                    if (!showHidden && entry.IsHidden)
-                    {
-                        continue;
-                    }
-
-                    FileItemViewModel item = FileItemViewModel.FromEntry(entry);
-                    if (clipMode == ClipboardMode.Cut && clipPaths.Contains(entry.FullPath))
-                    {
-                        item.IsCut = true;
-                    }
-
-                    allItems.Add(item);
-                }
-            }
-            catch
-            {
-                return;
-            }
-
-            allItems.Sort((a, b) => a.IsDirectory != b.IsDirectory ? (a.IsDirectory ? -1 : 1) : comparer.Compare(a.Name, b.Name));
-
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (_pane2Path != path)
-                {
-                    return;
-                }
-
-                SyncFolderItems(Pane2Items, allItems);
-                if (ActivePane == 2)
-                {
-                    UpdateStatus();
-                }
-            });
-        });
-    }
-
-    private void SyncFolderItems(ObservableCollection<FileItemViewModel> currentItems, List<FileItemViewModel> freshItems)
-    {
-        Dictionary<string, FileItemViewModel> freshMap = new(StringComparer.OrdinalIgnoreCase);
-        foreach (FileItemViewModel item in freshItems)
-        {
-            freshMap[item.FullPath] = item;
-        }
-
-        for (int i = currentItems.Count - 1; i >= 0; i--)
-        {
-            if (!freshMap.ContainsKey(currentItems[i].FullPath))
-            {
-                currentItems.RemoveAt(i);
-            }
-        }
-
-        for (int i = 0; i < freshItems.Count; i++)
-        {
-            FileItemViewModel fresh = freshItems[i];
-            if (i >= currentItems.Count)
-            {
-                currentItems.Add(fresh);
-            }
-            else if (!string.Equals(currentItems[i].FullPath, fresh.FullPath, StringComparison.OrdinalIgnoreCase))
-            {
-                int existingIdx = -1;
-                for (int j = i + 1; j < currentItems.Count; j++)
-                {
-                    if (string.Equals(currentItems[j].FullPath, fresh.FullPath, StringComparison.OrdinalIgnoreCase))
-                    {
-                        existingIdx = j;
-                        break;
-                    }
-                }
-
-                if (existingIdx != -1)
-                {
-                    currentItems.Move(existingIdx, i);
-                }
-                else
-                {
-                    currentItems.Insert(i, fresh);
-                }
-            }
-            else if (currentItems[i].SizeString != fresh.SizeString || currentItems[i].ModifiedString != fresh.ModifiedString)
-            {
-                currentItems[i] = fresh;
-            }
-        }
-    }
-
     public void Dispose()
     {
         _reloadPlacesCts?.Dispose();
@@ -3763,14 +2749,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _udisksMonitorProcess?.Dispose();
         _udisksMonitorProcess = null;
 
-        _watcher1?.Dispose();
-        _watcher1 = null;
-        _watcher2?.Dispose();
-        _watcher2 = null;
-        _debounceTimer1?.Stop();
-        _debounceTimer2?.Stop();
-        _loadCts?.Dispose();
-        _loadPane2Cts?.Dispose();
+        Pane1.Dispose();
+        Pane2.Dispose();
         _operationCts?.Dispose();
         PreviewImage?.Dispose();
     }

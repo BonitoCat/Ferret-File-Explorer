@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:markup="using:FileExplorer.Gui.Markup"
         x:Class="FileExplorer.Gui.Dialogs.ConfirmDialog"
-        Title="Confirm Deletion"
+        Title="{markup:Translate Key=ConfirmDeletionTitle}"
         Width="420"
         Height="170"
         WindowStartupLocation="CenterOwner"
@@ -24,7 +24,7 @@
                    VerticalAlignment="Center"/>
 
             <TextBlock x:Name="MessageText"
-                       Text="Are you sure you want to permanently delete this item?"
+                       Text="{markup:Translate Key=ConfirmDeleteItem}"
                        TextWrapping="Wrap"
                        FontSize="13"
                        MaxWidth="320"
@@ -38,7 +38,7 @@
                     Margin="0,16,0,0">
 
             <Button x:Name="CancelButton"
-                    Content="Cancel"
+                    Content="{markup:Translate Key=Cancel}"
                     Click="OnCancelClick"
                     Background="#333333"
                     Width="80"
@@ -46,7 +46,7 @@
                     IsCancel="True"/>
 
             <Button x:Name="ConfirmButton"
-                    Content="OK"
+                    Content="{markup:Translate Key=OK}"
                     Click="OnConfirmClick"
                     Background="#3584E4"
                     Foreground="White"

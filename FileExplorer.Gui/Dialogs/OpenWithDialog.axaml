@@ -33,7 +33,7 @@
                      x:Name="CommandTextBox"
                      CornerRadius="6,0,0,6"
                      FontSize="13"
-                     Watermark="e.g. gedit, code, vlc, mpv"/>
+                     Watermark="{markup:Translate Key=OpenWithWatermark}"/>
 
             <Button Grid.Column="1"
                     Click="OnBrowseProgramClick"
@@ -44,7 +44,7 @@
                     Padding="10,0"
                     Height="32"
                     VerticalContentAlignment="Center"
-                    ToolTip.Tip="Browse for program...">
+                    ToolTip.Tip="{markup:Translate Key=BrowseForProgram}">
                 <Image Source="{markup:Icon Key=folder}"
                        Width="15"
                        Height="15"/>

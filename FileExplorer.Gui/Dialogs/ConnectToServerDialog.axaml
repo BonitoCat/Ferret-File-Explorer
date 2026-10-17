@@ -30,7 +30,7 @@
                            VerticalAlignment="Center"/>
             </StackPanel>
 
-            <TextBlock Text="Connect to a remote server using SFTP, SMB, FTP, or WebDAV."
+            <TextBlock Text="{markup:Translate Key=ConnectDescription}"
                        FontSize="12"
                        Foreground="#888888"/>
         </StackPanel>
@@ -54,7 +54,7 @@
                          x:Name="ServerBox"
                          CornerRadius="6"
                          FontSize="12"
-                         Watermark="e.g. 192.168.1.100 or server.local"
+                         Watermark="{markup:Translate Key=ServerWatermark}"
                          Margin="0,4"/>
 
                 <TextBlock Grid.Row="1"
@@ -72,17 +72,17 @@
                           FontSize="12"
                           Margin="0,4">
 
-                    <ComboBoxItem Content="SSH / SFTP"/>
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolSftp}"/>
 
-                    <ComboBoxItem Content="Windows share (SMB)"/>
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolSmb}"/>
 
-                    <ComboBoxItem Content="FTP (with login)"/>
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolFtp}"/>
 
-                    <ComboBoxItem Content="Public FTP (anonymous)"/>
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolFtpAnonymous}"/>
 
-                    <ComboBoxItem Content="WebDAV (HTTP)"/>
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolDav}"/>
 
-                    <ComboBoxItem Content="Secure WebDAV (HTTPS)"/>
+                    <ComboBoxItem Content="{markup:Translate Key=ProtocolDavs}"/>
                 </ComboBox>
 
                 <TextBlock Grid.Row="2"
@@ -112,7 +112,7 @@
                          x:Name="PathBox"
                          CornerRadius="6"
                          FontSize="12"
-                         Watermark="optional path or share"
+                         Watermark="{markup:Translate Key=FolderWatermark}"
                          Margin="0,4"/>
 
                 <TextBlock Grid.Row="4"
@@ -129,7 +129,7 @@
                          x:Name="DomainBox"
                          CornerRadius="6"
                          FontSize="12"
-                         Watermark="WORKGROUP (optional)"
+                         Watermark="{markup:Translate Key=DomainWatermark}"
                          Margin="0,4"
                          IsVisible="False"/>
 
@@ -146,7 +146,7 @@
                          x:Name="UserBox"
                          CornerRadius="6"
                          FontSize="12"
-                         Watermark="username (optional)"
+                         Watermark="{markup:Translate Key=UsernameWatermark}"
                          Margin="0,4"/>
 
                 <TextBlock Grid.Row="6"
@@ -163,7 +163,7 @@
                          CornerRadius="6"
                          FontSize="12"
                          PasswordChar="•"
-                         Watermark="password (optional)"
+                         Watermark="{markup:Translate Key=PasswordWatermark}"
                          Margin="0,4">
                     <TextBox.InnerRightContent>
                         <Button x:Name="TogglePasswordButton"

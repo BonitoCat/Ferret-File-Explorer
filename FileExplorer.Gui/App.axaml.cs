@@ -4,7 +4,10 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using FileExplorer.Core.Models;
 using FileExplorer.Core.Services;
@@ -44,6 +47,7 @@ public partial class App : Application
         });
 
         AppPaths.MigrateLegacyConfig();
+        InputElement.KeyDownEvent.AddClassHandler<TextBox>(OnTextBoxKeyDown, RoutingStrategies.Tunnel);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
@@ -81,6 +85,24 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void OnTextBoxKeyDown(TextBox textBox, KeyEventArgs e)
+    {
+        if (e.Key != Key.Left || e.KeyModifiers != KeyModifiers.None)
+        {
+            return;
+        }
+
+        int start = Math.Min(textBox.SelectionStart, textBox.SelectionEnd);
+        if (start == Math.Max(textBox.SelectionStart, textBox.SelectionEnd))
+        {
+            return;
+        }
+
+        textBox.ClearSelection();
+        textBox.CaretIndex = start;
+        e.Handled = true;
     }
 
     private static string? GetInitialPath(string[]? args)

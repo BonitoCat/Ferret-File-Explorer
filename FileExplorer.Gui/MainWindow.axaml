@@ -69,7 +69,491 @@
         <Style Selector="Border.pane-box.active">
             <Setter Property="BorderBrush" Value="#2A4B7C"/>
         </Style>
+
+        <Style Selector="ListBox.file-list">
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="Background" Value="#1A1A1C"/>
+            <Setter Property="DragDrop.AllowDrop" Value="True"/>
+        </Style>
+
+        <Style Selector="ListBox.file-list ListBoxItem:selected /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2A4B7C"/>
+        </Style>
+
+        <Style Selector="Border.col-resize">
+            <Setter Property="Width" Value="8"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Cursor" Value="SizeWestEast"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="0,0,1,0"/>
+        </Style>
     </Window.Styles>
+
+    <Window.Resources>
+        <DataTemplate x:Key="FilePaneTemplate"
+                      x:DataType="vm:PaneViewModel">
+            <Border CornerRadius="6"
+                    Classes="pane-box"
+                    Classes.active="{Binding IsActive}">
+                <Grid RowDefinitions="Auto,Auto,*">
+
+                    <!-- Trash Action Banner -->
+                    <Border Grid.Row="0"
+                            Background="#2B1A1A"
+                            BorderBrush="#552222"
+                            BorderThickness="0,0,0,1"
+                            Padding="12,8"
+                            IsVisible="{Binding IsInTrash}">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel Grid.Column="0"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <Image Source="{markup:Icon Key=trash}"
+                                       Width="18"
+                                       Height="18"/>
+
+                                <TextBlock Text="{markup:Translate Key=Trash}"
+                                           FontWeight="SemiBold"
+                                           FontSize="13"
+                                           Foreground="#E0E0E0"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8">
+                                <Button Click="OnRecoverClick"
+                                        IsEnabled="{Binding IsItemSelected}"
+                                        Background="#2E5E3A"
+                                        Foreground="White"
+                                        Padding="12,5"
+                                        CornerRadius="6"
+                                        FontSize="12">
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="6">
+                                        <Image Source="{markup:Icon Key=trash-restore}"
+                                               Width="14"
+                                               Height="14"/>
+
+                                        <TextBlock Text="{markup:Translate Key=RecoverSelected}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+
+                                <Button Click="OnEmptyTrashClick"
+                                        Background="#C0392B"
+                                        Foreground="White"
+                                        Padding="12,5"
+                                        CornerRadius="6"
+                                        FontSize="12">
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="6">
+                                        <Image Source="{markup:Icon Key=trash-empty}"
+                                               Width="14"
+                                               Height="14"/>
+
+                                        <TextBlock Text="{markup:Translate Key=EmptyTrash}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Column Headers (Only for List View) -->
+                    <Border Grid.Row="1"
+                            Background="#212123"
+                            BorderBrush="#2C2C2C"
+                            BorderThickness="0,0,0,1"
+                            Padding="12,6"
+                            IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsListView}">
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,*">
+                            <Panel Grid.Column="0"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
+                                <TextBlock Text="{markup:Translate Key=Name}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,8,0"/>
+
+                                <Border Tag="Name"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="1"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}">
+                                <TextBlock Text="{markup:Translate Key=Size}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           TextAlignment="Right"
+                                           Margin="0,0,16,0"
+                                           VerticalAlignment="Center"/>
+
+                                <Border Tag="Size"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="2"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}">
+                                <TextBlock Text="{markup:Translate Key=Type}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"/>
+
+                                <Border Tag="Type"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="3">
+                                <TextBlock Text="{markup:Translate Key=Modified}"
+                                           FontWeight="SemiBold"
+                                           Foreground="#888888"
+                                           FontSize="12"
+                                           Margin="8,0,0,0"
+                                           VerticalAlignment="Center"/>
+                            </Panel>
+                        </Grid>
+                    </Border>
+
+                    <!-- File List Panel with RubberBand Overlay -->
+                    <Panel Grid.Row="2"
+                           ClipToBounds="True">
+                        <Panel.ContextMenu>
+                            <ContextMenu Opening="OnFileContextMenuOpening">
+
+                                <!-- New submenu: shown on empty space or folder -->
+                                <MenuItem Header="{markup:Translate Key=New}"
+                                          IsVisible="{Binding CanCreateNew}">
+                                    <MenuItem Header="{markup:Translate Key=NewFolder}"
+                                              Click="OnNewFolderClick"
+                                              InputGesture="Ctrl+Shift+N"/>
+
+                                    <MenuItem Header="{markup:Translate Key=NewFile}"
+                                              Click="OnNewFileClick"
+                                              InputGesture="Ctrl+Alt+N"/>
+                                </MenuItem>
+
+                                <Separator IsVisible="{Binding CanCreateNew}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Open}"
+                                          Click="OnMenuOpenClick"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=OpenWith}"
+                                          Click="OnMenuOpenWithClick"
+                                          IsVisible="{Binding IsFileSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
+                                          Click="OnMenuOpenAsRootClick"/>
+
+                                <MenuItem Header="{markup:Translate Key=OpenTerminal}"
+                                          Click="OnMenuOpenTerminalClick"/>
+
+                                <Separator IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Cut}"
+                                          Click="OnMenuCutClick"
+                                          InputGesture="Ctrl+X"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Copy}"
+                                          Click="OnMenuCopyClick"
+                                          InputGesture="Ctrl+C"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Paste}"
+                                          Click="OnMenuPasteClick"
+                                          InputGesture="Ctrl+V"/>
+
+                                <MenuItem Header="{markup:Translate Key=Duplicate}"
+                                          Click="OnMenuDuplicateClick"
+                                          InputGesture="Ctrl+D"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Rename}"
+                                          Click="OnMenuRenameClick"
+                                          InputGesture="F2"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Compress}"
+                                          Click="OnMenuCompressClick"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=ExtractHere}"
+                                          Click="OnMenuExtractHereClick"
+                                          IsVisible="{Binding CanExtractSelection}"/>
+
+                                <Separator IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=Trash}"
+                                          Click="OnMenuTrashClick"
+                                          InputGesture="Delete"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <MenuItem Header="{markup:Translate Key=DeletePermanent}"
+                                          Click="OnMenuDeletePermanentClick"
+                                          InputGesture="Shift+Delete"
+                                          IsVisible="{Binding IsItemSelected}"/>
+
+                                <Separator IsVisible="{Binding CanBookmarkSelection}"/>
+
+                                <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
+                                          Click="OnMenuBookmarkClick"
+                                          IsVisible="{Binding CanBookmarkSelection}"/>
+
+                                <MenuItem x:Name="FolderColorMenuItem"
+                                          Header="{markup:Translate Key=FolderColor}"
+                                          IsVisible="{Binding CanColorSelection}"/>
+
+                                <Separator/>
+
+                                <MenuItem Header="{markup:Translate Key=Properties}"
+                                          Click="OnMenuPropertiesClick"
+                                          InputGesture="Alt+Enter"/>
+                            </ContextMenu>
+                        </Panel.ContextMenu>
+
+                        <ProgressBar Height="2"
+                                     VerticalAlignment="Top"
+                                     IsIndeterminate="True"
+                                     IsVisible="{Binding IsLoading}"
+                                     Background="Transparent"
+                                     Foreground="#3584E4"
+                                     ZIndex="100"/>
+
+                        <!-- GRID VIEW -->
+                        <ListBox x:Name="GridFilesListBox"
+                                 Classes="file-list"
+                                 ItemsSource="{Binding Items}"
+                                 SelectionMode="Multiple"
+                                 SelectedItem="{Binding SelectedItem}"
+                                 SelectionChanged="OnFileSelectionChanged"
+                                 DoubleTapped="OnFileDoubleTapped"
+                                 KeyDown="OnFileKeyDown"
+                                 GotFocus="OnPaneGotFocus"
+                                 AttachedToVisualTree="OnFileListAttached"
+                                 IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsGridView}">
+                            <ListBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <controls:StretchWrapPanel ItemWidth="128"
+                                                               ItemHeight="136"/>
+                                </ItemsPanelTemplate>
+                            </ListBox.ItemsPanel>
+
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="CornerRadius" Value="8"/>
+                                    <Setter Property="Padding" Value="4"/>
+                                    <Setter Property="Margin" Value="4"/>
+                                    <Setter Property="HorizontalContentAlignment" Value="Center"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                </Style>
+                            </ListBox.Styles>
+
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FileItemViewModel">
+                                    <Border Width="120"
+                                            Height="128"
+                                            CornerRadius="8"
+                                            Opacity="{Binding DisplayOpacity}"
+                                            Classes.drop-target="{Binding IsDropTarget}">
+                                        <Grid RowDefinitions="80,*"
+                                              Margin="4">
+                                            <Panel Grid.Row="0"
+                                                   Classes="drop-zone"
+                                                   Background="Transparent"
+                                                   Width="76"
+                                                   Height="76"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center">
+                                                <Image Source="{Binding Icon}"
+                                                       Width="68"
+                                                       Height="68"
+                                                       IsVisible="{Binding !HasThumbnail}"/>
+
+                                                <Border CornerRadius="6"
+                                                        ClipToBounds="True"
+                                                        IsVisible="{Binding HasThumbnail}">
+                                                    <Image Source="{Binding Thumbnail}"
+                                                           Width="68"
+                                                           Height="68"
+                                                           Stretch="UniformToFill"/>
+                                                </Border>
+                                            </Panel>
+
+                                            <StackPanel Grid.Row="1"
+                                                        Spacing="2"
+                                                        HorizontalAlignment="Center">
+                                                <TextBlock Text="{Binding Name}"
+                                                           FontSize="13"
+                                                           Foreground="White"
+                                                           TextAlignment="Center"
+                                                           HorizontalAlignment="Center"
+                                                           TextWrapping="Wrap"
+                                                           MaxLines="2"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           MaxWidth="110"/>
+
+                                                <Border Background="#D35400"
+                                                        CornerRadius="3"
+                                                        Padding="3,1"
+                                                        IsVisible="{Binding IsAccessDenied}"
+                                                        HorizontalAlignment="Center">
+                                                    <TextBlock Text="{markup:Translate Key=AccessDenied}"
+                                                               Foreground="White"
+                                                               FontSize="9"
+                                                               FontWeight="Bold"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- LIST / DETAILS VIEW -->
+                        <ListBox x:Name="ListFilesListBox"
+                                 Classes="file-list"
+                                 ItemsSource="{Binding Items}"
+                                 SelectionMode="Multiple"
+                                 SelectedItem="{Binding SelectedItem}"
+                                 SelectionChanged="OnFileSelectionChanged"
+                                 DoubleTapped="OnFileDoubleTapped"
+                                 KeyDown="OnFileKeyDown"
+                                 GotFocus="OnPaneGotFocus"
+                                 AttachedToVisualTree="OnFileListAttached"
+                                 IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsListView}">
+                            <ListBox.Styles>
+                                <Style Selector="ListBoxItem">
+                                    <Setter Property="CornerRadius" Value="6"/>
+                                    <Setter Property="Padding" Value="8,5"/>
+                                    <Setter Property="Margin" Value="4,1"/>
+                                </Style>
+                            </ListBox.Styles>
+
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:FileItemViewModel">
+                                    <Grid ColumnDefinitions="Auto,Auto,Auto,*"
+                                          Opacity="{Binding DisplayOpacity}"
+                                          Classes.drop-target="{Binding IsDropTarget}">
+                                        <Panel Grid.Column="0"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
+                                            <DockPanel Classes="drop-zone"
+                                                       Background="Transparent"
+                                                       VerticalAlignment="Center">
+                                                <Panel DockPanel.Dock="Left"
+                                                       Width="20"
+                                                       Height="20"
+                                                       Margin="0,0,8,0"
+                                                       VerticalAlignment="Center">
+                                                    <Image Source="{Binding Icon}"
+                                                           Width="18"
+                                                           Height="18"
+                                                           IsVisible="{Binding !HasThumbnail}"/>
+
+                                                    <Border CornerRadius="3"
+                                                            ClipToBounds="True"
+                                                            IsVisible="{Binding HasThumbnail}">
+                                                        <Image Source="{Binding Thumbnail}"
+                                                               Width="18"
+                                                               Height="18"
+                                                               Stretch="UniformToFill"/>
+                                                    </Border>
+                                                </Panel>
+
+                                                <Border DockPanel.Dock="Right"
+                                                        Background="#444444"
+                                                        CornerRadius="4"
+                                                        Padding="4,1"
+                                                        IsVisible="{Binding IsHidden}"
+                                                        Margin="6,0,0,0">
+                                                    <TextBlock Text="{markup:Translate Key=Hidden}"
+                                                               Foreground="#CCCCCC"
+                                                               FontSize="10"/>
+                                                </Border>
+
+                                                <Border DockPanel.Dock="Right"
+                                                        Background="#D35400"
+                                                        CornerRadius="4"
+                                                        Padding="4,1"
+                                                        IsVisible="{Binding IsAccessDenied}"
+                                                        Margin="6,0,0,0">
+                                                    <TextBlock Text="{markup:Translate Key=AccessDenied}"
+                                                               Foreground="White"
+                                                               FontSize="10"
+                                                               FontWeight="Bold"/>
+                                                </Border>
+
+                                                <TextBlock Text="{Binding Name}"
+                                                           VerticalAlignment="Center"
+                                                           FontSize="13"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                            </DockPanel>
+                                        </Panel>
+
+                                        <TextBlock Grid.Column="1"
+                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}"
+                                                   Text="{Binding SizeString}"
+                                                   Foreground="#999999"
+                                                   VerticalAlignment="Center"
+                                                   TextAlignment="Right"
+                                                   Margin="0,0,16,0"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <TextBlock Grid.Column="2"
+                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}"
+                                                   Text="{Binding TypeString}"
+                                                   Foreground="#999999"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"/>
+
+                                        <TextBlock Grid.Column="3"
+                                                   Text="{Binding ModifiedString}"
+                                                   Foreground="#888888"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0,0,0"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- RubberBand Selection Overlay -->
+                        <Canvas ClipToBounds="True"
+                                IsHitTestVisible="False">
+                            <Border BorderBrush="#3584E4"
+                                    BorderThickness="1.5"
+                                    Background="#333584E4"
+                                    CornerRadius="2"
+                                    IsVisible="False"/>
+                        </Canvas>
+                    </Panel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
 
     <Grid RowDefinitions="Auto,Auto,*,Auto,Auto,Auto">
 
@@ -80,7 +564,8 @@
                 BorderBrush="#2C2C2C"
                 BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*,Auto">
-                <Menu Grid.Column="0">
+                <Menu x:Name="MainMenu"
+                      Grid.Column="0">
 
                     <!-- File Menu -->
                     <MenuItem Header="{markup:Translate Key=File}">
@@ -220,7 +705,7 @@
                     Margin="0,0,12,0"
                     Padding="8,2"
                     VerticalAlignment="Center">
-                <TextBlock Text="Root"
+                <TextBlock Text="{markup:Translate Key=RootBadge}"
                            FontSize="11"
                            FontWeight="Bold"
                            Foreground="#FF9E9E"/>
@@ -369,7 +854,7 @@
 
                     <!-- Manual Text Path Box -->
                     <TextBox x:Name="PathTextBox"
-                             Text="{Binding CurrentPath}"
+                             Text="{Binding CurrentPath, Mode=OneWay}"
                              KeyDown="OnPathKeyDown"
                              LostFocus="OnPathLostFocus"
                              Background="#18181A"
@@ -531,7 +1016,8 @@
 
                     <ListBox.ContextMenu>
                         <ContextMenu x:Name="SidebarContextMenu"
-                                     Opening="OnSidebarContextMenuOpening">
+                                     Opening="OnSidebarContextMenuOpening"
+                                     Closed="OnSidebarContextMenuClosed">
                             <MenuItem x:Name="SidebarOpenMenuItem"
                                       Header="{markup:Translate Key=Open}"
                                       Click="OnSidebarOpenClick"/>
@@ -673,592 +1159,14 @@
                     <ColumnDefinition Width="*"
                                       MinWidth="200"/>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="{Binding SecondaryPaneWidth}"
+                    <ColumnDefinition Width="0"
                                       MinWidth="{Binding SecondaryPaneMinWidth}"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Pane 1 (Primary Pane) -->
-                <Border Grid.Column="0"
-                        CornerRadius="6"
-                        Classes="pane-box"
-                        Classes.active="{Binding IsPane1Active}">
-                    <Grid RowDefinitions="Auto,Auto,*">
-
-                        <!-- Trash Action Banner (Pane 1) -->
-                        <Border Grid.Row="0"
-                                Background="#2B1A1A"
-                                BorderBrush="#552222"
-                                BorderThickness="0,0,0,1"
-                                Padding="12,8"
-                                IsVisible="{Binding IsPane1InTrash}">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Grid.Column="0"
-                                            Orientation="Horizontal"
-                                            Spacing="8"
-                                            VerticalAlignment="Center">
-                                    <Image Source="{markup:Icon Key=trash}"
-                                           Width="18"
-                                           Height="18"/>
-
-                                    <TextBlock Text="{markup:Translate Key=Trash}"
-                                               FontWeight="SemiBold"
-                                               FontSize="13"
-                                               Foreground="#E0E0E0"
-                                               VerticalAlignment="Center"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1"
-                                            Orientation="Horizontal"
-                                            Spacing="8">
-                                    <Button Click="OnRecoverPane1Click"
-                                            IsEnabled="{Binding SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                            Background="#2E5E3A"
-                                            Foreground="White"
-                                            Padding="12,5"
-                                            CornerRadius="6"
-                                            FontSize="12">
-                                        <StackPanel Orientation="Horizontal"
-                                                    Spacing="6">
-                                            <Image Source="{markup:Icon Key=trash-restore}"
-                                                   Width="14"
-                                                   Height="14"/>
-
-                                            <TextBlock Text="Recover Selected"
-                                                       VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-
-                                    <Button Click="OnEmptyTrashClick"
-                                            Background="#C0392B"
-                                            Foreground="White"
-                                            Padding="12,5"
-                                            CornerRadius="6"
-                                            FontSize="12">
-                                        <StackPanel Orientation="Horizontal"
-                                                    Spacing="6">
-                                            <Image Source="{markup:Icon Key=trash-empty}"
-                                                   Width="14"
-                                                   Height="14"/>
-
-                                            <TextBlock Text="Empty Trash"
-                                                       VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Button>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Column Headers (Only for List View) -->
-                        <Border Grid.Row="1"
-                                Background="#212123"
-                                BorderBrush="#2C2C2C"
-                                BorderThickness="0,0,0,1"
-                                Padding="12,6"
-                                IsVisible="{Binding IsListView}">
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,*">
-                                <Panel Grid.Column="0"
-                                       Width="{Binding ColNameWidth}">
-                                    <TextBlock Text="{markup:Translate Key=Name}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,8,0"/>
-
-                                    <Border Tag="Name"
-                                            Width="8"
-                                            HorizontalAlignment="Right"
-                                            Cursor="SizeWestEast"
-                                            Background="Transparent"
-                                            BorderBrush="#333333"
-                                            BorderThickness="0,0,1,0"
-                                            PointerPressed="OnColResizePointerPressed"
-                                            PointerMoved="OnColResizePointerMoved"
-                                            PointerReleased="OnColResizePointerReleased"
-                                            PointerCaptureLost="OnColResizePointerCaptureLost"/>
-                                </Panel>
-
-                                <Panel Grid.Column="1"
-                                       Width="{Binding ColSizeWidth}">
-                                    <TextBlock Text="{markup:Translate Key=Size}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               TextAlignment="Right"
-                                               Margin="0,0,16,0"
-                                               VerticalAlignment="Center"/>
-
-                                    <Border Tag="Size"
-                                            Width="8"
-                                            HorizontalAlignment="Right"
-                                            Cursor="SizeWestEast"
-                                            Background="Transparent"
-                                            BorderBrush="#333333"
-                                            BorderThickness="0,0,1,0"
-                                            PointerPressed="OnColResizePointerPressed"
-                                            PointerMoved="OnColResizePointerMoved"
-                                            PointerReleased="OnColResizePointerReleased"
-                                            PointerCaptureLost="OnColResizePointerCaptureLost"/>
-                                </Panel>
-
-                                <Panel Grid.Column="2"
-                                       Width="{Binding ColTypeWidth}">
-                                    <TextBlock Text="{markup:Translate Key=Type}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               Margin="8,0,0,0"
-                                               VerticalAlignment="Center"/>
-
-                                    <Border Tag="Type"
-                                            Width="8"
-                                            HorizontalAlignment="Right"
-                                            Cursor="SizeWestEast"
-                                            Background="Transparent"
-                                            BorderBrush="#333333"
-                                            BorderThickness="0,0,1,0"
-                                            PointerPressed="OnColResizePointerPressed"
-                                            PointerMoved="OnColResizePointerMoved"
-                                            PointerReleased="OnColResizePointerReleased"
-                                            PointerCaptureLost="OnColResizePointerCaptureLost"/>
-                                </Panel>
-
-                                <Panel Grid.Column="3">
-                                    <TextBlock Text="{markup:Translate Key=Modified}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               Margin="8,0,0,0"
-                                               VerticalAlignment="Center"/>
-                                </Panel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Pane 1 File List Panel with RubberBand Overlay -->
-                        <Panel Grid.Row="2"
-                               ClipToBounds="True">
-
-                            <ProgressBar Height="2"
-                                         VerticalAlignment="Top"
-                                         IsIndeterminate="True"
-                                         IsVisible="{Binding IsPane1Loading}"
-                                         Background="Transparent"
-                                         Foreground="#3584E4"
-                                         ZIndex="100"/>
-
-                            <!-- GRID VIEW (Primary Pane) -->
-                            <ListBox x:Name="GridFilesListBox"
-                                     ItemsSource="{Binding Items}"
-                                     SelectedItem="{Binding SelectedItem}"
-                                     SelectionMode="Multiple"
-                                     SelectionChanged="OnFileSelectionChanged"
-                                     DoubleTapped="OnFileDoubleTapped"
-                                     KeyDown="OnFileKeyDown"
-                                     GotFocus="OnPane1GotFocus"
-                                     Focusable="True"
-                                     Background="#1A1A1C"
-                                     DragDrop.AllowDrop="True"
-                                     IsVisible="{Binding IsGridView}">
-                                <ListBox.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <controls:StretchWrapPanel ItemWidth="128"
-                                                                   ItemHeight="136"/>
-                                    </ItemsPanelTemplate>
-                                </ListBox.ItemsPanel>
-
-                                <ListBox.Styles>
-                                    <Style Selector="ListBoxItem">
-                                        <Setter Property="CornerRadius" Value="8"/>
-                                        <Setter Property="Padding" Value="4"/>
-                                        <Setter Property="Margin" Value="4"/>
-                                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                    </Style>
-
-                                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                                        <Setter Property="Background" Value="#2A4B7C"/>
-                                    </Style>
-                                </ListBox.Styles>
-
-                                <ListBox.ContextMenu>
-                                    <ContextMenu>
-
-                                        <!-- New submenu: shown on empty space or folder -->
-                                        <MenuItem Header="New"
-                                                  IsVisible="{Binding CanCreateNew}">
-                                            <MenuItem Header="{markup:Translate Key=NewFolder}"
-                                                      Click="OnNewFolderClick"
-                                                      InputGesture="Ctrl+Shift+N"/>
-
-                                            <MenuItem Header="{markup:Translate Key=NewFile}"
-                                                      Click="OnNewFileClick"
-                                                      InputGesture="Ctrl+Alt+N"/>
-                                        </MenuItem>
-
-                                        <Separator IsVisible="{Binding CanCreateNew}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Open}"
-                                                  Click="OnMenuOpenClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenWith}"
-                                                  Click="OnMenuOpenWithClick"
-                                                  IsVisible="{Binding IsFileSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
-                                                  Click="OnMenuOpenAsRootClick"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenTerminal}"
-                                                  Click="OnMenuOpenTerminalClick"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Cut}"
-                                                  Click="OnMenuCutClick"
-                                                  InputGesture="Ctrl+X"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Copy}"
-                                                  Click="OnMenuCopyClick"
-                                                  InputGesture="Ctrl+C"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Paste}"
-                                                  Click="OnMenuPasteClick"
-                                                  InputGesture="Ctrl+V"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Duplicate}"
-                                                  Click="OnMenuDuplicateClick"
-                                                  InputGesture="Ctrl+D"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Rename}"
-                                                  Click="OnMenuRenameClick"
-                                                  InputGesture="F2"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Compress}"
-                                                  Click="OnMenuCompressClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=ExtractHere}"
-                                                  Click="OnMenuExtractHereClick"
-                                                  IsVisible="{Binding CanExtractSelection}"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Trash}"
-                                                  Click="OnMenuTrashClick"
-                                                  InputGesture="Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=DeletePermanent}"
-                                                  Click="OnMenuDeletePermanentClick"
-                                                  InputGesture="Shift+Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <Separator IsVisible="{Binding CanBookmarkSelection}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
-                                                  Click="OnMenuBookmarkClick"
-                                                  IsVisible="{Binding CanBookmarkSelection}"/>
-                                        
-                                        <MenuItem x:Name="GridFolderColorMenu"
-                                                  Header="Folder Color"
-                                                  IsVisible="{Binding CanColorSelection}"/>
-
-                                        <Separator/>
-
-                                        <MenuItem Header="{markup:Translate Key=Properties}"
-                                                  Click="OnMenuPropertiesClick"
-                                                  InputGesture="Alt+Enter"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:FileItemViewModel">
-                                        <Border Width="120"
-                                                Height="128"
-                                                CornerRadius="8"
-                                                Opacity="{Binding DisplayOpacity}"
-                                                Classes.drop-target="{Binding IsDropTarget}">
-                                            <Grid RowDefinitions="80,*"
-                                                  Margin="4">
-                                                <Panel Grid.Row="0"
-                                                       Classes="drop-zone"
-                                                       Background="Transparent"
-                                                       Width="76"
-                                                       Height="76"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center">
-                                                    <Image Source="{Binding Icon}"
-                                                           Width="68"
-                                                           Height="68"
-                                                           IsVisible="{Binding !HasThumbnail}"/>
-
-                                                    <Border CornerRadius="6"
-                                                            ClipToBounds="True"
-                                                            IsVisible="{Binding HasThumbnail}">
-                                                        <Image Source="{Binding Thumbnail}"
-                                                               Width="68"
-                                                               Height="68"
-                                                               Stretch="UniformToFill"/>
-                                                    </Border>
-                                                </Panel>
-
-                                                <StackPanel Grid.Row="1"
-                                                            Spacing="2"
-                                                            HorizontalAlignment="Center">
-                                                    <TextBlock Text="{Binding Name}"
-                                                               FontSize="13"
-                                                               Foreground="White"
-                                                               TextAlignment="Center"
-                                                               HorizontalAlignment="Center"
-                                                               TextWrapping="Wrap"
-                                                               MaxLines="2"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               MaxWidth="110"/>
-
-                                                    <Border Background="#D35400"
-                                                            CornerRadius="3"
-                                                            Padding="3,1"
-                                                            IsVisible="{Binding IsAccessDenied}"
-                                                            HorizontalAlignment="Center">
-                                                        <TextBlock Text="{markup:Translate Key=AccessDenied}"
-                                                                   Foreground="White"
-                                                                   FontSize="9"
-                                                                   FontWeight="Bold"/>
-                                                    </Border>
-                                                </StackPanel>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <!-- LIST / DETAILS VIEW (Primary Pane) -->
-                            <ListBox x:Name="ListFilesListBox"
-                                     ItemsSource="{Binding Items}"
-                                     SelectedItem="{Binding SelectedItem}"
-                                     SelectionMode="Multiple"
-                                     SelectionChanged="OnFileSelectionChanged"
-                                     DoubleTapped="OnFileDoubleTapped"
-                                     KeyDown="OnFileKeyDown"
-                                     GotFocus="OnPane1GotFocus"
-                                     Focusable="True"
-                                     Background="#1A1A1C"
-                                     DragDrop.AllowDrop="True"
-                                     IsVisible="{Binding IsListView}">
-                                <ListBox.Styles>
-                                    <Style Selector="ListBoxItem">
-                                        <Setter Property="CornerRadius" Value="6"/>
-                                        <Setter Property="Padding" Value="8,5"/>
-                                        <Setter Property="Margin" Value="4,1"/>
-                                    </Style>
-
-                                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                                        <Setter Property="Background" Value="#2A4B7C"/>
-                                    </Style>
-                                </ListBox.Styles>
-
-                                <ListBox.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="New"
-                                                  IsVisible="{Binding CanCreateNew}">
-                                            <MenuItem Header="{markup:Translate Key=NewFolder}"
-                                                      Click="OnNewFolderClick"
-                                                      InputGesture="Ctrl+Shift+N"/>
-
-                                            <MenuItem Header="{markup:Translate Key=NewFile}"
-                                                      Click="OnNewFileClick"
-                                                      InputGesture="Ctrl+Alt+N"/>
-                                        </MenuItem>
-
-                                        <Separator IsVisible="{Binding CanCreateNew}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Open}"
-                                                  Click="OnMenuOpenClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenWith}"
-                                                  Click="OnMenuOpenWithClick"
-                                                  IsVisible="{Binding IsFileSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
-                                                  Click="OnMenuOpenAsRootClick"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenTerminal}"
-                                                  Click="OnMenuOpenTerminalClick"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Cut}"
-                                                  Click="OnMenuCutClick"
-                                                  InputGesture="Ctrl+X"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Copy}"
-                                                  Click="OnMenuCopyClick"
-                                                  InputGesture="Ctrl+C"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Paste}"
-                                                  Click="OnMenuPasteClick"
-                                                  InputGesture="Ctrl+V"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Duplicate}"
-                                                  Click="OnMenuDuplicateClick"
-                                                  InputGesture="Ctrl+D"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Rename}"
-                                                  Click="OnMenuRenameClick"
-                                                  InputGesture="F2"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Compress}"
-                                                  Click="OnMenuCompressClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=ExtractHere}"
-                                                  Click="OnMenuExtractHereClick"
-                                                  IsVisible="{Binding CanExtractSelection}"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Trash}"
-                                                  Click="OnMenuTrashClick"
-                                                  InputGesture="Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=DeletePermanent}"
-                                                  Click="OnMenuDeletePermanentClick"
-                                                  InputGesture="Shift+Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <Separator IsVisible="{Binding CanBookmarkSelection}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
-                                                  Click="OnMenuBookmarkClick"
-                                                  IsVisible="{Binding CanBookmarkSelection}"/>
-                                        
-                                        <MenuItem x:Name="ListFolderColorMenu"
-                                                  Header="Folder Color"
-                                                  IsVisible="{Binding CanColorSelection}"/>
-                                        
-                                        <Separator/>
-
-                                        <MenuItem Header="{markup:Translate Key=Properties}"
-                                                  Click="OnMenuPropertiesClick"
-                                                  InputGesture="Alt+Enter"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:FileItemViewModel">
-                                        <Grid ColumnDefinitions="Auto,Auto,Auto,*"
-                                              Opacity="{Binding DisplayOpacity}"
-                                              Classes.drop-target="{Binding IsDropTarget}">
-                                            <Panel Grid.Column="0"
-                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
-                                                <DockPanel Classes="drop-zone"
-                                                           Background="Transparent"
-                                                           VerticalAlignment="Center">
-                                                    <Panel DockPanel.Dock="Left"
-                                                           Width="20"
-                                                           Height="20"
-                                                           Margin="0,0,8,0"
-                                                           VerticalAlignment="Center">
-                                                        <Image Source="{Binding Icon}"
-                                                               Width="18"
-                                                               Height="18"
-                                                               IsVisible="{Binding !HasThumbnail}"/>
-
-                                                        <Border CornerRadius="3"
-                                                                ClipToBounds="True"
-                                                                IsVisible="{Binding HasThumbnail}">
-                                                            <Image Source="{Binding Thumbnail}"
-                                                                   Width="18"
-                                                                   Height="18"
-                                                                   Stretch="UniformToFill"/>
-                                                        </Border>
-                                                    </Panel>
-
-                                                    <Border DockPanel.Dock="Right"
-                                                            Background="#444444"
-                                                            CornerRadius="4"
-                                                            Padding="4,1"
-                                                            IsVisible="{Binding IsHidden}"
-                                                            Margin="6,0,0,0">
-                                                        <TextBlock Text="{markup:Translate Key=Hidden}"
-                                                                   Foreground="#CCCCCC"
-                                                                   FontSize="10"/>
-                                                    </Border>
-
-                                                    <Border DockPanel.Dock="Right"
-                                                            Background="#D35400"
-                                                            CornerRadius="4"
-                                                            Padding="4,1"
-                                                            IsVisible="{Binding IsAccessDenied}"
-                                                            Margin="6,0,0,0">
-                                                        <TextBlock Text="{markup:Translate Key=AccessDenied}"
-                                                                   Foreground="White"
-                                                                   FontSize="10"
-                                                                   FontWeight="Bold"/>
-                                                    </Border>
-
-                                                    <TextBlock Text="{Binding Name}"
-                                                               VerticalAlignment="Center"
-                                                               FontSize="13"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </DockPanel>
-                                            </Panel>
-
-                                            <TextBlock Grid.Column="1"
-                                                       Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}"
-                                                       Text="{Binding SizeString}"
-                                                       Foreground="#999999"
-                                                       VerticalAlignment="Center"
-                                                       TextAlignment="Right"
-                                                       Margin="0,0,16,0"
-                                                       FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
-
-                                            <TextBlock Grid.Column="2"
-                                                       Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}"
-                                                       Text="{Binding TypeString}"
-                                                       Foreground="#999999"
-                                                       VerticalAlignment="Center"
-                                                       Margin="8,0,0,0"
-                                                       FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
-
-                                            <TextBlock Grid.Column="3"
-                                                       Text="{Binding ModifiedString}"
-                                                       Foreground="#888888"
-                                                       VerticalAlignment="Center"
-                                                       Margin="8,0,0,0"
-                                                       FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <!-- RubberBand Selection Overlay (Pane 1) -->
-                            <Canvas x:Name="SelectionCanvas1"
-                                    ClipToBounds="True"
-                                    IsHitTestVisible="False">
-                                <Border x:Name="RubberBandRect1"
-                                        BorderBrush="#3584E4"
-                                        BorderThickness="1.5"
-                                        Background="#333584E4"
-                                        CornerRadius="2"
-                                        IsVisible="False"/>
-                            </Canvas>
-                        </Panel>
-                    </Grid>
-                </Border>
+                <ContentControl Grid.Column="0"
+                                Content="{Binding Pane1}"
+                                ContentTemplate="{StaticResource FilePaneTemplate}"/>
 
                 <!-- Dual Pane Splitter -->
                 <GridSplitter Grid.Column="1"
@@ -1268,572 +1176,10 @@
                               IsVisible="{Binding IsDualPane}"/>
 
                 <!-- Pane 2 (F3 Dual Pane Secondary Pane) -->
-                <Border Grid.Column="2"
-                        CornerRadius="6"
-                        Classes="pane-box"
-                        Classes.active="{Binding IsPane2Active}"
-                        IsVisible="{Binding IsDualPane}">
-                    <Grid RowDefinitions="Auto,Auto,*">
-
-                        <!-- Trash Action Banner (Pane 2) -->
-                        <Border Grid.Row="0"
-                                Background="#2B1A1A"
-                                BorderBrush="#552222"
-                                BorderThickness="0,0,0,1"
-                                Padding="12,8"
-                                IsVisible="{Binding IsPane2InTrash}">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <StackPanel Grid.Column="0"
-                                            Orientation="Horizontal"
-                                            Spacing="8"
-                                            VerticalAlignment="Center">
-                                    <Image Source="{markup:Icon Key=trash}"
-                                           Width="16"
-                                           Height="16"/>
-
-                                    <TextBlock Text="{markup:Translate Key=Trash}"
-                                               FontWeight="SemiBold"
-                                               FontSize="12"
-                                               Foreground="#E0E0E0"
-                                               VerticalAlignment="Center"/>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1"
-                                            Orientation="Horizontal"
-                                            Spacing="6">
-                                    <Button Click="OnRecoverPane2Click"
-                                            IsEnabled="{Binding Pane2SelectedItem, Converter={x:Static ObjectConverters.IsNotNull}}"
-                                            Background="#2E5E3A"
-                                            Foreground="White"
-                                            Padding="10,4"
-                                            CornerRadius="5"
-                                            FontSize="11">
-                                        <TextBlock Text="Recover Selected"
-                                                   VerticalAlignment="Center"/>
-                                    </Button>
-
-                                    <Button Click="OnEmptyTrashClick"
-                                            Background="#C0392B"
-                                            Foreground="White"
-                                            Padding="10,4"
-                                            CornerRadius="5"
-                                            FontSize="11">
-                                        <TextBlock Text="Empty Trash"
-                                                   VerticalAlignment="Center"/>
-                                    </Button>
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Pane 2 Column Headers (Only for List View) -->
-                        <Border Grid.Row="1"
-                                Background="#212123"
-                                BorderBrush="#2C2C2C"
-                                BorderThickness="0,0,0,1"
-                                Padding="12,6"
-                                IsVisible="{Binding IsListView}">
-                            <Grid ColumnDefinitions="Auto,Auto,Auto,*">
-                                <Panel Grid.Column="0"
-                                       Width="{Binding ColNameWidth}">
-                                    <TextBlock Text="{markup:Translate Key=Name}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               VerticalAlignment="Center"
-                                               Margin="0,0,8,0"/>
-
-                                    <Border Tag="Name"
-                                            Width="8"
-                                            HorizontalAlignment="Right"
-                                            Cursor="SizeWestEast"
-                                            Background="Transparent"
-                                            BorderBrush="#333333"
-                                            BorderThickness="0,0,1,0"
-                                            PointerPressed="OnColResizePointerPressed"
-                                            PointerMoved="OnColResizePointerMoved"
-                                            PointerReleased="OnColResizePointerReleased"
-                                            PointerCaptureLost="OnColResizePointerCaptureLost"/>
-                                </Panel>
-
-                                <Panel Grid.Column="1"
-                                       Width="{Binding ColSizeWidth}">
-                                    <TextBlock Text="{markup:Translate Key=Size}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               TextAlignment="Right"
-                                               Margin="0,0,16,0"
-                                               VerticalAlignment="Center"/>
-
-                                    <Border Tag="Size"
-                                            Width="8"
-                                            HorizontalAlignment="Right"
-                                            Cursor="SizeWestEast"
-                                            Background="Transparent"
-                                            BorderBrush="#333333"
-                                            BorderThickness="0,0,1,0"
-                                            PointerPressed="OnColResizePointerPressed"
-                                            PointerMoved="OnColResizePointerMoved"
-                                            PointerReleased="OnColResizePointerReleased"
-                                            PointerCaptureLost="OnColResizePointerCaptureLost"/>
-                                </Panel>
-
-                                <Panel Grid.Column="2"
-                                       Width="{Binding ColTypeWidth}">
-                                    <TextBlock Text="{markup:Translate Key=Type}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               Margin="8,0,0,0"
-                                               VerticalAlignment="Center"/>
-
-                                    <Border Tag="Type"
-                                            Width="8"
-                                            HorizontalAlignment="Right"
-                                            Cursor="SizeWestEast"
-                                            Background="Transparent"
-                                            BorderBrush="#333333"
-                                            BorderThickness="0,0,1,0"
-                                            PointerPressed="OnColResizePointerPressed"
-                                            PointerMoved="OnColResizePointerMoved"
-                                            PointerReleased="OnColResizePointerReleased"
-                                            PointerCaptureLost="OnColResizePointerCaptureLost"/>
-                                </Panel>
-
-                                <Panel Grid.Column="3">
-                                    <TextBlock Text="{markup:Translate Key=Modified}"
-                                               FontWeight="SemiBold"
-                                               Foreground="#888888"
-                                               FontSize="12"
-                                               Margin="8,0,0,0"
-                                               VerticalAlignment="Center"/>
-                                </Panel>
-                            </Grid>
-                        </Border>
-
-                        <!-- Pane 2 File List Panel with RubberBand Overlay -->
-                        <Panel Grid.Row="2"
-                               ClipToBounds="True">
-
-                            <ProgressBar Height="2"
-                                         VerticalAlignment="Top"
-                                         IsIndeterminate="True"
-                                         IsVisible="{Binding IsPane2Loading}"
-                                         Background="Transparent"
-                                         Foreground="#3584E4"
-                                         ZIndex="100"/>
-
-                            <!-- Pane 2 GRID VIEW -->
-                            <ListBox x:Name="Pane2GridFilesListBox"
-                                     ItemsSource="{Binding Pane2Items}"
-                                     SelectedItem="{Binding Pane2SelectedItem}"
-                                     SelectionMode="Multiple"
-                                     SelectionChanged="OnFileSelectionChanged"
-                                     DoubleTapped="OnPane2FileDoubleTapped"
-                                     KeyDown="OnFileKeyDown"
-                                     GotFocus="OnPane2GotFocus"
-                                     Focusable="True"
-                                     Background="#1A1A1C"
-                                     DragDrop.AllowDrop="True"
-                                     IsVisible="{Binding IsGridView}">
-                                <ListBox.ItemsPanel>
-                                    <ItemsPanelTemplate>
-                                        <controls:StretchWrapPanel ItemWidth="128"
-                                                                   ItemHeight="136"/>
-                                    </ItemsPanelTemplate>
-                                </ListBox.ItemsPanel>
-
-                                <ListBox.Styles>
-                                    <Style Selector="ListBoxItem">
-                                        <Setter Property="CornerRadius" Value="8"/>
-                                        <Setter Property="Padding" Value="4"/>
-                                        <Setter Property="Margin" Value="4"/>
-                                        <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                        <Setter Property="VerticalContentAlignment" Value="Center"/>
-                                    </Style>
-
-                                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                                        <Setter Property="Background" Value="#2A4B7C"/>
-                                    </Style>
-                                </ListBox.Styles>
-
-                                <ListBox.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="New"
-                                                  IsVisible="{Binding CanCreateNew}">
-                                            <MenuItem Header="{markup:Translate Key=NewFolder}"
-                                                      Click="OnNewFolderClick"
-                                                      InputGesture="Ctrl+Shift+N"/>
-
-                                            <MenuItem Header="{markup:Translate Key=NewFile}"
-                                                      Click="OnNewFileClick"
-                                                      InputGesture="Ctrl+Alt+N"/>
-                                        </MenuItem>
-
-                                        <Separator IsVisible="{Binding CanCreateNew}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Open}"
-                                                  Click="OnMenuOpenClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenWith}"
-                                                  Click="OnMenuOpenWithClick"
-                                                  IsVisible="{Binding IsFileSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
-                                                  Click="OnMenuOpenAsRootClick"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenTerminal}"
-                                                  Click="OnMenuOpenTerminalClick"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Cut}"
-                                                  Click="OnMenuCutClick"
-                                                  InputGesture="Ctrl+X"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Copy}"
-                                                  Click="OnMenuCopyClick"
-                                                  InputGesture="Ctrl+C"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Paste}"
-                                                  Click="OnMenuPasteClick"
-                                                  InputGesture="Ctrl+V"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Duplicate}"
-                                                  Click="OnMenuDuplicateClick"
-                                                  InputGesture="Ctrl+D"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Rename}"
-                                                  Click="OnMenuRenameClick"
-                                                  InputGesture="F2"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Compress}"
-                                                  Click="OnMenuCompressClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=ExtractHere}"
-                                                  Click="OnMenuExtractHereClick"
-                                                  IsVisible="{Binding Pane2CanExtractSelection}"/>
-
-                                        <MenuItem x:Name="Pane2GridFolderColorMenu"
-                                                  Header="Folder Color"
-                                                  IsVisible="{Binding Pane2CanColorSelection}"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Trash}"
-                                                  Click="OnMenuTrashClick"
-                                                  InputGesture="Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=DeletePermanent}"
-                                                  Click="OnMenuDeletePermanentClick"
-                                                  InputGesture="Shift+Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <Separator IsVisible="{Binding CanBookmarkSelection}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
-                                                  Click="OnMenuBookmarkClick"
-                                                  IsVisible="{Binding CanBookmarkSelection}"/>
-
-                                        <Separator/>
-
-                                        <MenuItem Header="{markup:Translate Key=Properties}"
-                                                  Click="OnMenuPropertiesClick"
-                                                  InputGesture="Alt+Enter"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:FileItemViewModel">
-                                        <Border Width="120"
-                                                Height="128"
-                                                CornerRadius="8"
-                                                Opacity="{Binding DisplayOpacity}"
-                                                Classes.drop-target="{Binding IsDropTarget}">
-                                            <Grid RowDefinitions="80,*"
-                                                  Margin="4">
-                                                <Panel Grid.Row="0"
-                                                       Classes="drop-zone"
-                                                       Background="Transparent"
-                                                       Width="76"
-                                                       Height="76"
-                                                       HorizontalAlignment="Center"
-                                                       VerticalAlignment="Center">
-                                                    <Image Source="{Binding Icon}"
-                                                           Width="68"
-                                                           Height="68"
-                                                           IsVisible="{Binding !HasThumbnail}"/>
-
-                                                    <Border CornerRadius="6"
-                                                            ClipToBounds="True"
-                                                            IsVisible="{Binding HasThumbnail}">
-                                                        <Image Source="{Binding Thumbnail}"
-                                                               Width="68"
-                                                               Height="68"
-                                                               Stretch="UniformToFill"/>
-                                                    </Border>
-                                                </Panel>
-
-                                                <StackPanel Grid.Row="1"
-                                                            Spacing="2"
-                                                            HorizontalAlignment="Center">
-                                                    <TextBlock Text="{Binding Name}"
-                                                               FontSize="13"
-                                                               Foreground="White"
-                                                               TextAlignment="Center"
-                                                               HorizontalAlignment="Center"
-                                                               TextWrapping="Wrap"
-                                                               MaxLines="2"
-                                                               TextTrimming="CharacterEllipsis"
-                                                               MaxWidth="110"/>
-
-                                                    <Border Background="#D35400"
-                                                            CornerRadius="3"
-                                                            Padding="3,1"
-                                                            IsVisible="{Binding IsAccessDenied}"
-                                                            HorizontalAlignment="Center">
-                                                        <TextBlock Text="{markup:Translate Key=AccessDenied}"
-                                                                   Foreground="White"
-                                                                   FontSize="9"
-                                                                   FontWeight="Bold"/>
-                                                    </Border>
-                                                </StackPanel>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <!-- Pane 2 LIST VIEW -->
-                            <ListBox x:Name="Pane2ListFilesListBox"
-                                     ItemsSource="{Binding Pane2Items}"
-                                     SelectedItem="{Binding Pane2SelectedItem}"
-                                     SelectionMode="Multiple"
-                                     SelectionChanged="OnFileSelectionChanged"
-                                     DoubleTapped="OnPane2FileDoubleTapped"
-                                     KeyDown="OnFileKeyDown"
-                                     GotFocus="OnPane2GotFocus"
-                                     Focusable="True"
-                                     Background="#1A1A1C"
-                                     DragDrop.AllowDrop="True"
-                                     IsVisible="{Binding IsListView}">
-                                <ListBox.Styles>
-                                    <Style Selector="ListBoxItem">
-                                        <Setter Property="CornerRadius" Value="6"/>
-                                        <Setter Property="Padding" Value="8,5"/>
-                                        <Setter Property="Margin" Value="4,1"/>
-                                    </Style>
-
-                                    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
-                                        <Setter Property="Background" Value="#2A4B7C"/>
-                                    </Style>
-                                </ListBox.Styles>
-
-                                <ListBox.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="New"
-                                                  IsVisible="{Binding CanCreateNew}">
-                                            <MenuItem Header="{markup:Translate Key=NewFolder}"
-                                                      Click="OnNewFolderClick"
-                                                      InputGesture="Ctrl+Shift+N"/>
-
-                                            <MenuItem Header="{markup:Translate Key=NewFile}"
-                                                      Click="OnNewFileClick"
-                                                      InputGesture="Ctrl+Alt+N"/>
-                                        </MenuItem>
-
-                                        <Separator IsVisible="{Binding CanCreateNew}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Open}"
-                                                  Click="OnMenuOpenClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenWith}"
-                                                  Click="OnMenuOpenWithClick"
-                                                  IsVisible="{Binding IsFileSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
-                                                  Click="OnMenuOpenAsRootClick"/>
-
-                                        <MenuItem Header="{markup:Translate Key=OpenTerminal}"
-                                                  Click="OnMenuOpenTerminalClick"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Cut}"
-                                                  Click="OnMenuCutClick"
-                                                  InputGesture="Ctrl+X"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Copy}"
-                                                  Click="OnMenuCopyClick"
-                                                  InputGesture="Ctrl+C"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Paste}"
-                                                  Click="OnMenuPasteClick"
-                                                  InputGesture="Ctrl+V"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Duplicate}"
-                                                  Click="OnMenuDuplicateClick"
-                                                  InputGesture="Ctrl+D"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Rename}"
-                                                  Click="OnMenuRenameClick"
-                                                  InputGesture="F2"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Compress}"
-                                                  Click="OnMenuCompressClick"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=ExtractHere}"
-                                                  Click="OnMenuExtractHereClick"
-                                                  IsVisible="{Binding Pane2CanExtractSelection}"/>
-
-                                        <MenuItem x:Name="Pane2ListFolderColorMenu"
-                                                  Header="Folder Color"
-                                                  IsVisible="{Binding Pane2CanColorSelection}"/>
-
-                                        <Separator IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=Trash}"
-                                                  Click="OnMenuTrashClick"
-                                                  InputGesture="Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=DeletePermanent}"
-                                                  Click="OnMenuDeletePermanentClick"
-                                                  InputGesture="Shift+Delete"
-                                                  IsVisible="{Binding IsItemSelected}"/>
-
-                                        <Separator IsVisible="{Binding CanBookmarkSelection}"/>
-
-                                        <MenuItem Header="{markup:Translate Key=BookmarkFolder}"
-                                                  Click="OnMenuBookmarkClick"
-                                                  IsVisible="{Binding CanBookmarkSelection}"/>
-
-                                        <Separator/>
-
-                                        <MenuItem Header="{markup:Translate Key=Properties}"
-                                                  Click="OnMenuPropertiesClick"
-                                                  InputGesture="Alt+Enter"/>
-                                    </ContextMenu>
-                                </ListBox.ContextMenu>
-
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate x:DataType="vm:FileItemViewModel">
-                                        <Grid ColumnDefinitions="Auto,Auto,Auto,*"
-                                              Opacity="{Binding DisplayOpacity}"
-                                              Classes.drop-target="{Binding IsDropTarget}">
-                                            <Panel Grid.Column="0"
-                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
-                                                <DockPanel Classes="drop-zone"
-                                                           Background="Transparent"
-                                                           VerticalAlignment="Center">
-                                                    <Panel DockPanel.Dock="Left"
-                                                           Width="20"
-                                                           Height="20"
-                                                           Margin="0,0,8,0"
-                                                           VerticalAlignment="Center">
-                                                        <Image Source="{Binding Icon}"
-                                                               Width="18"
-                                                               Height="18"
-                                                               IsVisible="{Binding !HasThumbnail}"/>
-
-                                                        <Border CornerRadius="3"
-                                                                ClipToBounds="True"
-                                                                IsVisible="{Binding HasThumbnail}">
-                                                            <Image Source="{Binding Thumbnail}"
-                                                                   Width="18"
-                                                                   Height="18"
-                                                                   Stretch="UniformToFill"/>
-                                                        </Border>
-                                                    </Panel>
-
-                                                    <Border DockPanel.Dock="Right"
-                                                            Background="#444444"
-                                                            CornerRadius="4"
-                                                            Padding="4,1"
-                                                            IsVisible="{Binding IsHidden}"
-                                                            Margin="6,0,0,0">
-                                                        <TextBlock Text="{markup:Translate Key=Hidden}"
-                                                                   Foreground="#CCCCCC"
-                                                                   FontSize="10"/>
-                                                    </Border>
-
-                                                    <Border DockPanel.Dock="Right"
-                                                            Background="#D35400"
-                                                            CornerRadius="4"
-                                                            Padding="4,1"
-                                                            IsVisible="{Binding IsAccessDenied}"
-                                                            Margin="6,0,0,0">
-                                                        <TextBlock Text="{markup:Translate Key=AccessDenied}"
-                                                                   Foreground="White"
-                                                                   FontSize="10"
-                                                                   FontWeight="Bold"/>
-                                                    </Border>
-
-                                                    <TextBlock Text="{Binding Name}"
-                                                               VerticalAlignment="Center"
-                                                               FontSize="13"
-                                                               TextTrimming="CharacterEllipsis"/>
-                                                </DockPanel>
-                                            </Panel>
-
-                                            <TextBlock Grid.Column="1"
-                                                       Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}"
-                                                       Text="{Binding SizeString}"
-                                                       Foreground="#999999"
-                                                       VerticalAlignment="Center"
-                                                       TextAlignment="Right"
-                                                       Margin="0,0,16,0"
-                                                       FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
-
-                                            <TextBlock Grid.Column="2"
-                                                       Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}"
-                                                       Text="{Binding TypeString}"
-                                                       Foreground="#999999"
-                                                       VerticalAlignment="Center"
-                                                       Margin="8,0,0,0"
-                                                       FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
-
-                                            <TextBlock Grid.Column="3"
-                                                       Text="{Binding ModifiedString}"
-                                                       Foreground="#888888"
-                                                       VerticalAlignment="Center"
-                                                       Margin="8,0,0,0"
-                                                       FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
-
-                            <!-- RubberBand Selection Overlay (Pane 2) -->
-                            <Canvas x:Name="SelectionCanvas2"
-                                    ClipToBounds="True"
-                                    IsHitTestVisible="False">
-                                <Border x:Name="RubberBandRect2"
-                                        BorderBrush="#3584E4"
-                                        BorderThickness="1.5"
-                                        Background="#333584E4"
-                                        CornerRadius="2"
-                                        IsVisible="False"/>
-                            </Canvas>
-                        </Panel>
-                    </Grid>
-                </Border>
+                <ContentControl Grid.Column="2"
+                                Content="{Binding Pane2}"
+                                ContentTemplate="{StaticResource FilePaneTemplate}"
+                                IsVisible="{Binding IsDualPane}"/>
             </Grid>
 
             <!-- Splitter between Files and Preview -->
@@ -1968,7 +1314,7 @@
                                Width="12"
                                Height="12"/>
 
-                        <TextBlock Text="Cancel"
+                        <TextBlock Text="{markup:Translate Key=Cancel}"
                                    FontSize="12"
                                    Foreground="#EEEEEE"/>
                     </StackPanel>
@@ -2001,7 +1347,7 @@
                          Margin="0,0,16,0"/>
 
                 <Button Grid.Column="2"
-                        Content="Cancel"
+                        Content="{markup:Translate Key=Cancel}"
                         Click="OnPickerCancelClick"
                         Background="#333333"
                         Foreground="#DDDDDD"

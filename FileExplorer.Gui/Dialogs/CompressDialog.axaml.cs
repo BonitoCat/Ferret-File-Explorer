@@ -35,14 +35,14 @@ public partial class CompressDialog : Window
         FormatComboBox.SelectedIndex = 0;
         FormatComboBox.SelectionChanged += OnFormatSelectionChanged;
 
-        string defaultBaseName = "Archive";
+        string defaultBaseName = LocalizationService.Get("ArchiveDefaultName");
         if (sourcePaths.Count == 1)
         {
             string first = sourcePaths[0];
             defaultBaseName = Directory.Exists(first) ? Path.GetFileName(first.TrimEnd('/')) : Path.GetFileNameWithoutExtension(first);
             if (string.IsNullOrEmpty(defaultBaseName))
             {
-                defaultBaseName = "Archive";
+                defaultBaseName = LocalizationService.Get("ArchiveDefaultName");
             }
         }
         else if (!string.IsNullOrEmpty(currentDirectory))
@@ -85,8 +85,8 @@ public partial class CompressDialog : Window
         }
 
         PasswordHintText.Text = supportsPassword
-            ? "Password encryption is supported for this format."
-            : "Password encryption is only supported for .zip and .7z formats.";
+            ? LocalizationService.Get("EncryptionSupported")
+            : LocalizationService.Get("EncryptionUnsupported");
     }
 
     private async void OnCreateClick(object? sender, RoutedEventArgs e)
@@ -94,7 +94,7 @@ public partial class CompressDialog : Window
         string rawName = ArchiveNameBox.Text?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(rawName))
         {
-            StatusLabel.Text = "Please enter an archive name.";
+            StatusLabel.Text = LocalizationService.Get("EnterArchiveName");
             StatusLabel.IsVisible = true;
             ArchiveNameBox.Focus();
             return;
@@ -138,7 +138,7 @@ public partial class CompressDialog : Window
             return;
         }
 
-        StatusLabel.Text = string.IsNullOrEmpty(error) ? "Compression failed." : error;
+        StatusLabel.Text = string.IsNullOrEmpty(error) ? LocalizationService.Get("CompressionFailed") : error;
         StatusLabel.IsVisible = true;
     }
 

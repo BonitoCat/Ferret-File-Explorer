@@ -1,7 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
         x:Class="FileExplorer.Gui.Dialogs.FolderColorDialog"
-        Title="Custom Folder Color"
+        Title="{markup:Translate Key=CustomFolderColor}"
         Width="620"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -30,7 +31,7 @@
                         Margin="20,0,0,0"
                         Spacing="8"
                         VerticalAlignment="Top">
-                <TextBlock Text="Preview"
+                <TextBlock Text="{markup:Translate Key=Preview}"
                            FontSize="12"
                            Foreground="#8A8A8A"
                            HorizontalAlignment="Center"/>
@@ -51,14 +52,14 @@
                     Spacing="10"
                     Margin="0,16,0,0">
 
-            <Button Content="Cancel"
+            <Button Content="{markup:Translate Key=Cancel}"
                     Click="OnCancelClick"
                     Background="#333333"
                     Width="90"
                     HorizontalContentAlignment="Center"
                     IsCancel="True"/>
 
-            <Button Content="Apply"
+            <Button Content="{markup:Translate Key=Apply}"
                     Click="OnApplyClick"
                     Background="#3584E4"
                     Foreground="White"

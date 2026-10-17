@@ -97,7 +97,7 @@ public class PlacesService
             places.Add(new()
             {
                 Kind = PlaceKind.Bookmarks,
-                Name = System.IO.Path.GetFileName(bookmark),
+                Name = resolved == "/" ? "File System" : BookmarkService.GetDisplayName(resolved),
                 Path = resolved,
                 IsBookmark = true,
             });

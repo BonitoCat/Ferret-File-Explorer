@@ -1,13 +1,26 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using Avalonia.Platform;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Gui.Services;
 
 public class LocalizationService : INotifyPropertyChanged
 {
+    private const string DefaultLanguage = "en";
+    private const string ResourceRoot = "avares://FileExplorer.Gui/Assets/Languages/";
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        ReadCommentHandling = JsonCommentHandling.Skip,
+        AllowTrailingCommas = true,
+    };
+
     public static LocalizationService Instance { get; } = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -16,14 +29,37 @@ public class LocalizationService : INotifyPropertyChanged
 
     public string this[string key] => Get(key);
 
+    public string LanguageCode { get; private set; } = DefaultLanguage;
+
+    public static string UserLanguageDir => Path.Combine(AppPaths.DataDir, "languages");
+
     public LocalizationService()
     {
         LoadDefaultStrings();
+        LoadSystemLanguage();
     }
 
     public static string Get(string key)
     {
         return Instance.GetString(key);
+    }
+
+    public static string Format(string key, params object?[] args)
+    {
+        string format = Instance.GetString(key);
+        try
+        {
+            return string.Format(CultureInfo.CurrentCulture, format, args);
+        }
+        catch (FormatException)
+        {
+            return $"{format} {string.Join(" ", args)}";
+        }
+    }
+
+    public static string Plural(string key, long count)
+    {
+        return Format(count == 1 ? $"{key}One" : $"{key}Many", count);
     }
 
     public string GetString(string key, string? fallback = null)
@@ -38,118 +74,125 @@ public class LocalizationService : INotifyPropertyChanged
 
     public void LoadLanguage(string jsonContent)
     {
-        Dictionary<string, string>? loaded = JsonSerializer.Deserialize<Dictionary<string, string>>(jsonContent);
-        if (loaded is null)
+        if (!Merge(jsonContent))
         {
             return;
-        }
-        
-        foreach (KeyValuePair<string, string> kvp in loaded)
-        {
-            _strings[kvp.Key] = kvp.Value;
         }
 
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
 
+    public static List<string> GetLanguageCandidates()
+    {
+        List<string> names = new();
+        string? languageList = Environment.GetEnvironmentVariable("LANGUAGE");
+        if (!string.IsNullOrWhiteSpace(languageList))
+        {
+            names.Add(languageList.Split(':', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "");
+        }
+
+        names.Add(CultureInfo.CurrentUICulture.Name);
+
+        foreach (string raw in names)
+        {
+            string name = raw.Split('.', '@')[0].Replace('_', '-').Trim();
+            if (string.IsNullOrEmpty(name) || name is "C" or "POSIX")
+            {
+                continue;
+            }
+
+            List<string> candidates = new();
+            string language = name.Split('-')[0].ToLowerInvariant();
+            candidates.Add(language);
+            if (name.Contains('-'))
+            {
+                candidates.Add(name);
+            }
+
+            return candidates;
+        }
+
+        return new() { DefaultLanguage };
+    }
+
     private void LoadDefaultStrings()
     {
-        _strings["File"] = "File";
-        _strings["Edit"] = "Edit";
-        _strings["View"] = "View";
-        _strings["Go"] = "Go";
-        _strings["Help"] = "Help";
+        LoadFrom(DefaultLanguage);
+    }
 
-        _strings["NewWindow"] = "New Window";
-        _strings["NewFolder"] = "New Folder";
-        _strings["NewFile"] = "New File";
-        _strings["Properties"] = "Properties";
-        _strings["Close"] = "Close";
+    private void LoadSystemLanguage()
+    {
+        foreach (string candidate in GetLanguageCandidates())
+        {
+            if (string.Equals(candidate, DefaultLanguage, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
 
-        _strings["Cut"] = "Cut";
-        _strings["Copy"] = "Copy";
-        _strings["Paste"] = "Paste";
-        _strings["Duplicate"] = "Duplicate";
-        _strings["Rename"] = "Rename...";
-        _strings["Compress"] = "Compress...";
-        _strings["SelectAll"] = "Select All";
-        _strings["Preferences"] = "Preferences";
+            if (LoadFrom(candidate))
+            {
+                LanguageCode = candidate;
+            }
+        }
+    }
 
-        _strings["Reload"] = "Reload";
-        _strings["ShowHidden"] = "Show Hidden Files";
-        _strings["IconView"] = "Icon View";
-        _strings["ListView"] = "List View";
-        _strings["DualPane"] = "Dual Pane";
-        _strings["PreviewPane"] = "Preview Pane";
+    private bool LoadFrom(string language)
+    {
+        bool loaded = false;
+        try
+        {
+            Uri uri = new($"{ResourceRoot}{language}.json");
+            if (AssetLoader.Exists(uri))
+            {
+                using Stream stream = AssetLoader.Open(uri);
+                using StreamReader reader = new(stream);
+                loaded |= Merge(reader.ReadToEnd());
+            }
+        }
+        catch
+        {
+        }
 
-        _strings["Back"] = "Back";
-        _strings["Forward"] = "Forward";
-        _strings["Up"] = "Up";
-        _strings["Home"] = "Home";
-        _strings["Root"] = "File System";
-        _strings["Location"] = "Enter Location...";
+        try
+        {
+            string userFile = Path.Combine(UserLanguageDir, $"{language}.json");
+            if (File.Exists(userFile))
+            {
+                loaded |= Merge(File.ReadAllText(userFile));
+            }
+        }
+        catch
+        {
+        }
 
-        _strings["About"] = "About";
-        _strings["Shortcuts"] = "Keyboard Shortcuts";
+        return loaded;
+    }
 
-        _strings["Open"] = "Open";
-        _strings["OpenWith"] = "Open With...";
-        _strings["OpenTerminal"] = "Open in Terminal";
-        _strings["Trash"] = "Trash";
-        _strings["DeletePermanent"] = "Delete Permanently";
-        _strings["BookmarkFolder"] = "Bookmark this Folder";
+    private bool Merge(string jsonContent)
+    {
+        Dictionary<string, string>? loaded;
+        try
+        {
+            loaded = JsonSerializer.Deserialize<Dictionary<string, string>>(jsonContent, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
 
-        _strings["Places"] = "PLACES";
-        _strings["Bookmarks"] = "BOOKMARKS";
-        _strings["Devices"] = "DEVICES";
-        _strings["Network"] = "NETWORK";
+        if (loaded is null)
+        {
+            return false;
+        }
 
-        _strings["Name"] = "Name";
-        _strings["Size"] = "Size";
-        _strings["Type"] = "Type";
-        _strings["Modified"] = "Modified";
-        _strings["LocationLabel"] = "Location";
-        _strings["Accessed"] = "Accessed";
-        _strings["Permissions"] = "Permissions";
-        _strings["Owner"] = "Owner";
+        foreach (KeyValuePair<string, string> kvp in loaded)
+        {
+            if (!string.IsNullOrEmpty(kvp.Value))
+            {
+                _strings[kvp.Key] = kvp.Value;
+            }
+        }
 
-        _strings["SearchWatermark"] = "Search...";
-        _strings["ItemsCount"] = "items";
-        _strings["SelectedCount"] = "selected";
-        _strings["FreeSpace"] = "free";
-        _strings["AccessDenied"] = "Access Denied";
-        _strings["Hidden"] = "Hidden";
-        _strings["PreviewDetails"] = "Preview & Details";
-
-        _strings["AlwaysOpenWith"] = "Always open this file type with this program";
-        _strings["ChooseProgram"] = "Choose Program";
-        _strings["CommandOrExecutable"] = "Application command or path:";
-        _strings["OK"] = "OK";
-        _strings["Cancel"] = "Cancel";
-
-        _strings["OpenAsRoot"] = "Open as Root";
-        _strings["RemoveBookmark"] = "Remove Bookmark";
-        _strings["RemoveServer"] = "Remove Server";
-        _strings["Loading"] = "Loading";
-
-        _strings["ConnectToServer"] = "Connect to Server...";
-        _strings["Dismount"] = "Dismount";
-        _strings["Server"] = "Server";
-        _strings["Protocol"] = "Type";
-        _strings["Port"] = "Port";
-        _strings["Folder"] = "Folder";
-        _strings["Username"] = "Username";
-        _strings["Password"] = "Password";
-        _strings["Domain"] = "Domain name";
-        _strings["Anonymous"] = "Connect as guest / anonymous";
-        _strings["Connect"] = "Connect";
-        _strings["Connecting"] = "Connecting...";
-        _strings["DismountSuccess"] = "dismounted successfully";
-        _strings["DismountFailed"] = "Failed to dismount";
-        _strings["ExtractHere"] = "Extract Here";
-        _strings["ResetLayout"] = "Reset to default layout";
-        _strings["Mounting"] = "Mounting";
-        _strings["Mounted"] = "Mounted";
-        _strings["MountFailed"] = "Failed to mount";
+        return true;
     }
 }

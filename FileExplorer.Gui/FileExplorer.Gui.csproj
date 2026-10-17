@@ -31,4 +31,10 @@
         <AvaloniaResource Include="Assets\**" />
         <None Update="Assets\**" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
+
+    <ItemGroup>
+      <Compile Update="Dialogs\ConflictDialog.axaml.cs">
+        <DependentUpon>ConflictDialog.axaml</DependentUpon>
+      </Compile>
+    </ItemGroup>
 </Project>

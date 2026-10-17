@@ -123,6 +123,8 @@ public static class Program
            Sidebar:
            | Enter / Arrow Right - Open place, mount device or connect to saved server
            | Delete - Remove bookmark / saved server
+           | Shift + Up / Down Arrow - Move entry within its section (saved, shared with the GUI)
+           | Ctrl + Shift + Up / Down Arrow - Move whole section (saved, shared with the GUI)
            | F7 - Connect to a new server (saved for next time)
            | F8 - Unmount selected device / server
            | F1 - Show this help menu
@@ -788,7 +790,7 @@ public static class Program
             return;
         }
 
-        if (Sidebar.HandleKey(e.Key, ctrl, SelectedContext))
+        if (Sidebar.HandleKey(e.Key, ctrl, heldKeys.Contains(Key.Shift), SelectedContext))
         {
             Sidebar.IsFocused = false;
         }

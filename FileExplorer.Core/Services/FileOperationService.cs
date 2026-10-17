@@ -310,10 +310,21 @@ public class FileOperationService
         _ = Logger.LogI($"Pasted {count} items (mode: {mode})");
     }
 
+    public Task TransferAsync(
+        string destDir,
+        ClipboardMode mode,
+        IEnumerable<string> sourcePaths,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        return TransferAsync(destDir, mode, sourcePaths, (Func<TransferConflict, Task<ConflictResolution>>?) null, progress, cancellationToken);
+    }
+
     public async Task TransferAsync(
         string destDir,
         ClipboardMode mode,
         IEnumerable<string> sourcePaths,
+        Func<TransferConflict, Task<ConflictResolution>>? resolveConflict,
         IProgress<FileTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -383,16 +394,16 @@ public class FileOperationService
         long transferredBytes = 0;
         long lastReportBytes = 0;
         double lastReportTime = 0;
+        double speed = 0;
 
         void ReportProgress(string currentItemName)
         {
             double elapsed = stopwatch.Elapsed.TotalSeconds;
             double timeDelta = elapsed - lastReportTime;
-            double speed = 0;
-            if (timeDelta > 0.1)
+            if (timeDelta >= 0.5)
             {
-                long bytesDelta = transferredBytes - lastReportBytes;
-                speed = bytesDelta / timeDelta;
+                double currentSpeed = (transferredBytes - lastReportBytes) / timeDelta;
+                speed = speed <= 0 ? currentSpeed : speed * 0.7 + currentSpeed * 0.3;
                 lastReportTime = elapsed;
                 lastReportBytes = transferredBytes;
             }
@@ -416,6 +427,7 @@ public class FileOperationService
         ReportProgress(string.Empty);
 
         byte[] buffer = new byte[262144];
+        ConflictState conflicts = new(resolveConflict, mode == ClipboardMode.Copy, pathList.Count > 1 || pathList.Any(Directory.Exists));
 
         foreach (string path in pathList)
         {
@@ -450,7 +462,23 @@ public class FileOperationService
                 continue;
             }
 
-            destPath = GetUniqueDestinationPath(destDir, fileName);
+            if (PathExists(destPath))
+            {
+                if (IsSamePath(path, destPath))
+                {
+                    destPath = GetUniqueDestinationPath(destDir, fileName);
+                }
+                else
+                {
+                    ConflictAction action = await conflicts.ResolveAsync(path, destPath);
+                    if (action == ConflictAction.Skip)
+                    {
+                        continue;
+                    }
+
+                    destPath = ApplyConflictAction(action, path, destPath);
+                }
+            }
 
             if (File.Exists(path))
             {
@@ -458,7 +486,7 @@ public class FileOperationService
             }
             else if (Directory.Exists(path))
             {
-                await TransferDirectoryRecursiveAsync(path, destPath, mode, buffer, () => transferredBytes, v => transferredBytes = v, () => transferredItems, v => transferredItems = v, ReportProgress, cancellationToken);
+                await TransferDirectoryRecursiveAsync(path, destPath, mode, buffer, () => transferredBytes, v => transferredBytes = v, () => transferredItems, v => transferredItems = v, ReportProgress, conflicts, cancellationToken);
             }
         }
 
@@ -566,7 +594,7 @@ public class FileOperationService
         reportProgress(Path.GetFileName(sourceFile));
     }
 
-    private async Task TransferDirectoryRecursiveAsync(
+    private async Task<bool> TransferDirectoryRecursiveAsync(
         string sourceDir,
         string destDir,
         ClipboardMode mode,
@@ -576,11 +604,12 @@ public class FileOperationService
         Func<int> getItems,
         Action<int> setItems,
         Action<string> reportProgress,
+        ConflictState conflicts,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (mode == ClipboardMode.Cut)
+        if (mode == ClipboardMode.Cut && !PathExists(destDir))
         {
             try
             {
@@ -608,7 +637,7 @@ public class FileOperationService
                 setBytes(getBytes() + dirBytes);
                 setItems(getItems() + dirItems);
                 reportProgress(Path.GetFileName(sourceDir));
-                return;
+                return true;
             }
             catch (IOException)
             {
@@ -619,21 +648,46 @@ public class FileOperationService
         setItems(getItems() + 1);
         reportProgress(Path.GetFileName(sourceDir));
 
+        bool complete = true;
         foreach (string subDir in Directory.GetDirectories(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
             string subDest = Path.Combine(destDir, Path.GetFileName(subDir));
-            await TransferDirectoryRecursiveAsync(subDir, subDest, mode, buffer, getBytes, setBytes, getItems, setItems, reportProgress, cancellationToken);
+            if (PathExists(subDest) && !Directory.Exists(subDest))
+            {
+                ConflictAction action = await conflicts.ResolveAsync(subDir, subDest);
+                if (action == ConflictAction.Skip)
+                {
+                    complete = false;
+                    continue;
+                }
+
+                subDest = ApplyConflictAction(action, subDir, subDest);
+            }
+
+            complete &= await TransferDirectoryRecursiveAsync(subDir, subDest, mode, buffer, getBytes, setBytes, getItems, setItems, reportProgress, conflicts, cancellationToken);
         }
 
         foreach (string file in Directory.GetFiles(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
             string fileDest = Path.Combine(destDir, Path.GetFileName(file));
+            if (PathExists(fileDest))
+            {
+                ConflictAction action = await conflicts.ResolveAsync(file, fileDest);
+                if (action == ConflictAction.Skip)
+                {
+                    complete = false;
+                    continue;
+                }
+
+                fileDest = ApplyConflictAction(action, file, fileDest);
+            }
+
             await TransferSingleFileAsync(file, fileDest, mode, buffer, getBytes, setBytes, getItems, setItems, reportProgress, cancellationToken);
         }
 
-        if (mode == ClipboardMode.Cut)
+        if (mode == ClipboardMode.Cut && complete)
         {
             try
             {
@@ -642,6 +696,120 @@ public class FileOperationService
             catch
             {
             }
+        }
+
+        return complete;
+    }
+
+    private static string ApplyConflictAction(ConflictAction action, string sourcePath, string destPath)
+    {
+        switch (action)
+        {
+            case ConflictAction.Cancel:
+                throw new OperationCanceledException();
+
+            case ConflictAction.Duplicate:
+                return GetUniqueDestinationPath(Path.GetDirectoryName(destPath)!, Path.GetFileName(destPath));
+
+            case ConflictAction.Replace:
+                if (IsSamePath(sourcePath, destPath) || IsInside(sourcePath, destPath))
+                {
+                    throw new IOException($"Cannot replace \"{Path.GetFileName(destPath)}\" because it contains the item being transferred.");
+                }
+
+                DeletePath(destPath);
+                return destPath;
+
+            default:
+                return destPath;
+        }
+    }
+
+    private static bool PathExists(string path)
+    {
+        return File.Exists(path) || Directory.Exists(path) || new FileInfo(path).LinkTarget != null;
+    }
+
+    private static bool IsSamePath(string a, string b)
+    {
+        return string.Equals(NormalizePath(a), NormalizePath(b), StringComparison.Ordinal);
+    }
+
+    private static bool IsInside(string path, string container)
+    {
+        return NormalizePath(path).StartsWith(NormalizePath(container) + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+    }
+
+    private static string NormalizePath(string path)
+    {
+        return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+    }
+
+    private static void DeletePath(string path)
+    {
+        FileInfo info = new(path);
+        if (info.LinkTarget != null)
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path);
+            }
+            else
+            {
+                File.Delete(path);
+            }
+
+            return;
+        }
+
+        if (Directory.Exists(path))
+        {
+            Directory.Delete(path, true);
+            return;
+        }
+
+        File.Delete(path);
+    }
+
+    private sealed class ConflictState
+    {
+        private readonly Func<TransferConflict, Task<ConflictResolution>>? _resolver;
+        private readonly bool _isCopy;
+        private readonly bool _hasMultipleItems;
+        private ConflictAction? _applyToAll;
+
+        public ConflictState(Func<TransferConflict, Task<ConflictResolution>>? resolver, bool isCopy, bool hasMultipleItems)
+        {
+            _resolver = resolver;
+            _isCopy = isCopy;
+            _hasMultipleItems = hasMultipleItems;
+        }
+
+        public async Task<ConflictAction> ResolveAsync(string sourcePath, string destPath)
+        {
+            bool sourceIsDirectory = Directory.Exists(sourcePath);
+            bool destIsDirectory = Directory.Exists(destPath);
+            bool canMerge = sourceIsDirectory && destIsDirectory;
+
+            if (_applyToAll is ConflictAction all && (all != ConflictAction.Merge || canMerge))
+            {
+                return all;
+            }
+
+            if (_resolver == null)
+            {
+                return ConflictAction.Duplicate;
+            }
+
+            TransferConflict conflict = new(sourcePath, destPath, sourceIsDirectory, destIsDirectory, _isCopy, _hasMultipleItems);
+            ConflictResolution resolution = await _resolver(conflict);
+            ConflictAction action = resolution.Action == ConflictAction.Merge && !canMerge ? ConflictAction.Replace : resolution.Action;
+            if (resolution.ApplyToAll && action != ConflictAction.Cancel)
+            {
+                _applyToAll = action;
+            }
+
+            return action;
         }
     }
 

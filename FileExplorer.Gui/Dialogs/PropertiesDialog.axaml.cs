@@ -15,6 +15,7 @@ using Avalonia.Threading;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Services;
 using FileExplorer.Core.Utilities;
+using FileExplorer.Gui.Services;
 using FileExplorer.Gui.ViewModels;
 using SkiaSharp;
 using static Avalonia.Interactivity.RoutingStrategies;
@@ -23,9 +24,9 @@ namespace FileExplorer.Gui.Dialogs;
 
 public partial class PropertiesDialog : Window
 {
-    private static readonly string[] FileAccessNames = ["None", "Read-only", "Read and write"];
+    private static readonly string[] FileAccessNames = ["AccessNone", "AccessReadOnly", "AccessReadWrite"];
     private static readonly int[] FileAccessBits = [0, 4, 6];
-    private static readonly string[] FolderAccessNames = ["None", "List files only", "Access files", "Create and delete files"];
+    private static readonly string[] FolderAccessNames = ["AccessNone", "AccessListFiles", "AccessFiles", "AccessCreateDelete"];
     private static readonly int[] FolderAccessBits = [0, 4, 5, 7];
 
     private readonly CancellationTokenSource _cts = new();
@@ -127,7 +128,7 @@ public partial class PropertiesDialog : Window
 
             if (info is FileInfo file)
             {
-                SizeValue.Text = $"{FileUtils.FormatSize(file.Length)} ({file.Length:N0} bytes)";
+                SizeValue.Text = LocalizationService.Format("SizeWithBytes", FileUtils.FormatSize(file.Length), file.Length);
             }
         }
         catch
@@ -150,9 +151,9 @@ public partial class PropertiesDialog : Window
 
     private void StartFolderScan()
     {
-        SizeValue.Text = "Calculating…";
+        SizeValue.Text = LocalizationService.Get("Calculating");
         ContentsValue.Text = "…";
-        SizeStatusText.Text = "Calculating…";
+        SizeStatusText.Text = LocalizationService.Get("Calculating");
         SizeStatusText.IsVisible = true;
         CancellationToken token = _cts.Token;
 
@@ -164,22 +165,17 @@ public partial class PropertiesDialog : Window
 
     private void ShowScanProgress(FolderScanProgress progress)
     {
-        SizeValue.Text = $"{FileUtils.FormatSize(progress.Bytes)} ({progress.Bytes:N0} bytes)";
-        ContentsValue.Text = $"{Plural(progress.Folders, "folder")}, {Plural(progress.Files, "file")}";
+        SizeValue.Text = LocalizationService.Format("SizeWithBytes", FileUtils.FormatSize(progress.Bytes), progress.Bytes);
+        ContentsValue.Text = LocalizationService.Format("ContentsSummary", LocalizationService.Plural("FolderCount", progress.Folders), LocalizationService.Plural("FileCount", progress.Files));
 
         if (!progress.Completed)
         {
-            SizeStatusText.Text = "Calculating…";
+            SizeStatusText.Text = LocalizationService.Get("Calculating");
             return;
         }
 
         SizeStatusText.IsVisible = progress.Unreadable > 0;
-        SizeStatusText.Text = $"{Plural(progress.Unreadable, "folder")} could not be read, the real size may be larger";
-    }
-
-    private static string Plural(long count, string noun)
-    {
-        return $"{count:N0} {noun}{(count == 1 ? "" : "s")}";
+        SizeStatusText.Text = LocalizationService.Format("UnreadableFolders", LocalizationService.Plural("FolderCount", progress.Unreadable));
     }
 
     private async Task LoadStatAsync()
@@ -196,13 +192,13 @@ public partial class PropertiesDialog : Window
         _stat = stat;
         if (stat == null)
         {
-            CreatedValue.Text = "Unknown";
-            ShowPermissionMessage("Could not read file information.");
+            CreatedValue.Text = LocalizationService.Get("Unknown");
+            ShowPermissionMessage(LocalizationService.Get("CouldNotReadInfo"));
             return;
         }
 
-        CreatedValue.Text = stat.Birth?.ToString("F") ?? "Unknown";
-        DiskSizeValue.Text = $"{FileUtils.FormatSize(stat.SizeOnDisk)} ({stat.SizeOnDisk:N0} bytes)";
+        CreatedValue.Text = stat.Birth?.ToString("F") ?? LocalizationService.Get("Unknown");
+        DiskSizeValue.Text = LocalizationService.Format("SizeWithBytes", FileUtils.FormatSize(stat.SizeOnDisk), stat.SizeOnDisk);
         InodeValue.Text = stat.Inode.ToString();
         LinksValue.Text = stat.HardLinks.ToString();
         MountValue.Text = stat.MountPoint;
@@ -244,14 +240,14 @@ public partial class PropertiesDialog : Window
 
         long used = drive.TotalSize - drive.AvailableFreeSpace;
         VolumeBar.Value = used * 100.0 / drive.TotalSize;
-        VolumeFreeText.Text = $"{FileUtils.FormatSize(drive.AvailableFreeSpace)} free of {FileUtils.FormatSize(drive.TotalSize)}";
+        VolumeFreeText.Text = LocalizationService.Format("VolumeFreeOf", FileUtils.FormatSize(drive.AvailableFreeSpace), FileUtils.FormatSize(drive.TotalSize));
     }
 
     private void ShowOwnership(UnixStat stat, List<string> groups)
     {
         uint currentUid = UnixStat.CurrentUid;
         _canEditPermissions = currentUid == 0 || currentUid == stat.Uid;
-        OwnerValue.Text = currentUid == stat.Uid ? $"{stat.Owner} (you)" : stat.Owner;
+        OwnerValue.Text = currentUid == stat.Uid ? LocalizationService.Format("OwnerYou", stat.Owner) : stat.Owner;
 
         List<string> options = groups.ToList();
         if (!options.Contains(stat.Group))
@@ -268,30 +264,32 @@ public partial class PropertiesDialog : Window
         List<string> access = new();
         if (FileUtils.HasAccess(_path, true, false, false))
         {
-            access.Add(_isDirectory ? "list contents" : "read");
+            access.Add(LocalizationService.Get(_isDirectory ? "CanListContents" : "CanRead"));
         }
 
         if (FileUtils.HasAccess(_path, false, true, false))
         {
-            access.Add(_isDirectory ? "create and delete files" : "write");
+            access.Add(LocalizationService.Get(_isDirectory ? "CanCreateDelete" : "CanWrite"));
         }
 
         if (FileUtils.HasAccess(_path, false, false, true))
         {
-            access.Add(_isDirectory ? "open" : "execute");
+            access.Add(LocalizationService.Get(_isDirectory ? "CanOpen" : "CanExecute"));
         }
 
-        YourAccessValue.Text = access.Count == 0 ? "No access" : "You can " + string.Join(", ", access);
+        YourAccessValue.Text = access.Count == 0 ? LocalizationService.Get("NoAccess") : LocalizationService.Format("YouCan", string.Join(", ", access));
 
         if (!_canEditPermissions)
         {
-            ShowPermissionMessage($"Only {stat.Owner} or root can change these permissions.");
+            ShowPermissionMessage(LocalizationService.Format("OnlyOwnerCanChange", stat.Owner));
         }
     }
 
     private void FillAccessCombos()
     {
-        string[] names = _isDirectory ? FolderAccessNames : FileAccessNames;
+        string[] names = (_isDirectory ? FolderAccessNames : FileAccessNames)
+            .Select(LocalizationService.Get)
+            .ToArray();
         foreach (ComboBox combo in new[] { OwnerAccessCombo, GroupAccessCombo, OthersAccessCombo })
         {
             combo.ItemsSource = names;
@@ -433,7 +431,7 @@ public partial class PropertiesDialog : Window
         int mode = UnixStat.ParseOctal(OctalBox.Text ?? "");
         if (mode < 0 || mode > 0xFFF)
         {
-            ShowPermissionMessage("Mode must be an octal number between 0000 and 7777.");
+            ShowPermissionMessage(LocalizationService.Get("InvalidOctalMode"));
             RefreshPermissionUi();
             return;
         }
@@ -454,7 +452,7 @@ public partial class PropertiesDialog : Window
         }
         catch (Exception ex)
         {
-            ShowPermissionMessage($"Could not change permissions: {ex.Message}");
+            ShowPermissionMessage(LocalizationService.Format("ChangePermissionsFailed", ex.Message));
         }
 
         RefreshPermissionUi();
@@ -482,7 +480,7 @@ public partial class PropertiesDialog : Window
 
         if (!success)
         {
-            ShowPermissionMessage($"Could not change group: {error}");
+            ShowPermissionMessage(LocalizationService.Format("ChangeGroupFailed", error));
         }
 
         await LoadStatAsync();
@@ -496,9 +494,9 @@ public partial class PropertiesDialog : Window
         }
 
         ConfirmDialog confirm = new(
-            "Apply to enclosed items",
-            $"Apply these permissions to everything inside “{Path.GetFileName(_path)}”? Folders get {UnixStat.FormatMode(_mode, true)[1..]}; files get matching read/write access and keep their execute bits.",
-            "Apply",
+            LocalizationService.Get("ApplyRecursiveTitle"),
+            LocalizationService.Format("ApplyRecursiveMessage", Path.GetFileName(_path), UnixStat.FormatMode(_mode, true)[1..]),
+            LocalizationService.Get("Apply"),
             true,
             false);
         bool confirmed = await confirm.ShowDialog<bool>(this);
@@ -510,12 +508,12 @@ public partial class PropertiesDialog : Window
         int folderMode = _mode;
         string root = _path;
         ApplyRecursiveButton.IsEnabled = false;
-        ShowPermissionMessage("Applying…");
+        ShowPermissionMessage(LocalizationService.Get("Applying"));
 
         (int changed, int failed) = await Task.Run(() => ApplyRecursive(root, folderMode, _cts.Token));
 
         ApplyRecursiveButton.IsEnabled = true;
-        ShowPermissionMessage(failed == 0 ? $"Updated {changed:N0} items." : $"Updated {changed:N0} items, {failed:N0} could not be changed.");
+        ShowPermissionMessage(failed == 0 ? LocalizationService.Format("UpdatedItems", changed) : LocalizationService.Format("UpdatedItemsWithFailures", changed, failed));
     }
 
     private static (int Changed, int Failed) ApplyRecursive(string root, int folderMode, CancellationToken token)
@@ -594,8 +592,8 @@ public partial class PropertiesDialog : Window
         _defaultApp = defaultApp;
         MimeValue.Text = mime;
         TypeLabel.Text = $"{TypeLabel.Text} ({mime})";
-        OpensWithValue.Text = defaultName ?? "No default application";
-        OpenWithHeader.Text = $"Applications that can open “{mime}” files. The default is used when you double-click a file of this type.";
+        OpensWithValue.Text = defaultName ?? LocalizationService.Get("NoDefaultApplication");
+        OpenWithHeader.Text = LocalizationService.Format("OpenWithHeader", mime);
 
         PopulateApps(named);
     }
@@ -605,7 +603,7 @@ public partial class PropertiesDialog : Window
         List<ListBoxItem> items = apps
             .Select(a => new ListBoxItem
             {
-                Content = a.Id == _defaultApp ? $"{a.Name}  (default)" : a.Name,
+                Content = a.Id == _defaultApp ? LocalizationService.Format("AppDefault", a.Name) : a.Name,
                 Tag = a.Id,
                 FontWeight = a.Id == _defaultApp ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal,
             })
@@ -668,7 +666,7 @@ public partial class PropertiesDialog : Window
             try
             {
                 using SKCodec? codec = SKCodec.Create(path);
-                return codec == null ? null : $"{codec.Info.Width} × {codec.Info.Height} pixels";
+                return codec == null ? null : LocalizationService.Format("DimensionsPixels", codec.Info.Width, codec.Info.Height);
             }
             catch
             {
@@ -688,9 +686,9 @@ public partial class PropertiesDialog : Window
     private async void OnCalculateChecksumsClick(object? sender, RoutedEventArgs e)
     {
         ChecksumButton.IsEnabled = false;
-        Md5Value.Text = "Calculating…";
-        Sha1Value.Text = "Calculating…";
-        Sha256Value.Text = "Calculating…";
+        Md5Value.Text = LocalizationService.Get("Calculating");
+        Sha1Value.Text = LocalizationService.Get("Calculating");
+        Sha256Value.Text = LocalizationService.Get("Calculating");
 
         string path = _path;
         CancellationToken token = _cts.Token;
@@ -706,7 +704,7 @@ public partial class PropertiesDialog : Window
         }
         catch (Exception ex)
         {
-            Md5Value.Text = $"Failed: {ex.Message}";
+            Md5Value.Text = LocalizationService.Format("FailedWithError", ex.Message);
             Sha1Value.Text = "-";
             Sha256Value.Text = "-";
         }
@@ -788,14 +786,14 @@ public partial class PropertiesDialog : Window
 
         if (newName.Contains('/') || newName is "." or "..")
         {
-            ShowRenameError("A name cannot contain “/”.");
+            ShowRenameError(LocalizationService.Get("NameCannotContainSlash"));
             return;
         }
 
         string target = Path.Combine(Path.GetDirectoryName(_path) ?? "/", newName);
         if (File.Exists(target) || Directory.Exists(target))
         {
-            ShowRenameError($"“{newName}” already exists here.");
+            ShowRenameError(LocalizationService.Format("NameAlreadyExists", newName));
             return;
         }
 
@@ -816,7 +814,7 @@ public partial class PropertiesDialog : Window
         }
         catch (Exception ex)
         {
-            ShowRenameError($"Could not rename: {ex.Message}");
+            ShowRenameError(LocalizationService.Format("RenameFailed", ex.Message));
         }
     }
 
