@@ -158,7 +158,7 @@
             <Button Content="{markup:Translate Key=Create}"
                     x:Name="CreateButton"
                     Click="OnCreateClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="85"
                     Padding="14,6"

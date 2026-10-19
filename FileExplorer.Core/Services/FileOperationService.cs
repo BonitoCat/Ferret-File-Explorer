@@ -808,6 +808,63 @@ public class FileOperationService
         return complete;
     }
 
+    public async Task<(List<string> Created, List<string> Errors)> CreateSymlinksAsync(
+        string destinationDirectory,
+        IEnumerable<string> paths,
+        Func<TransferConflict, Task<ConflictResolution>>? resolver)
+    {
+        List<string> sources = paths
+            .Where(p => File.Exists(p) || Directory.Exists(p))
+            .Select(NormalizePath)
+            .ToList();
+        ConflictState conflicts = new(resolver, true, sources.Count > 1, false);
+        List<string> created = new();
+        List<string> errors = new();
+
+        foreach (string source in sources)
+        {
+            string linkPath = Path.Combine(destinationDirectory, Path.GetFileName(source));
+            try
+            {
+                if (PathExists(linkPath))
+                {
+                    ConflictAction action = IsSamePath(source, linkPath) || IsInside(source, linkPath)
+                        ? ConflictAction.Duplicate
+                        : await conflicts.ResolveAsync(source, linkPath);
+                    if (action == ConflictAction.Skip)
+                    {
+                        continue;
+                    }
+
+                    linkPath = ApplyConflictAction(action, source, linkPath);
+                }
+
+                File.CreateSymbolicLink(linkPath, source);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                await Logger.LogE($"Failed to create symlink {linkPath} -> {source}: {ex.Message}");
+                errors.Add($"{Path.GetFileName(source)}: {ex.Message}");
+                continue;
+            }
+
+            FolderColorStore.Remove(linkPath);
+            FolderColorStore.Copy(source, linkPath);
+            created.Add(linkPath);
+        }
+
+        return (created, errors);
+    }
+
+    public static string ResolveConflict(ConflictAction action, string sourcePath, string destPath)
+    {
+        return ApplyConflictAction(action, sourcePath, destPath);
+    }
+
     private static string ApplyConflictAction(ConflictAction action, string sourcePath, string destPath)
     {
         switch (action)
@@ -884,20 +941,22 @@ public class FileOperationService
         private readonly Func<TransferConflict, Task<ConflictResolution>>? _resolver;
         private readonly bool _isCopy;
         private readonly bool _hasMultipleItems;
+        private readonly bool _allowMerge;
         private ConflictAction? _applyToAll;
 
-        public ConflictState(Func<TransferConflict, Task<ConflictResolution>>? resolver, bool isCopy, bool hasMultipleItems)
+        public ConflictState(Func<TransferConflict, Task<ConflictResolution>>? resolver, bool isCopy, bool hasMultipleItems, bool allowMerge = true)
         {
             _resolver = resolver;
             _isCopy = isCopy;
             _hasMultipleItems = hasMultipleItems;
+            _allowMerge = allowMerge;
         }
 
         public async Task<ConflictAction> ResolveAsync(string sourcePath, string destPath)
         {
             bool sourceIsDirectory = Directory.Exists(sourcePath);
             bool destIsDirectory = Directory.Exists(destPath);
-            bool canMerge = sourceIsDirectory && destIsDirectory;
+            bool canMerge = _allowMerge && sourceIsDirectory && destIsDirectory;
 
             if (_applyToAll is ConflictAction all && (all != ConflictAction.Merge || canMerge))
             {
@@ -909,7 +968,7 @@ public class FileOperationService
                 return ConflictAction.Duplicate;
             }
 
-            TransferConflict conflict = new(sourcePath, destPath, sourceIsDirectory, destIsDirectory, _isCopy, _hasMultipleItems);
+            TransferConflict conflict = new(sourcePath, destPath, sourceIsDirectory, destIsDirectory, _isCopy, _hasMultipleItems, _allowMerge);
             ConflictResolution resolution = await _resolver(conflict);
             ConflictAction action = resolution.Action == ConflictAction.Merge && !canMerge ? ConflictAction.Replace : resolution.Action;
             if (resolution.ApplyToAll && action != ConflictAction.Cancel)

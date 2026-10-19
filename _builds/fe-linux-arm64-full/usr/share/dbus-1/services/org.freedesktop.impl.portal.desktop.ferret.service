@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=org.freedesktop.impl.portal.desktop.ferret
+Exec=/usr/bin/ferret-portal

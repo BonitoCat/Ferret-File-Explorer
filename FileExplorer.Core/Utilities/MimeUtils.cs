@@ -136,7 +136,12 @@ public static class MimeUtils
             case ".webp":
                 return "image/webp";
             case ".svg":
+            case ".svgz":
                 return "image/svg+xml";
+            case ".ico":
+                return "image/vnd.microsoft.icon";
+            case ".bmp":
+                return "image/bmp";
 
             case ".mp3":
                 return "audio/mpeg";

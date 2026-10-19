@@ -363,6 +363,18 @@ public partial class MainWindow
         return false;
     }
 
+    private bool TryRunAddonPathBarCommand(string keyword, string input)
+    {
+        AddonAction? action = AddonService.Instance.FindPathBarAction(keyword);
+        if (action == null)
+        {
+            return false;
+        }
+
+        RunAddonAction(action, new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath), input));
+        return true;
+    }
+
     private async void RunAddonAction(AddonAction action, AddonContext context)
     {
         string language = LocalizationService.Instance.LanguageCode;
@@ -463,6 +475,12 @@ public partial class MainWindow
     private async void OnMenuManageAddonsClick(object? sender, RoutedEventArgs e)
     {
         AddonsDialog dialog = new(ViewModel.NavigateTo);
+        await dialog.ShowDialog(this);
+    }
+
+    private async void OnMenuAddonStoreClick(object? sender, RoutedEventArgs e)
+    {
+        AddonStoreDialog dialog = new();
         await dialog.ShowDialog(this);
     }
 

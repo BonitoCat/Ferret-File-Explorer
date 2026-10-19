@@ -1,5 +1,5 @@
 Package: fe-linux-x64-headless
-Version: 3.0.0
+Version: 3.1.0
 Section: utils
 Architecture: amd64
 Maintainer: BonitoCat

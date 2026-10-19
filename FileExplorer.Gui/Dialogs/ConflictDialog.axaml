@@ -110,7 +110,7 @@
             <Button x:Name="MergeButton"
                     Content="{markup:Translate Key=ConflictMerge}"
                     Click="OnMergeClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="70"
                     HorizontalContentAlignment="Center"/>

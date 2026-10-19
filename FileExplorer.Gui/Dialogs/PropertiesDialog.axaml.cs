@@ -13,6 +13,7 @@ using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using FileExplorer.Core.Entries;
+using FileExplorer.Core.Models;
 using FileExplorer.Core.Services;
 using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Services;
@@ -39,10 +40,14 @@ public partial class PropertiesDialog : Window
     private UnixStat? _stat;
     private string? _mimeType;
     private string? _defaultApp;
+    private string _typeLabelText = "";
+    private string? _typeIconKey;
+    private FileItemViewModel? _item;
 
     public PropertiesDialog()
     {
         InitializeComponent();
+        Chooser.ProgramActivated += LaunchSelectedApp;
 
         foreach (Grid grid in this.GetLogicalDescendants().OfType<Grid>().Where(g => g.Classes.Contains("rows")))
         {
@@ -83,8 +88,11 @@ public partial class PropertiesDialog : Window
         _isDirectory = item.IsDirectory;
 
         NameBox.Text = item.Name;
-        TypeLabel.Text = item.TypeString;
+        _typeLabelText = item.TypeString;
+        TypeLabel.Text = _typeLabelText;
+        _item = item;
         ItemIcon.Source = item.Icon;
+        SetupTypeIconMenu();
         LocationValue.Text = Path.GetDirectoryName(item.FullPath) ?? "/";
         OpenWithTab.IsVisible = !_isDirectory;
         ChecksumCard.IsVisible = !_isDirectory;
@@ -576,54 +584,119 @@ public partial class PropertiesDialog : Window
         return (changed, failed);
     }
 
-    private async Task LoadMimeInfoAsync()
+    private void SetupTypeIconMenu()
     {
-        string path = _path;
-        (string mime, string? defaultApp, List<string> apps) = await Task.Run(() =>
+        _typeIconKey = _isDirectory ? null : FileTypeIconService.GetKey(_path);
+        if (_typeIconKey == null)
         {
-            string type = MimeService.GetMimeType(path);
-            return (type, MimeService.GetDefaultApplication(type), MimeService.GetApplicationsForMimeType(type));
-        });
+            return;
+        }
 
-        List<(string Id, string Name)> named = await Task.Run(() => apps
-            .Select(id => (id, MimeService.GetDesktopAppName(id)))
-            .ToList());
-        string? defaultName = defaultApp == null ? null : await Task.Run(() => MimeService.GetDesktopAppName(defaultApp));
-
-        _mimeType = mime;
-        _defaultApp = defaultApp;
-        MimeValue.Text = mime;
-        TypeLabel.Text = $"{TypeLabel.Text} ({mime})";
-        OpensWithValue.Text = defaultName ?? LocalizationService.Get("NoDefaultApplication");
-        OpenWithHeader.Text = LocalizationService.Format("OpenWithHeader", mime);
-
-        PopulateApps(named);
+        ItemIconButton.IsHitTestVisible = true;
+        ItemIconButton.Cursor = new(StandardCursorType.Hand);
+        ToolTip.SetTip(ItemIconButton, LocalizationService.Get("ChangeTypeIconTip"));
+        ChangeTypeIconMenuItem.Header = LocalizationService.Format("ChangeTypeIcon", FileTypeIconService.GetKeyDisplayName(_typeIconKey));
+        ResetTypeIconMenuItem.IsEnabled = FileTypeIconService.HasCustomIcon(_typeIconKey);
     }
 
-    private void PopulateApps(List<(string Id, string Name)> apps)
+    private async void OnChangeTypeIconClick(object? sender, RoutedEventArgs e)
     {
-        List<ListBoxItem> items = apps
-            .Select(a => new ListBoxItem
-            {
-                Content = a.Id == _defaultApp ? LocalizationService.Format("AppDefault", a.Name) : a.Name,
-                Tag = a.Id,
-                FontWeight = a.Id == _defaultApp ? Avalonia.Media.FontWeight.SemiBold : Avalonia.Media.FontWeight.Normal,
-            })
-            .ToList();
+        if (_typeIconKey == null)
+        {
+            return;
+        }
 
-        AppsListBox.ItemsSource = items;
-        AppsListBox.SelectedItem = items.FirstOrDefault(i => (string?) i.Tag == _defaultApp);
+        string initialPath = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+        if (!Directory.Exists(initialPath))
+        {
+            initialPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        FilePickerOptions options = new()
+        {
+            Mode = PickerMode.File,
+            InitialPath = initialPath,
+            Title = LocalizationService.Get("SelectIcon"),
+            ActionButtonText = LocalizationService.Get("Select")
+        };
+
+        MainWindow picker = new(initialPath, options);
+        FilePickerResult result = await picker.ShowPickerAsync(this);
+        if (!result.IsSuccess || string.IsNullOrWhiteSpace(result.SelectedPath))
+        {
+            return;
+        }
+
+        if (IconService.LoadFile(result.SelectedPath) == null)
+        {
+            ConfirmDialog error = new(LocalizationService.Get("Error"), LocalizationService.Get("InvalidIconFile"));
+            await error.ShowDialog(this);
+            return;
+        }
+
+        try
+        {
+            FileTypeIconService.SetCustomIcon(_typeIconKey, result.SelectedPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ConfirmDialog error = new(LocalizationService.Get("Error"), ex.Message);
+            await error.ShowDialog(this);
+            return;
+        }
+
+        RefreshItemIcon();
+    }
+
+    private void OnResetTypeIconClick(object? sender, RoutedEventArgs e)
+    {
+        if (_typeIconKey == null)
+        {
+            return;
+        }
+
+        FileTypeIconService.ResetCustomIcon(_typeIconKey);
+        RefreshItemIcon();
+    }
+
+    private void RefreshItemIcon()
+    {
+        if (_item == null || _typeIconKey == null)
+        {
+            return;
+        }
+
+        ItemIcon.Source = IconService.GetForEntry(false, _item.FileType, _path);
+        ResetTypeIconMenuItem.IsEnabled = FileTypeIconService.HasCustomIcon(_typeIconKey);
+    }
+
+    private async Task LoadMimeInfoAsync()
+    {
+        await Chooser.LoadAsync(_path);
+        AppAssociations? associations = Chooser.Associations;
+        if (associations == null)
+        {
+            return;
+        }
+
+        _mimeType = associations.MimeType;
+        _defaultApp = associations.DefaultApp;
+        MimeValue.Text = associations.MimeType;
+        TypeLabel.Text = $"{_typeLabelText} ({associations.MimeType})";
+        OpensWithValue.Text = associations.DefaultAppName ?? LocalizationService.Get("NoDefaultApplication");
+        OpenWithHeader.Text = LocalizationService.Format("OpenWithHeader", associations.MimeType);
     }
 
     private async void OnSetDefaultAppClick(object? sender, RoutedEventArgs e)
     {
-        if (AppsListBox.SelectedItem is not ListBoxItem { Tag: string id })
+        string? program = Chooser.SelectedProgram;
+        if (string.IsNullOrEmpty(program))
         {
             return;
         }
 
         string path = _path;
-        await Task.Run(() => MimeService.SetDefaultApplication(path, id));
+        await Task.Run(() => MimeService.SetDefaultApplication(path, program));
         await LoadMimeInfoAsync();
     }
 
@@ -632,28 +705,17 @@ public partial class PropertiesDialog : Window
         LaunchSelectedApp();
     }
 
-    private void OnAppDoubleTapped(object? sender, TappedEventArgs e)
-    {
-        LaunchSelectedApp();
-    }
-
     private void LaunchSelectedApp()
     {
-        if (AppsListBox.SelectedItem is not ListBoxItem { Tag: string id })
+        string? program = Chooser.SelectedProgram;
+        if (string.IsNullOrEmpty(program))
         {
             return;
         }
 
         try
         {
-            ProcessStartInfo psi = new()
-            {
-                FileName = "gtk-launch",
-                UseShellExecute = false,
-            };
-            psi.ArgumentList.Add(id);
-            psi.ArgumentList.Add(_path);
-            Process.Start(psi);
+            FileExecutionService.OpenWith(program, _path);
         }
         catch
         {

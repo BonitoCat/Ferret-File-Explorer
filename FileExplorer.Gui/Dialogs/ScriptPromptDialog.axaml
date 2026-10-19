@@ -61,7 +61,7 @@
             <Button x:Name="RunButton"
                     Content="{markup:Translate Key=Run}"
                     Click="OnRunClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="70"
                     HorizontalContentAlignment="Center"/>

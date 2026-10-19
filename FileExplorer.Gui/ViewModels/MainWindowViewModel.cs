@@ -7,11 +7,11 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
@@ -38,7 +38,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private string _searchQuery = "";
     private bool _showHiddenFiles = true;
     private string _statusText = "";
-    private bool _showDetailsPane;
     private bool _isGridView = true;
     private bool _isDualPane;
     private double _colNameWidth = 260;
@@ -48,6 +47,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public event Action<string>? ScriptOpenRequested;
     public event Action<NetworkConnectionInfo>? NetworkLoginRequested;
     public event Action<PaneViewModel, string, bool>? NetworkServerLoginRequested;
+    public event Action<string>? AccessDenied;
+    public event Action<string>? DirectoryAccessDenied;
+    public event Action<string, IReadOnlyList<string>>? TransferCompleted;
     public Func<TransferConflict, Task<ConflictResolution>>? ConflictResolver { get; set; }
     private bool _isPathEditing;
     private PaneViewModel _activePane;
@@ -62,9 +64,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private string _operationIconSvg = "";
     private IImage? _operationIcon;
 
-    private Bitmap? _previewImage;
-    private string _previewDetails = "";
-    private bool _hasImagePreview;
 
     public bool IsGridView
     {
@@ -184,7 +183,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _activePane.IsActive = true;
             OnPropertyChanged(nameof(ActivePane));
             OnActivePathChanged();
-            UpdatePreview(value.SelectedItem);
 
             if (!string.IsNullOrEmpty(SearchQuery))
             {
@@ -277,42 +275,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _statusText, value);
     }
 
-    public bool ShowDetailsPane
-    {
-        get => _showDetailsPane;
-        set
-        {
-            if (SetProperty(ref _showDetailsPane, value) && value)
-            {
-                UpdatePreview(ActivePane.SelectedItem);
-            }
-        }
-    }
-
-    public Bitmap? PreviewImage
-    {
-        get => _previewImage;
-        set
-        {
-            if (SetProperty(ref _previewImage, value))
-            {
-                HasImagePreview = value != null;
-            }
-        }
-    }
-
-    public bool HasImagePreview
-    {
-        get => _hasImagePreview;
-        set => SetProperty(ref _hasImagePreview, value);
-    }
-
-    public string PreviewDetails
-    {
-        get => _previewDetails;
-        set => SetProperty(ref _previewDetails, value);
-    }
-
     public bool CanGoBack => ActivePane.CanGoBack;
     public bool CanGoForward => ActivePane.CanGoForward;
     public bool CanGoUp => ActivePane.CanGoUp;
@@ -324,9 +286,43 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public PickerMode PickerMode => PickerOptions?.Mode ?? PickerMode.None;
 
-    public string PickerTargetLabel => PickerMode == PickerMode.Folder ? LocalizationService.Get("PickerFolderLabel") : LocalizationService.Get("PickerFileLabel");
+    public string PickerTargetLabel => PickerMode switch
+    {
+        PickerMode.Folder => LocalizationService.Get("PickerFolderLabel"),
+        PickerMode.Save => LocalizationService.Get("PickerNameLabel"),
+        _ => LocalizationService.Get("PickerFileLabel"),
+    };
 
-    public string PickerActionButtonText => PickerOptions?.ActionButtonText ?? (PickerMode == PickerMode.Folder ? LocalizationService.Get("SelectFolder") : LocalizationService.Get("Open"));
+    public string PickerActionButtonText => PickerOptions?.ActionButtonText ?? PickerMode switch
+    {
+        PickerMode.Folder => LocalizationService.Get("SelectFolder"),
+        PickerMode.Save => LocalizationService.Get("Save"),
+        _ => LocalizationService.Get("Open"),
+    };
+
+    public IReadOnlyList<PickerFilter> PickerFilters => PickerOptions?.Filters ?? [];
+
+    public bool HasPickerFilters => PickerFilters.Count > 0;
+
+    private PickerFilter? _selectedPickerFilter;
+    private List<Regex> _pickerFilterPatterns = new();
+
+    public PickerFilter? SelectedPickerFilter
+    {
+        get => _selectedPickerFilter;
+        set
+        {
+            if (!SetProperty(ref _selectedPickerFilter, value))
+            {
+                return;
+            }
+
+            _pickerFilterPatterns = value == null ? new() : value.Patterns.Select(GlobToRegex).ToList();
+            ReloadPanes();
+        }
+    }
+
+    public Func<string, Task<bool>>? OverwriteConfirmer { get; set; }
 
     private string _pickerSelectedName = string.Empty;
 
@@ -349,6 +345,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public MainWindowViewModel(string? initialPath, FilePickerOptions? pickerOptions)
     {
         PickerOptions = pickerOptions;
+        _selectedPickerFilter = pickerOptions?.Filters.FirstOrDefault();
+        _pickerFilterPatterns = _selectedPickerFilter?.Patterns.Select(GlobToRegex).ToList() ?? new();
+        _pickerSelectedName = pickerOptions?.InitialName ?? "";
 
         Pane1 = CreatePane();
         Pane2 = CreatePane();
@@ -370,8 +369,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
         });
 
-        string startPath = initialPath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (string.IsNullOrEmpty(startPath) || !Directory.Exists(startPath))
+        string startPath = LocationResolver.Resolve(initialPath ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+        string? pendingNetworkPath = null;
+        if (IsNetworkUri(startPath) && !NetworkBrowseService.IsBrowseLocation(startPath))
+        {
+            pendingNetworkPath = startPath;
+            startPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
+
+        if (string.IsNullOrEmpty(startPath) || !PaneViewModel.IsNavigable(startPath))
         {
             startPath = "/";
         }
@@ -381,11 +387,21 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         LoadPlaces();
         StartDeviceMonitoring();
         Pane1.NavigateTo(startPath);
+
+        if (pendingNetworkPath != null)
+        {
+            NavigateTo(pendingNetworkPath);
+        }
     }
 
     private PaneViewModel CreatePane()
     {
         PaneViewModel pane = new(_fileService, () => ShowHiddenFiles);
+        if (PickerOptions?.Filters.Count > 0)
+        {
+            pane.FileFilter = MatchesPickerFilter;
+        }
+
         pane.PropertyChanged += OnPanePropertyChanged;
         pane.ContentChanged += OnPaneContentChanged;
         pane.SelectionChanged += OnPaneContentChanged;
@@ -454,14 +470,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private void OnActiveSelectedItemChanged()
     {
         FileItemViewModel? selected = ActivePane.SelectedItem;
-        UpdatePreview(selected);
 
         if (!IsPickerMode || selected == null)
         {
             return;
         }
 
-        if ((PickerMode == PickerMode.File && !selected.IsDirectory) || (PickerMode == PickerMode.Folder && selected.IsDirectory))
+        if (((PickerMode is PickerMode.File or PickerMode.Save) && !selected.IsDirectory) || (PickerMode == PickerMode.Folder && selected.IsDirectory))
         {
             PickerSelectedName = selected.Name;
         }
@@ -534,6 +549,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void ToggleDualPane()
     {
+        if (IsDualPane && ActivePane == Pane2 && Pane2.IsOpen)
+        {
+            Pane1.TakeOver(Pane2);
+        }
+
         IsDualPane = !IsDualPane;
         Logger.LogI($"Toggled dual pane: {IsDualPane}");
     }
@@ -547,7 +567,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (ActivePane == Pane2 || !Pane2.IsOpen)
         {
-            ToggleDualPane();
+            IsDualPane = false;
+            Logger.LogI("Closed secondary pane");
             return;
         }
 
@@ -1640,6 +1661,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             OperationCurrentFileName = "";
             await WaitForTargetsAsync(targets, token);
             StatusText = LocalizationService.Get($"{operation}Completed");
+            TransferCompleted?.Invoke(destinationDirectory, targets);
         }
         catch (OperationCanceledException)
         {
@@ -1739,6 +1761,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void NavigateTo(string path)
     {
+        path = LocationResolver.Resolve(path);
         if (string.IsNullOrEmpty(path))
         {
             return;
@@ -1780,8 +1803,25 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        if (!CanOpenDirectory(path) && DirectoryAccessDenied != null)
+        {
+            Logger.LogI("Directory access denied");
+            DirectoryAccessDenied.Invoke(path);
+            return;
+        }
+
         Logger.LogI("Navigated to directory");
         ActivePane.NavigateTo(path);
+    }
+
+    private static bool CanOpenDirectory(string path)
+    {
+        if (Environment.IsPrivilegedProcess || Environment.UserName == "root")
+        {
+            return true;
+        }
+
+        return FileUtils.CanRead(path, true);
     }
 
     public async Task DismountPlaceAsync(PlaceItem item)
@@ -1937,10 +1977,58 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    private bool MatchesPickerFilter(string fileName)
+    {
+        List<Regex> patterns = _pickerFilterPatterns;
+        return patterns.Count == 0 || patterns.Any(p => p.IsMatch(fileName));
+    }
+
+    private static Regex GlobToRegex(string glob)
+    {
+        string pattern = "^" + Regex.Escape(glob).Replace("\\*", ".*").Replace("\\?", ".") + "$";
+        return new(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private async Task ConfirmSaveAsync()
+    {
+        string name = PickerSelectedName.Trim();
+        if (name.Length == 0)
+        {
+            return;
+        }
+
+        string candidate = Path.IsPathRooted(name) ? name : Path.Combine(CurrentPath, name);
+        if (Directory.Exists(candidate))
+        {
+            PickerSelectedName = "";
+            NavigateTo(candidate);
+            return;
+        }
+
+        string? directory = Path.GetDirectoryName(candidate);
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+        {
+            return;
+        }
+
+        if (File.Exists(candidate) && OverwriteConfirmer != null && !await OverwriteConfirmer(candidate))
+        {
+            return;
+        }
+
+        PickerCompleted?.Invoke(FilePickerResult.Selected(candidate));
+    }
+
     public void ConfirmCurrentPicker()
     {
         if (!IsPickerMode)
         {
+            return;
+        }
+
+        if (PickerMode == PickerMode.Save)
+        {
+            _ = ConfirmSaveAsync();
             return;
         }
 
@@ -2052,6 +2140,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             if (PickerMode == PickerMode.File)
             {
                 PickerCompleted?.Invoke(FilePickerResult.Selected(item.FullPath));
+                return;
+            }
+
+            if (PickerMode == PickerMode.Save)
+            {
+                PickerSelectedName = item.Name;
+                _ = ConfirmSaveAsync();
                 return;
             }
 
@@ -2238,18 +2333,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         try
         {
-            ProcessStartInfo psi = new()
-            {
-                FileName = program,
-                Arguments = $"\"{item.FullPath}\"",
-                UseShellExecute = false,
-            };
-            if (OperatingSystem.IsLinux())
-            {
-                psi.EnvironmentVariables["DESKTOP_STARTUP_ID"] = $"ferret_{Environment.ProcessId}_TIME{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
-            }
-
-            Process.Start(psi);
+            FileExecutionService.OpenWith(program, item.FullPath);
         }
         catch { }
     }
@@ -2342,6 +2426,45 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public static bool HasPasteContent()
+    {
+        ClipboardService.ReadPaths(out _, out string[] paths);
+        return paths.Any(p => File.Exists(p) || Directory.Exists(p));
+    }
+
+    public async Task<List<string>> PasteAsSymlinksAsync(string? targetDirectory = null)
+    {
+        if (ActivePane.IsVirtual)
+        {
+            return [];
+        }
+
+        ClipboardService.ReadPaths(out _, out string[] paths);
+        return await CreateSymlinksAsync(paths, targetDirectory ?? CurrentPath);
+    }
+
+    public async Task<List<string>> CreateSymlinksAsync(IEnumerable<string> paths, string dir)
+    {
+        if (NetworkBrowseService.IsBrowseLocation(dir) || !Directory.Exists(dir))
+        {
+            return [];
+        }
+
+        (List<string> created, List<string> errors) = await _operationService.CreateSymlinksAsync(dir, paths, ConflictResolver);
+        if (errors.Count > 0)
+        {
+            StatusText = LocalizationService.Format("SymlinkFailed", errors[0]);
+        }
+        else if (created.Count > 0)
+        {
+            Logger.LogI($"Created {created.Count} symlinks in {dir}");
+            StatusText = LocalizationService.Format("SymlinksCreated", created.Count);
+        }
+
+        Refresh();
+        return created;
+    }
+
     public void DeleteSelected(IEnumerable<FileItemViewModel>? selection = null, bool permanent = false)
     {
         List<FileItemViewModel> targets = ResolveTargets(selection);
@@ -2377,8 +2500,87 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        _operationService.Rename(item.FullPath, newName);
+        try
+        {
+            _operationService.Rename(item.FullPath, newName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ReportFileError("RenameFailed", ex);
+        }
+
         Refresh();
+    }
+
+    public void BulkRename(IReadOnlyList<BulkRenameEntry> renames)
+    {
+        if (ActivePane.IsVirtual || renames.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> sourcePaths = new(renames.Select(rename => rename.Path), StringComparer.Ordinal);
+        List<(string TempPath, string OriginalName, string NewName)> staged = new();
+        List<BulkRenameEntry> direct = new();
+        foreach (BulkRenameEntry rename in renames)
+        {
+            string directory = Path.GetDirectoryName(rename.Path) ?? "";
+            if (!sourcePaths.Contains(Path.Combine(directory, rename.NewName)))
+            {
+                direct.Add(rename);
+                continue;
+            }
+
+            string tempName = $".fe-rename-{Guid.NewGuid():N}";
+            try
+            {
+                _operationService.Rename(rename.Path, tempName);
+                staged.Add((Path.Combine(directory, tempName), Path.GetFileName(rename.Path), rename.NewName));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileError("RenameFailed", ex);
+            }
+        }
+
+        foreach (BulkRenameEntry rename in direct)
+        {
+            try
+            {
+                _operationService.Rename(rename.Path, rename.NewName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileError("RenameFailed", ex);
+            }
+        }
+
+        foreach ((string tempPath, string originalName, string newName) in staged)
+        {
+            try
+            {
+                _operationService.Rename(tempPath, newName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileError("RenameFailed", ex);
+                TryRestoreStagedRename(tempPath, originalName);
+            }
+        }
+
+        Refresh();
+    }
+
+    private void TryRestoreStagedRename(string tempPath, string originalName)
+    {
+        try
+        {
+            _operationService.Rename(tempPath, originalName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _ = Logger.LogI($"Could not restore {tempPath} to {originalName}");
+        }
     }
 
     public void DuplicateSelected(IEnumerable<FileItemViewModel>? selection = null)
@@ -2391,36 +2593,76 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         foreach (FileItemViewModel item in targets)
         {
-            _operationService.Duplicate(item.FullPath);
+            try
+            {
+                _operationService.Duplicate(item.FullPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileError("DuplicateFailed", ex);
+                break;
+            }
         }
 
         Refresh();
     }
 
-    public void CreateFolder(string folderName)
+    private void ReportFileError(string key, Exception ex)
+    {
+        string message = LocalizationService.Format(key, ex.Message);
+        if (ex is UnauthorizedAccessException && AccessDenied != null)
+        {
+            AccessDenied.Invoke(message);
+            return;
+        }
+
+        StatusText = message;
+    }
+
+    public string? CreateFolder(string folderName)
     {
         if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(folderName))
         {
-            return;
+            return null;
         }
 
         string baseDir = CurrentPath;
         string fullPath = Path.Combine(baseDir, folderName);
-        _operationService.CreateFolder(fullPath);
+        try
+        {
+            _operationService.CreateFolder(fullPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ReportFileError("CreateFolderFailed", ex);
+            return null;
+        }
+
         Refresh();
+        return fullPath;
     }
 
-    public void CreateFile(string fileName)
+    public string? CreateFile(string fileName)
     {
         if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(fileName))
         {
-            return;
+            return null;
         }
 
         string baseDir = CurrentPath;
         string fullPath = Path.Combine(baseDir, fileName);
-        _operationService.CreateFile(fullPath);
+        try
+        {
+            _operationService.CreateFile(fullPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ReportFileError("CreateFileFailed", ex);
+            return null;
+        }
+
         Refresh();
+        return fullPath;
     }
 
     public void ToggleBookmark(string path)
@@ -2440,6 +2682,49 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         string path = targetPath ?? CurrentPath;
         Logger.LogI("Opened directory as root");
         FileExecutionService.OpenAsRoot(path);
+    }
+
+    public string CommandDirectory => Directory.Exists(CurrentPath) ? CurrentPath : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
+    public static bool IsProgramAvailable(string name, string workingDir)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        if (name.Contains('/'))
+        {
+            string candidate = Path.GetFullPath(Path.Combine(workingDir, name));
+            return File.Exists(candidate) && FileUtils.IsFileExecutable(candidate);
+        }
+
+        string[] searchDirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(':', StringSplitOptions.RemoveEmptyEntries);
+        return searchDirs.Any(dir => File.Exists(Path.Combine(dir, name)) && FileUtils.IsFileExecutable(Path.Combine(dir, name)));
+    }
+
+    public bool RunShellCommand(string workingDir, string commandLine)
+    {
+        try
+        {
+            ProcessStartInfo psi = new()
+            {
+                FileName = "sh",
+                WorkingDirectory = workingDir,
+                UseShellExecute = false,
+            };
+            psi.ArgumentList.Add("-c");
+            psi.ArgumentList.Add(commandLine);
+
+            using Process? process = Process.Start(psi);
+            Logger.LogI("Ran path bar command");
+            return process != null;
+        }
+        catch (Exception ex)
+        {
+            StatusText = LocalizationService.Format("CommandFailed", commandLine, ex.Message);
+            return false;
+        }
     }
 
     public void OpenTerminal(string? workingDir = null, string? command = null)
@@ -2596,64 +2881,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         mountPath = NormalizeTrailPath(device.Path);
         name = device.Name;
         return true;
-    }
-
-    private const int PreviewDecodeWidth = 400;
-    private const int PreviewDebounceMs = 120;
-    private CancellationTokenSource? _previewCts;
-
-    private void UpdatePreview(FileItemViewModel? selected)
-    {
-        _previewCts?.Cancel();
-        _previewCts = null;
-
-        Bitmap? oldPreview = PreviewImage;
-        PreviewImage = null;
-        oldPreview?.Dispose();
-
-        if (selected == null)
-        {
-            PreviewDetails = "";
-            return;
-        }
-
-        string details = $"{LocalizationService.Get("Name")}: {selected.Name}\n{LocalizationService.Get("Type")}: {selected.TypeString}\n{LocalizationService.Get("Size")}: {selected.SizeString}\n{LocalizationService.Get("Modified")}: {selected.ModifiedString}\n{LocalizationService.Get("LocationLabel")}: {selected.FullPath}";
-        if (selected.IsAccessDenied)
-        {
-            details += $"\n{LocalizationService.Get("AccessDenied")}";
-        }
-
-        PreviewDetails = details;
-
-        if (!ShowDetailsPane || selected.IsDirectory || (selected.Entry as FileEntry)?.FileType != FileType.Image)
-        {
-            return;
-        }
-
-        CancellationTokenSource cts = new();
-        _previewCts = cts;
-        string path = selected.FullPath;
-        Task.Run(async () =>
-        {
-            await Task.Delay(PreviewDebounceMs, cts.Token);
-
-            Bitmap bitmap;
-            using (FileStream stream = File.OpenRead(path))
-            {
-                bitmap = Bitmap.DecodeToWidth(stream, PreviewDecodeWidth);
-            }
-
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (cts.IsCancellationRequested)
-                {
-                    bitmap.Dispose();
-                    return;
-                }
-
-                PreviewImage = bitmap;
-            });
-        }, cts.Token).ContinueWith(t => _ = t.Exception, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private static string FormatEta(TimeSpan? eta)
@@ -2951,6 +3178,5 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Pane1.Dispose();
         Pane2.Dispose();
         _operationCts?.Dispose();
-        PreviewImage?.Dispose();
     }
 }

@@ -8,6 +8,8 @@ Work in progress, report all issues in the issues tab
 
 ## Addons
 
-Add your own entries to the right-click and Addons menus that run scripts or programs, without rebuilding Ferret.</p>
+Add your own entries to the right-click and Addons menus, and your own commands to the path bar, that run scripts or programs, without rebuilding Ferret.
 
-See the <a href="_docs/ADDONS.md">Addon guide</a> for all options, and <a href="examples/addons">examples/addons</a> for ready-to-use examples.</p>
+See the [Addon guide](_docs/ADDONS.md) for all options, and [examples/addons](examples/addons) for ready-to-use examples.
+
+If you want to publish your addon on the official Addon-Store, then check out the [addons repo](https://github.com/BonitoCat/Ferret-Addons).

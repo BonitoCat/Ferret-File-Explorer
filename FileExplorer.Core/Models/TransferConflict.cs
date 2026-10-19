@@ -15,9 +15,10 @@ public record TransferConflict(
     bool SourceIsDirectory,
     bool DestinationIsDirectory,
     bool IsCopy,
-    bool HasMultipleItems)
+    bool HasMultipleItems,
+    bool AllowMerge = true)
 {
-    public bool CanMerge => SourceIsDirectory && DestinationIsDirectory;
+    public bool CanMerge => AllowMerge && SourceIsDirectory && DestinationIsDirectory;
 }
 
 public record ConflictResolution(ConflictAction Action, bool ApplyToAll = false);

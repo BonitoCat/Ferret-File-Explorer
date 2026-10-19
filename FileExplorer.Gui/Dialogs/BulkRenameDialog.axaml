@@ -1,0 +1,430 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:vm="using:FileExplorer.Gui.ViewModels"
+        x:Class="FileExplorer.Gui.Dialogs.BulkRenameDialog"
+        Title="{markup:Translate Key=RenameTitle}"
+        Width="680"
+        Height="600"
+        MinWidth="520"
+        MinHeight="460"
+        WindowStartupLocation="CenterOwner"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.label">
+            <Setter Property="FontSize"
+                    Value="12"/>
+            <Setter Property="VerticalAlignment"
+                    Value="Center"/>
+            <Setter Property="Margin"
+                    Value="0,6"/>
+        </Style>
+
+        <Style Selector="TextBox, ComboBox, NumericUpDown">
+            <Setter Property="CornerRadius"
+                    Value="6"/>
+            <Setter Property="FontSize"
+                    Value="12"/>
+            <Setter Property="Margin"
+                    Value="0,4"/>
+        </Style>
+
+        <Style Selector="CheckBox">
+            <Setter Property="FontSize"
+                    Value="12"/>
+        </Style>
+
+        <Style Selector="TextBlock.preview">
+            <Setter Property="FontSize"
+                    Value="12"/>
+            <Setter Property="TextTrimming"
+                    Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment"
+                    Value="Center"/>
+        </Style>
+
+        <Style Selector="TextBlock.preview.unchanged">
+            <Setter Property="Foreground"
+                    Value="#777777"/>
+        </Style>
+
+        <Style Selector="TextBlock.preview.changed">
+            <Setter Property="Foreground"
+                    Value="#7FC88F"/>
+        </Style>
+
+        <Style Selector="TextBlock.preview.conflict">
+            <Setter Property="Foreground"
+                    Value="#E05555"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto"
+          Margin="20">
+
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="0,0,0,16">
+
+            <Image Source="{markup:Icon Key=edit}"
+                   Width="20"
+                   Height="20"/>
+
+            <TextBlock x:Name="HeaderText"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center"/>
+        </StackPanel>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="130,*"
+              RowDefinitions="Auto,Auto">
+
+            <TextBlock Grid.Row="0"
+                       Grid.Column="0"
+                       Classes="label"
+                       Text="{markup:Translate Key=RenameMode}"/>
+
+            <ComboBox Grid.Row="0"
+                      Grid.Column="1"
+                      x:Name="ModeComboBox"
+                      HorizontalAlignment="Stretch">
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameModeReplace}"/>
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameModeInsert}"/>
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameModeRemove}"/>
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameModeNumbering}"/>
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameModeCase}"/>
+            </ComboBox>
+
+            <TextBlock Grid.Row="1"
+                       Grid.Column="0"
+                       Classes="label"
+                       Text="{markup:Translate Key=RenameApplyTo}"/>
+
+            <ComboBox Grid.Row="1"
+                      Grid.Column="1"
+                      x:Name="ScopeComboBox"
+                      HorizontalAlignment="Stretch">
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameScopeName}"/>
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameScopeExtension}"/>
+
+                <ComboBoxItem Content="{markup:Translate Key=RenameScopeFull}"/>
+            </ComboBox>
+        </Grid>
+
+        <Panel Grid.Row="2"
+               Margin="0,8,0,12">
+
+            <Grid x:Name="ReplacePanel"
+                  ColumnDefinitions="130,*"
+                  RowDefinitions="Auto,Auto,Auto">
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenameFind}"/>
+
+                <TextBox Grid.Row="0"
+                         Grid.Column="1"
+                         x:Name="FindBox"/>
+
+                <TextBlock Grid.Row="1"
+                           Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenameReplaceWith}"/>
+
+                <TextBox Grid.Row="1"
+                         Grid.Column="1"
+                         x:Name="ReplaceBox"/>
+
+                <StackPanel Grid.Row="2"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="16">
+
+                    <CheckBox x:Name="CaseSensitiveCheckBox"
+                              Content="{markup:Translate Key=RenameCaseSensitive}"/>
+
+                    <CheckBox x:Name="RegexCheckBox"
+                              Content="{markup:Translate Key=RenameRegex}"/>
+                </StackPanel>
+            </Grid>
+
+            <Grid x:Name="InsertPanel"
+                  ColumnDefinitions="130,*"
+                  RowDefinitions="Auto,Auto,Auto,Auto"
+                  IsVisible="False">
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenameText}"/>
+
+                <TextBox Grid.Row="0"
+                         Grid.Column="1"
+                         x:Name="InsertTextBox"/>
+
+                <TextBlock Grid.Row="1"
+                           Grid.Column="1"
+                           Text="{markup:Translate Key=RenameInsertHint}"
+                           FontSize="11"
+                           Foreground="#777777"
+                           Margin="0,0,0,4"/>
+
+                <TextBlock Grid.Row="2"
+                           Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenamePosition}"/>
+
+                <StackPanel Grid.Row="2"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8">
+
+                    <NumericUpDown x:Name="InsertPositionBox"
+                                   Width="130"
+                                   Minimum="0"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Value="0"/>
+
+                    <ComboBox x:Name="InsertFromComboBox"
+                              Width="160">
+
+                        <ComboBoxItem Content="{markup:Translate Key=RenameFromStart}"/>
+
+                        <ComboBoxItem Content="{markup:Translate Key=RenameFromEnd}"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <CheckBox Grid.Row="3"
+                          Grid.Column="1"
+                          x:Name="OverwriteCheckBox"
+                          Content="{markup:Translate Key=RenameOverwrite}"/>
+            </Grid>
+
+            <Grid x:Name="RemovePanel"
+                  ColumnDefinitions="130,*"
+                  RowDefinitions="Auto,Auto"
+                  IsVisible="False">
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenamePosition}"/>
+
+                <StackPanel Grid.Row="0"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8">
+
+                    <NumericUpDown x:Name="RemovePositionBox"
+                                   Width="130"
+                                   Minimum="0"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Value="0"/>
+
+                    <ComboBox x:Name="RemoveFromComboBox"
+                              Width="160">
+
+                        <ComboBoxItem Content="{markup:Translate Key=RenameFromStart}"/>
+
+                        <ComboBoxItem Content="{markup:Translate Key=RenameFromEnd}"/>
+                    </ComboBox>
+                </StackPanel>
+
+                <TextBlock Grid.Row="1"
+                           Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenameCount}"/>
+
+                <NumericUpDown Grid.Row="1"
+                               Grid.Column="1"
+                               x:Name="RemoveCountBox"
+                               Width="130"
+                               HorizontalAlignment="Left"
+                               Minimum="0"
+                               Increment="1"
+                               FormatString="0"
+                               Value="1"/>
+            </Grid>
+
+            <Grid x:Name="NumberingPanel"
+                  ColumnDefinitions="130,*"
+                  RowDefinitions="Auto,Auto,Auto,Auto"
+                  IsVisible="False">
+
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenamePattern}"/>
+
+                <TextBox Grid.Row="0"
+                         Grid.Column="1"
+                         x:Name="PatternBox"
+                         Text="{}{name} {n}"/>
+
+                <TextBlock Grid.Row="1"
+                           Grid.Column="1"
+                           Text="{markup:Translate Key=RenamePatternHint}"
+                           FontSize="11"
+                           Foreground="#777777"
+                           Margin="0,0,0,4"/>
+
+                <StackPanel Grid.Row="2"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8">
+
+                    <TextBlock Classes="label"
+                               Text="{markup:Translate Key=RenameStartNumber}"/>
+
+                    <NumericUpDown x:Name="StartNumberBox"
+                                   Width="130"
+                                   Minimum="0"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Value="1"/>
+
+                    <TextBlock Classes="label"
+                               Text="{markup:Translate Key=RenameDigits}"
+                               Margin="8,6,0,6"/>
+
+                    <NumericUpDown x:Name="DigitsBox"
+                                   Width="110"
+                                   Minimum="1"
+                                   Maximum="10"
+                                   Increment="1"
+                                   FormatString="0"
+                                   Value="1"/>
+                </StackPanel>
+
+                <CheckBox Grid.Row="3"
+                          Grid.Column="1"
+                          x:Name="StripNumbersCheckBox"
+                          Content="{markup:Translate Key=RenameStripNumbers}"/>
+            </Grid>
+
+            <Grid x:Name="CasePanel"
+                  ColumnDefinitions="130,*"
+                  IsVisible="False">
+
+                <TextBlock Grid.Column="0"
+                           Classes="label"
+                           Text="{markup:Translate Key=RenameCase}"/>
+
+                <ComboBox Grid.Column="1"
+                          x:Name="CaseComboBox"
+                          HorizontalAlignment="Stretch">
+
+                    <ComboBoxItem Content="{markup:Translate Key=RenameCaseLower}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=RenameCaseUpper}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=RenameCaseTitle}"/>
+
+                    <ComboBoxItem Content="{markup:Translate Key=RenameCaseSentence}"/>
+                </ComboBox>
+            </Grid>
+        </Panel>
+
+        <Border Grid.Row="3"
+                Background="#1E1E20"
+                BorderBrush="#333333"
+                BorderThickness="1"
+                CornerRadius="6">
+            <Grid RowDefinitions="Auto,*">
+
+                <Grid Grid.Row="0"
+                      ColumnDefinitions="*,24,*"
+                      Margin="12,8">
+
+                    <TextBlock Grid.Column="0"
+                               Text="{markup:Translate Key=RenameOriginal}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#888888"/>
+
+                    <TextBlock Grid.Column="2"
+                               Text="{markup:Translate Key=RenameNew}"
+                               FontSize="12"
+                               FontWeight="SemiBold"
+                               Foreground="#888888"/>
+                </Grid>
+
+                <ListBox Grid.Row="1"
+                         x:Name="PreviewList"
+                         Background="Transparent">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:BulkRenamePreviewItem">
+                            <Grid ColumnDefinitions="*,24,*">
+
+                                <TextBlock Grid.Column="0"
+                                           Classes="preview"
+                                           Text="{Binding OriginalName}"/>
+
+                                <TextBlock Grid.Column="1"
+                                           Text="→"
+                                           FontSize="12"
+                                           Foreground="#666666"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+
+                                <TextBlock Grid.Column="2"
+                                           Classes="preview"
+                                           Classes.unchanged="{Binding !IsChanged}"
+                                           Classes.changed="{Binding IsChanged}"
+                                           Classes.conflict="{Binding HasConflict}"
+                                           Text="{Binding NewName}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <TextBlock Grid.Row="4"
+                   x:Name="StatusLabel"
+                   FontSize="12"
+                   Foreground="#E05555"
+                   TextWrapping="Wrap"
+                   Margin="0,8,0,0"
+                   IsVisible="False"/>
+
+        <StackPanel Grid.Row="5"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,12,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    MinWidth="85"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button Content="{markup:Translate Key=RenameTitle}"
+                    x:Name="RenameButton"
+                    Click="OnRenameClick"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="White"
+                    MinWidth="85"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

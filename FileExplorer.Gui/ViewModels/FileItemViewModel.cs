@@ -28,6 +28,7 @@ public class FileItemViewModel : ViewModelBase
     public required bool IsHidden { get; init; }
     public required bool IsAccessDenied { get; init; }
     public FileType FileType { get; init; }
+    public string? MimeType { get; init; }
     public IImage? Icon
     {
         get => _icon ?? Thumbnail ?? IconService.GetForEntry(IsDirectory, FileType, FullPath);
@@ -124,9 +125,10 @@ public class FileItemViewModel : ViewModelBase
             ModifiedString = modifiedStr,
             IsHidden = entry.IsHidden,
             IsAccessDenied = isAccessDenied,
+            MimeType = isDir ? null : FileTypeIconService.GetMimeType(entry.FullPath),
         };
 
-        if (!isDir && entry is FileEntry imageFile && imageFile.FileType == FileType.Image)
+        if (!isDir && entry is FileEntry && (fileType == FileType.Image || ThumbnailService.CanThumbnail(item.MimeType)))
         {
             ThumbnailService.Request(item, entry.LastWriteTime, token);
         }

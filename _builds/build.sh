@@ -13,7 +13,9 @@ CONTROL_X64_HEADLESS="$SCRIPT_DIR/fe-linux-x64-headless/DEBIAN/control"
 CONTROL_ARM64_FULL="$SCRIPT_DIR/fe-linux-arm64-full/DEBIAN/control"
 CONTROL_ARM64_HEADLESS="$SCRIPT_DIR/fe-linux-arm64-headless/DEBIAN/control"
 
-CURRENT_VERSION=$(sed -n 's/^Version: //p' "$CONTROL_X64_FULL" | head -n 1)
+VERSION_PROPS="$ROOT_DIR/Directory.Build.props"
+
+CURRENT_VERSION=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' "$VERSION_PROPS" | head -n 1)
 echo "Current version: $CURRENT_VERSION"
 
 if [ -n "$1" ]; then
@@ -27,6 +29,8 @@ fi
 
 echo "Building version: $NEW_VERSION"
 
+sed -i "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|" "$VERSION_PROPS"
+
 for ctrl in "$CONTROL_X64_FULL" "$CONTROL_X64_HEADLESS" "$CONTROL_ARM64_FULL" "$CONTROL_ARM64_HEADLESS"; do
     if [ -f "$ctrl" ]; then
         sed -i "s/^Version: .*/Version: $NEW_VERSION/" "$ctrl"
@@ -35,6 +39,7 @@ done
 
 CLI_PROJ="$ROOT_DIR/FileExplorer.Cli/FileExplorer.Cli.csproj"
 GUI_PROJ="$ROOT_DIR/FileExplorer.Gui/FileExplorer.Gui.csproj"
+PORTAL_PROJ="$ROOT_DIR/FileExplorer.Portal/FileExplorer.Portal.csproj"
 
 CLI_CTRL_LEGACY="$ROOT_DIR/FileExplorer.Cli/builds/fe-linux-x64-full/DEBIAN/control"
 if [ -f "$CLI_CTRL_LEGACY" ]; then
@@ -77,6 +82,27 @@ dotnet publish "$GUI_PROJ" \
     -p:PublishReadyToRun=true \
     -p:IncludeNativeLibrariesForSelfExtract=true
 
+echo "=========================================="
+echo "Publishing FileExplorer.Portal..."
+echo "=========================================="
+
+echo ">> Portal linux-x64"
+dotnet publish "$PORTAL_PROJ" \
+    -c Release -r linux-x64 -f net8.0 --self-contained true \
+    -p:PublishSingleFile=true \
+    -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:PublishTrimmed=true
+
+echo ">> Portal linux-arm64"
+dotnet publish "$PORTAL_PROJ" \
+    -c Release -r linux-arm64 -f net8.0 --self-contained true \
+    -p:PublishSingleFile=true \
+    -p:IncludeNativeLibrariesForSelfExtract=true \
+    -p:PublishTrimmed=true
+
+PORTAL_BIN_X64="$ROOT_DIR/FileExplorer.Portal/bin/Release/net8.0/linux-x64/publish/ferret-portal"
+PORTAL_BIN_ARM64="$ROOT_DIR/FileExplorer.Portal/bin/Release/net8.0/linux-arm64/publish/ferret-portal"
+
 CLI_BIN_X64="$ROOT_DIR/FileExplorer.Cli/bin/Release/net8.0/linux-x64/publish/FileExplorer.Cli"
 CLI_BIN_ARM64="$ROOT_DIR/FileExplorer.Cli/bin/Release/net8.0/linux-arm64/publish/FileExplorer.Cli"
 
@@ -90,12 +116,14 @@ echo "=========================================="
 cp "$CLI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe"
 cp "$GUI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret"
 cp "$GUI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe-gui"
+cp "$PORTAL_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret-portal"
 
 cp "$CLI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-headless/usr/bin/fe"
 
 cp "$CLI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe"
 cp "$GUI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret"
 cp "$GUI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe-gui"
+cp "$PORTAL_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret-portal"
 
 cp "$CLI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-headless/usr/bin/fe"
 
@@ -106,10 +134,12 @@ cp "$GUI_BIN_X64" "$SCRIPT_DIR/AppDir/usr/bin/fe-gui"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe-gui"
+chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret-portal"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-headless/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe-gui"
+chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret-portal"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-headless/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/AppDir/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/AppDir/usr/bin/ferret"

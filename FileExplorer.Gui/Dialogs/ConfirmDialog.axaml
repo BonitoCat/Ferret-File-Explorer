@@ -49,7 +49,7 @@
             <Button x:Name="ConfirmButton"
                     Content="{markup:Translate Key=OK}"
                     Click="OnConfirmClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="80"
                     Padding="14,6"

@@ -14,7 +14,7 @@ public partial class FolderColorDialog : Window
 
     public FolderColorDialog(string? initialHex) : this()
     {
-        Picker.Color = Color.Parse(initialHex ?? FolderColorService.DefaultFolderColor);
+        Picker.Color = Color.Parse(initialHex ?? ThemeService.PrimaryColor);
         UpdatePreview(Picker.Color);
     }
 

@@ -20,6 +20,7 @@ public sealed class AddonAction
     public IReadOnlyList<string> Args { get; }
     public bool Terminal { get; }
     public string? Shortcut { get; }
+    public IReadOnlyList<string> Keywords { get; }
     public string? IconPath { get; }
     public string? ConfirmKey { get; }
     public bool SeparatorBefore { get; }
@@ -48,7 +49,12 @@ public sealed class AddonAction
         Args = manifest.Args ?? DefaultArgs;
         Terminal = manifest.Terminal;
         Shortcut = string.IsNullOrWhiteSpace(manifest.Shortcut) ? null : manifest.Shortcut.Trim();
-        IconPath = addon.ResolvePath(manifest.Icon) ?? addon.IconPath;
+        Keywords = (manifest.Keywords ?? (string.IsNullOrWhiteSpace(manifest.Id) ? new() : [manifest.Id]))
+            .Select(k => k.Trim())
+            .Where(k => k.Length > 0 && !k.Contains(' '))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        IconPath = addon.ResolvePath(manifest.Icon);
         ConfirmKey = string.IsNullOrWhiteSpace(manifest.Confirm) ? null : manifest.Confirm.Trim();
         SeparatorBefore = separatorBefore;
         SeparatorAfter = separatorAfter;

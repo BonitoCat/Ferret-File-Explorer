@@ -4,5 +4,6 @@ public enum PickerMode
 {
     None,
     File,
-    Folder
+    Folder,
+    Save
 }

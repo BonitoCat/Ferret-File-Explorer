@@ -99,6 +99,12 @@ public sealed class AddonService
             .ToList();
     }
 
+    public AddonAction? FindPathBarAction(string keyword)
+    {
+        return GetActions(AddonLocation.PathBar)
+            .FirstOrDefault(a => a.Keywords.Contains(keyword, StringComparer.OrdinalIgnoreCase));
+    }
+
     public List<AddonAction> GetShortcutActions()
     {
         lock (_lock)

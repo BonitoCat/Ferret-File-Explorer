@@ -38,6 +38,11 @@ public static class FolderColorService
         FolderColorStore.Move(oldPath, newPath);
     }
 
+    public static void Copy(string sourcePath, string destPath)
+    {
+        FolderColorStore.Copy(sourcePath, destPath);
+    }
+
     public static void Remove(string path)
     {
         FolderColorStore.Remove(path);

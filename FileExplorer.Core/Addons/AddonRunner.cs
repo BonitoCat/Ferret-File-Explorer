@@ -31,6 +31,7 @@ public static class AddonRunner
             ["FE_CURRENT_DIR"] = context.CurrentDirectory,
             ["FE_SELECTION"] = string.Join('\n', context.SelectedPaths),
             ["FE_TARGET"] = GetTargetName(context.Target),
+            ["FE_INPUT"] = context.Input,
             ["FE_LANGUAGE"] = languageCode,
             ["FE_PID"] = Environment.ProcessId.ToString(),
         };
@@ -119,7 +120,18 @@ public static class AddonRunner
                 continue;
             }
 
+            if (arg == "{args}")
+            {
+                foreach (string word in context.Input.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                {
+                    yield return word;
+                }
+
+                continue;
+            }
+
             yield return arg
+                .Replace("{input}", context.Input)
                 .Replace("{path}", first)
                 .Replace("{name}", Path.GetFileName(first))
                 .Replace("{dir}", context.CurrentDirectory)

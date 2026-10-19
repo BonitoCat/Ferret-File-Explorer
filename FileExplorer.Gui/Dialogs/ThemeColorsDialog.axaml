@@ -1,0 +1,226 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.ThemeColorsDialog"
+        Title="{markup:Translate Key=ThemeColors}"
+        Width="780"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Window.Styles>
+        <StyleInclude Source="avares://Avalonia.Controls.ColorPicker/Themes/Fluent/Fluent.xaml"/>
+
+        <Style Selector="Button.slot">
+            <Setter Property="Background" Value="#2B2B30"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        </Style>
+
+        <Style Selector="Button.slot.selected">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.slot.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.swatch">
+            <Setter Property="Width" Value="30"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="MinWidth" Value="30"/>
+            <Setter Property="Padding" Value="3"/>
+            <Setter Property="Margin" Value="0,0,6,8"/>
+            <Setter Property="CornerRadius" Value="15"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Button.swatch > Border">
+            <Setter Property="CornerRadius" Value="12"/>
+        </Style>
+    </Window.Styles>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto"
+          Margin="20">
+
+        <Grid Grid.Row="0"
+              ColumnDefinitions="*,12,*,12,*">
+
+            <Button Grid.Column="0"
+                    x:Name="PrimarySlot"
+                    Classes="slot"
+                    Click="OnPrimarySlotClick">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="10">
+                    <Border x:Name="PrimarySwatch"
+                            Width="22"
+                            Height="22"
+                            CornerRadius="11"
+                            VerticalAlignment="Center"/>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{markup:Translate Key=PrimaryColor}"
+                                   FontWeight="SemiBold"/>
+
+                        <TextBlock Text="{markup:Translate Key=PrimaryColorHint}"
+                                   FontSize="11"
+                                   Foreground="#8A8A8A"/>
+                    </StackPanel>
+                </StackPanel>
+            </Button>
+
+            <Button Grid.Column="2"
+                    x:Name="AccentSlot"
+                    Classes="slot"
+                    Click="OnAccentSlotClick">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="10">
+                    <Border x:Name="AccentSwatch"
+                            Width="22"
+                            Height="22"
+                            CornerRadius="11"
+                            VerticalAlignment="Center"/>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{markup:Translate Key=AccentColor}"
+                                   FontWeight="SemiBold"/>
+
+                        <TextBlock Text="{markup:Translate Key=AccentColorHint}"
+                                   FontSize="11"
+                                   Foreground="#8A8A8A"/>
+                    </StackPanel>
+                </StackPanel>
+            </Button>
+
+            <Button Grid.Column="4"
+                    x:Name="SelectionSlot"
+                    Classes="slot"
+                    Click="OnSelectionSlotClick">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="10">
+                    <Border x:Name="SelectionSwatch"
+                            Width="22"
+                            Height="22"
+                            CornerRadius="11"
+                            VerticalAlignment="Center"/>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{markup:Translate Key=SelectionColor}"
+                                   FontWeight="SemiBold"/>
+
+                        <TextBlock Text="{markup:Translate Key=SelectionColorHint}"
+                                   FontSize="11"
+                                   Foreground="#8A8A8A"/>
+                    </StackPanel>
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <Grid Grid.Row="1"
+              ColumnDefinitions="*,Auto"
+              Margin="0,16,0,0">
+
+            <ColorView Grid.Column="0"
+                       x:Name="Picker"
+                       ColorSpectrumShape="Ring"
+                       IsAlphaEnabled="False"
+                       IsAlphaVisible="False"
+                       ColorChanged="OnColorChanged"/>
+
+            <StackPanel Grid.Column="1"
+                        Width="150"
+                        Margin="20,0,0,0"
+                        Spacing="12"
+                        VerticalAlignment="Top">
+                <TextBlock Text="{markup:Translate Key=Preview}"
+                           FontSize="12"
+                           Foreground="#8A8A8A"
+                           HorizontalAlignment="Center"/>
+
+                <Image x:Name="PreviewFolder"
+                       Width="72"
+                       Height="72"/>
+
+                <Border x:Name="PreviewRubberBand"
+                        BorderThickness="1"
+                        Padding="6">
+                    <Border x:Name="PreviewSelection"
+                            CornerRadius="6"
+                            Padding="8,6">
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="8">
+                            <Image x:Name="PreviewSelectionIcon"
+                                   Width="18"
+                                   Height="18"/>
+
+                            <TextBlock Text="{markup:Translate Key=SampleFolder}"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                </Border>
+
+                <ProgressBar x:Name="PreviewProgress"
+                             Minimum="0"
+                             Maximum="100"
+                             Value="60"
+                             Height="6"
+                             MinHeight="6"
+                             CornerRadius="3"
+                             Background="#38383E"/>
+
+                <Button x:Name="PreviewButton"
+                        Content="{markup:Translate Key=SampleButton}"
+                        Foreground="White"
+                        HorizontalAlignment="Stretch"
+                        HorizontalContentAlignment="Center"
+                        IsHitTestVisible="False"/>
+
+                <TextBlock x:Name="HexText"
+                           FontFamily="monospace"
+                           HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+
+        <WrapPanel Grid.Row="2"
+                   x:Name="PresetPanel"
+                   Margin="0,16,0,0"/>
+
+        <Grid Grid.Row="3"
+              ColumnDefinitions="Auto,*,Auto"
+              Margin="0,8,0,0">
+
+            <Button Grid.Column="0"
+                    Content="{markup:Translate Key=ResetToDefaults}"
+                    Click="OnResetClick"
+                    Background="#333333"
+                    Padding="14,6"/>
+
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        Spacing="10">
+
+                <Button Content="{markup:Translate Key=Cancel}"
+                        Click="OnCancelClick"
+                        Background="#333333"
+                        MinWidth="90"
+                        Padding="14,6"
+                        HorizontalContentAlignment="Center"
+                        IsCancel="True"/>
+
+                <Button Content="{markup:Translate Key=Apply}"
+                        Click="OnApplyClick"
+                        Background="{DynamicResource AccentBrush}"
+                        Foreground="White"
+                        MinWidth="90"
+                        Padding="14,6"
+                        HorizontalContentAlignment="Center"
+                        IsDefault="True"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

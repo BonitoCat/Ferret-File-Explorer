@@ -72,7 +72,7 @@ public partial class ConflictDialog : Window
     {
         try
         {
-            if (isDirectory)
+            if (isDirectory && Directory.Exists(path))
             {
                 DirectoryInfo directory = new(path);
                 int count = directory.EnumerateFileSystemInfos().Count();

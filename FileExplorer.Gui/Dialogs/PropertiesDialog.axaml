@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:controls="using:FileExplorer.Gui.Controls"
         x:Class="FileExplorer.Gui.Dialogs.PropertiesDialog"
         Title="{markup:Translate Key=Properties}"
         Width="580"
@@ -67,12 +68,31 @@
               ColumnDefinitions="Auto,*"
               Margin="0,0,0,14">
 
-            <Image Grid.Column="0"
-                   x:Name="ItemIcon"
-                   Width="56"
-                   Height="56"
-                   Margin="0,0,16,0"
-                   VerticalAlignment="Center"/>
+            <Button Grid.Column="0"
+                    x:Name="ItemIconButton"
+                    Padding="4"
+                    Margin="0,0,12,0"
+                    Background="Transparent"
+                    CornerRadius="8"
+                    VerticalAlignment="Center"
+                    IsHitTestVisible="False">
+                <Button.Flyout>
+                    <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                        <MenuItem x:Name="ChangeTypeIconMenuItem"
+                                  Icon="{markup:Icon Key=image}"
+                                  Click="OnChangeTypeIconClick"/>
+
+                        <MenuItem x:Name="ResetTypeIconMenuItem"
+                                  Header="{markup:Translate Key=ResetTypeIcon}"
+                                  Icon="{markup:Icon Key=refresh}"
+                                  Click="OnResetTypeIconClick"/>
+                    </MenuFlyout>
+                </Button.Flyout>
+
+                <Image x:Name="ItemIcon"
+                       Width="56"
+                       Height="56"/>
+            </Button>
 
             <StackPanel Grid.Column="1"
                         VerticalAlignment="Center"
@@ -250,7 +270,7 @@
                                              CornerRadius="3"
                                              Minimum="0"
                                              Maximum="100"
-                                             Foreground="#3584E4"
+                                             Foreground="{DynamicResource AccentBrush}"
                                              Background="#333333"/>
 
                                 <TextBlock x:Name="VolumeFreeText"
@@ -427,11 +447,8 @@
                                Foreground="#AAAAAA"
                                TextWrapping="Wrap"/>
 
-                    <ListBox Grid.Row="1"
-                             x:Name="AppsListBox"
-                             Background="#1C1C1E"
-                             CornerRadius="8"
-                             DoubleTapped="OnAppDoubleTapped"/>
+                    <controls:AppChooser Grid.Row="1"
+                                         x:Name="Chooser"/>
 
                     <StackPanel Grid.Row="2"
                                 Orientation="Horizontal"
@@ -614,7 +631,7 @@
                 x:Name="CloseButton"
                 Content="{markup:Translate Key=Close}"
                 Click="OnCloseClick"
-                Background="#3584E4"
+                Background="{DynamicResource AccentBrush}"
                 Foreground="White"
                 HorizontalAlignment="Right"
                 Margin="0,14,0,0"

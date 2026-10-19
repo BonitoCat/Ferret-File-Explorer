@@ -4,6 +4,7 @@ public enum AddonLocation
 {
     ContextMenu,
     AddonsMenu,
+    PathBar,
 }
 
 [Flags]
@@ -19,11 +20,13 @@ public sealed class AddonContext
 {
     public string CurrentDirectory { get; }
     public IReadOnlyList<string> SelectedPaths { get; }
+    public string Input { get; }
 
-    public AddonContext(string currentDirectory, IEnumerable<string> selectedPaths)
+    public AddonContext(string currentDirectory, IEnumerable<string> selectedPaths, string input = "")
     {
         CurrentDirectory = currentDirectory;
         SelectedPaths = selectedPaths.ToList();
+        Input = input;
     }
 
     public AddonTarget Target

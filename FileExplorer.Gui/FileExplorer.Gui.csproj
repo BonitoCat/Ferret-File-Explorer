@@ -36,5 +36,11 @@
       <Compile Update="Dialogs\ConflictDialog.axaml.cs">
         <DependentUpon>ConflictDialog.axaml</DependentUpon>
       </Compile>
+      <Compile Update="Dialogs\ExtractDialog.axaml.cs">
+        <DependentUpon>ExtractDialog.axaml</DependentUpon>
+      </Compile>
+      <Compile Update="Dialogs\AddonStoreDialog.axaml.cs">
+        <DependentUpon>AddonStoreDialog.axaml</DependentUpon>
+      </Compile>
     </ItemGroup>
 </Project>

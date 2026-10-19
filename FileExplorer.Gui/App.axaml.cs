@@ -12,6 +12,7 @@ using Avalonia.Markup.Xaml;
 using FileExplorer.Core.Models;
 using FileExplorer.Core.Services;
 using FileExplorer.Core.Utilities;
+using FileExplorer.Gui.Services;
 using FileLib;
 using LoggerLib;
 
@@ -47,6 +48,7 @@ public partial class App : Application
         });
 
         AppPaths.MigrateLegacyConfig();
+        ThemeService.Load();
         InputElement.KeyDownEvent.AddClassHandler<TextBox>(OnTextBoxKeyDown, RoutingStrategies.Tunnel);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -112,19 +114,15 @@ public partial class App : Application
             return null;
         }
 
-        string raw = args[0].Trim();
-        if (raw.StartsWith("trash:", StringComparison.OrdinalIgnoreCase))
+        string location = LocationResolver.Resolve(args[0]);
+        if (location.Contains("://", StringComparison.Ordinal))
         {
-            string trash = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share", "Trash", "files");
-            Directory.CreateDirectory(trash);
-            return trash;
+            return location;
         }
 
         try
         {
-            string resolved = Uri.TryCreate(raw, UriKind.Absolute, out Uri? uri) && uri.IsFile
-                ? uri.LocalPath
-                : Path.GetFullPath(raw);
+            string resolved = Path.GetFullPath(location);
 
             if (Directory.Exists(resolved))
             {

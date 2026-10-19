@@ -1,6 +1,6 @@
 # Addons
 
-Addons add your own entries to Ferret's right-click menu and **Addons** menu. Each entry runs a script or a program, so you can add features like "Open in VS Code" or "Serve this folder" without rebuilding Ferret.
+Addons add your own entries to Ferret's right-click menu and **Addons** menu, and your own commands to the path bar. Each entry runs a script or a program, so you can add features like "Open in VS Code" or "Serve this folder" without rebuilding Ferret.
 
 Addons currently work in the GUI only.
 
@@ -49,7 +49,7 @@ my-addon/
 | `icon`        | Path to an icon inside the addon folder                        |                    |
 | `script`      | Default script for all actions (path inside the addon folder)  |                    |
 | `interpreter` | Default interpreter for scripts (e.g. `python3`)               | detected           |
-| `actions`     | List of menu entries (see below)                               | one Addons-menu entry running `script` |
+| `actions`     | List of menu entries and path bar commands (see below)         | one Addons-menu entry running `script` |
 
 **Action fields**
 
@@ -57,7 +57,8 @@ my-addon/
 |---------------|-----------------------------------------------------------------------------|-----------------|
 | `id`          | Unique id within the addon                                                  | position number |
 | `title`       | Menu text                                                                   | addon name      |
-| `location`    | `context-menu` or `addons-menu`                                             | `context-menu`  |
+| `location`    | `context-menu`, `addons-menu` or `path-bar`                                 | `context-menu`  |
+| `keywords`    | Words that run it from the path bar (`path-bar` only)                       | action `id`     |
 | `targets`     | When to show it: `file`, `folder`, `background`                             | `[file, folder]`|
 | `extensions`  | Only show it for these file types, e.g. `[.png, .jpg]`                      | all files       |
 | `multiple`    | Allow it when several items are selected                                    | `true`          |
@@ -68,7 +69,7 @@ my-addon/
 | `terminal`    | Run inside a terminal window                                                | `false`         |
 | `confirm`     | Ask this question before running                                            |                 |
 | `shortcut`    | Keyboard shortcut, e.g. `Ctrl+Alt+C`                                        |                 |
-| `icon`        | Icon for this entry                                                         | addon `icon`    |
+| `icon`        | Icon for this entry                                                         | none            |
 | `after`       | Place it after this menu entry (see placement)                              |                 |
 | `before`      | Place it before this menu entry                                             |                 |
 | `index`       | Fixed position in the context menu (see placement)                          | end             |
@@ -82,6 +83,10 @@ my-addon/
 | `folder`     | folders                                      |
 | `background` | empty space in a folder                      |
 
+### Addon store
+
+Addons → Browse Addon Store lists every verified addon from [Ferret-Addons](https://github.com/BonitoCat/Ferret-Addons). To publish yours, open a pull request there that adds your addon folder as `addons/<id>/` (plain files, no zip). Store addons need an `id` and a `version`; raise `version` to ship an update. Downloads are checked against their SHA-256 hash before they are installed.
+
 ### Placement in the context menu
 
 The easiest way is to place your entry next to a built-in one with `after:` or `before:`:
@@ -94,7 +99,7 @@ Built-in entry names:
 
 ```
 new  open  open-with  open-as-root  open-terminal  copy-path  cut  copy  paste
-duplicate  rename  compress  extract-here  trash  delete-permanent  bookmark
+paste-link  duplicate  rename  compress  extract-here  trash  delete-permanent  bookmark
 folder-color  share  properties
 ```
 
@@ -103,6 +108,51 @@ folder-color  share  properties
 - **Without placement:** entries with neither `after`/`before` nor `index` go into their own group above **Properties**.
 - **Counting with `index`:** `index` counts every visible entry, including separators, starting at 0.
 - **Index conflicts:** when two addons want the same spot, the one higher up in **Manage Addons** wins and the other moves down.
+
+### Path bar commands
+
+Click the path bar (or press `Ctrl+L`), type a command and press Enter. Ferret runs it in the folder you have open, then puts the path back.
+
+Ferret checks what you typed in this order:
+
+1. **A location:** a path, a subfolder of the current folder, or a special location like `trash:///`. Ferret goes there.
+2. **An addon keyword:** runs that addon action. If two addons use the same keyword, the one higher up in **Manage Addons** wins.
+3. **A built-in command** (see below).
+4. **`terminal`, `cmd` or `term`:** opens a terminal.
+5. **A program from your `PATH`:** starts it, e.g. `code .` or `gimp photo.png`.
+
+Built-in commands:
+
+| Command                        | Effect                                                          |
+|--------------------------------|-----------------------------------------------------------------|
+| `select <pattern>` / `sel`     | Select matching items, e.g. `select *.jpg *.png`. Text without `*` or `?` matches anywhere in the name. No pattern selects everything |
+| `new <name>` / `mkdir <name>`  | Create a folder and select it (no name opens the dialog)        |
+| `touch <name>` / `newfile <name>` | Create a file and select it (no name opens the dialog)       |
+| `find <text>` / `search <text>` | Search the current folder (no text focuses the search box)     |
+| `hidden`                       | Show or hide hidden files                                       |
+| `split` / `dual`               | Toggle the second pane                                          |
+| `grid` / `list`                | Switch the view                                                 |
+| `root`                         | Open the current folder as root                                 |
+| `props` / `properties`         | Properties of the selection, or of the current folder           |
+| `colors` / `theme`             | Theme colors                                                    |
+| `addons`                       | Manage Addons                                                   |
+
+Built-in commands replace programs with the same name (`find`, `split`, `mkdir`, `touch`). To run the program instead, start with `>`, e.g. `>find . -name "*.log"`.
+
+Start with `>` to run a command inside a terminal that stays open, e.g. `>htop` or `>git log`.
+
+An addon adds a command with `location: path-bar` and `keywords`:
+
+```yaml
+actions:
+  - id: code
+    location: path-bar
+    keywords: [code, vscode]
+    command: code
+    args: ["{dir}", "{args}"]
+```
+
+Typing `code README.md` runs `code <current folder> README.md`. Path bar actions don't use `targets`, `extensions`, `multiple` or the placement fields. `{paths}`, `{path}` and `FE_SELECTION` are the selected items, or the current folder if nothing is selected.
 
 ### Translations
 
@@ -147,6 +197,8 @@ Ferret looks up the current language first (e.g. `de-AT`, then `de`), then Engli
 | `{name}`    | File name of `{path}`                                           |
 | `{dir}`     | The folder currently open                                       |
 | `{addon}`   | The addon's own folder                                          |
+| `{input}`   | Path bar only: the text typed after the keyword, as one argument |
+| `{args}`    | Path bar only: the text typed after the keyword, split into words |
 
 **Environment variables**
 
@@ -158,6 +210,7 @@ Ferret looks up the current language first (e.g. `de-AT`, then `de`), then Engli
 | `FE_CURRENT_DIR` | The folder currently open                          |
 | `FE_SELECTION`   | Selected paths, one per line (empty for background)|
 | `FE_TARGET`      | `file`, `folder`, `background` or `mixed`          |
+| `FE_INPUT`       | Path bar only: the text typed after the keyword    |
 | `FE_LANGUAGE`    | Ferret's UI language, e.g. `en` or `de`            |
 | `FE_PID`         | Process id of the Ferret window                    |
 

@@ -91,6 +91,11 @@ public class StretchWrapPanel : VirtualizingPanel
             Size itemSize = new(ItemWidth, ItemHeight);
             (int firstIndex, int lastIndex) = GetRealizationRange(items.Count);
 
+            if (_focusedElement != null && (ItemsControl == null || KeyboardNavigation.GetTabOnceActiveElement(ItemsControl) != _focusedElement))
+            {
+                ReleaseFocusedElement();
+            }
+
             foreach (int index in _realized.Keys.ToList())
             {
                 if (index < firstIndex || index > lastIndex)
@@ -190,6 +195,11 @@ public class StretchWrapPanel : VirtualizingPanel
         _realizedIndices.Remove(element);
         element.Measure(new(ItemWidth, ItemHeight));
         element.Arrange(GetItemRect(index, Bounds.Width));
+        if (_scrollToElement != null && _scrollToElement != element)
+        {
+            RecycleRemovedElement(_scrollToElement);
+        }
+
         _scrollToElement = element;
         _scrollToIndex = index;
 
@@ -434,12 +444,30 @@ public class StretchWrapPanel : VirtualizingPanel
 
         if (ItemsControl != null && KeyboardNavigation.GetTabOnceActiveElement(ItemsControl) == element)
         {
+            if (_focusedElement != element)
+            {
+                ReleaseFocusedElement();
+            }
+
             _focusedElement = element;
             _focusedIndex = index;
             return;
         }
 
         PushToRecyclePool(recycleKey, element);
+    }
+
+    private void ReleaseFocusedElement()
+    {
+        if (_focusedElement == null)
+        {
+            return;
+        }
+
+        Control element = _focusedElement;
+        _focusedElement = null;
+        _focusedIndex = -1;
+        RecycleRemovedElement(element);
     }
 
     private void RecycleRemovedElement(Control element)
@@ -459,6 +487,11 @@ public class StretchWrapPanel : VirtualizingPanel
         if (element.IsKeyboardFocusWithin)
         {
             ItemsControl?.Focus();
+        }
+
+        if (ItemsControl != null && KeyboardNavigation.GetTabOnceActiveElement(ItemsControl) == element)
+        {
+            KeyboardNavigation.SetTabOnceActiveElement(ItemsControl, null);
         }
 
         ItemContainerGenerator?.ClearItemContainer(element);
@@ -559,12 +592,7 @@ public class StretchWrapPanel : VirtualizingPanel
         _realized.Clear();
         _realizedIndices.Clear();
 
-        if (_focusedElement != null)
-        {
-            RecycleRemovedElement(_focusedElement);
-            _focusedElement = null;
-            _focusedIndex = -1;
-        }
+        ReleaseFocusedElement();
 
         if (_scrollToElement != null)
         {

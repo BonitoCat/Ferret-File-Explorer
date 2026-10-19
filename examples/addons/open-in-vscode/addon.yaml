@@ -13,3 +13,10 @@ actions:
     command: code
     args: ["{paths}"]
     shortcut: Ctrl+Alt+C
+
+  - id: code
+    title: $OpenInVsCode
+    location: path-bar
+    keywords: [code, vscode]
+    command: code
+    args: ["{dir}", "{args}"]

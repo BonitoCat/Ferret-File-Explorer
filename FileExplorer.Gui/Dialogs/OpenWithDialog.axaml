@@ -1,16 +1,17 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:controls="using:FileExplorer.Gui.Controls"
         x:Class="FileExplorer.Gui.Dialogs.OpenWithDialog"
         Title="{markup:Translate Key=OpenWith}"
-        Width="440"
-        Height="260"
+        Width="460"
+        Height="480"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         Background="#242426"
         Foreground="#E0E0E0">
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto"
+    <Grid RowDefinitions="Auto,*,Auto,Auto"
           Margin="20">
 
         <TextBlock Grid.Row="0"
@@ -19,45 +20,16 @@
                    FontWeight="SemiBold"
                    Margin="0,0,0,12"/>
 
-        <TextBlock Grid.Row="1"
-                   Text="{markup:Translate Key=CommandOrExecutable}"
-                   FontSize="12"
-                   Foreground="#AAAAAA"
-                   Margin="0,0,0,6"/>
+        <controls:AppChooser Grid.Row="1"
+                             x:Name="Chooser"/>
 
-        <Grid Grid.Row="2"
-              ColumnDefinitions="*,Auto"
-              VerticalAlignment="Top">
-
-            <TextBox Grid.Column="0"
-                     x:Name="CommandTextBox"
-                     CornerRadius="6,0,0,6"
-                     FontSize="13"
-                     Watermark="{markup:Translate Key=OpenWithWatermark}"/>
-
-            <Button Grid.Column="1"
-                    Click="OnBrowseProgramClick"
-                    Background="#333338"
-                    BorderBrush="#3E3E42"
-                    BorderThickness="0,1,1,1"
-                    CornerRadius="0,6,6,0"
-                    Padding="10,0"
-                    Height="32"
-                    VerticalContentAlignment="Center"
-                    ToolTip.Tip="{markup:Translate Key=BrowseForProgram}">
-                <Image Source="{markup:Icon Key=folder}"
-                       Width="15"
-                       Height="15"/>
-            </Button>
-        </Grid>
-
-        <CheckBox Grid.Row="3"
+        <CheckBox Grid.Row="2"
                   x:Name="AlwaysOpenCheckBox"
                   Content="{markup:Translate Key=AlwaysOpenWith}"
                   Margin="0,12,0,0"
                   FontSize="12"/>
 
-        <StackPanel Grid.Row="4"
+        <StackPanel Grid.Row="3"
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Spacing="8"
@@ -74,7 +46,7 @@
 
             <Button Content="{markup:Translate Key=OK}"
                     Click="OnOkClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="80"
                     Padding="14,6"

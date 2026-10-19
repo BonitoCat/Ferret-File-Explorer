@@ -1,0 +1,97 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.AboutDialog"
+        Title="{markup:Translate Key=AboutTitle}"
+        Width="440"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Window.Styles>
+        <Style Selector="Button.link">
+            <Setter Property="Background"
+                    Value="#333333"/>
+            <Setter Property="CornerRadius"
+                    Value="6"/>
+            <Setter Property="Padding"
+                    Value="14,6"/>
+            <Setter Property="HorizontalContentAlignment"
+                    Value="Center"/>
+        </Style>
+    </Window.Styles>
+
+    <StackPanel Margin="24"
+                Spacing="16">
+
+        <StackPanel Spacing="6"
+                    HorizontalAlignment="Center">
+
+            <Image Source="/Assets/folder.png"
+                   Width="72"
+                   Height="72"
+                   HorizontalAlignment="Center"/>
+
+            <TextBlock x:Name="NameText"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center"/>
+
+            <TextBlock x:Name="VersionText"
+                       FontSize="12"
+                       Foreground="#AAAAAA"
+                       HorizontalAlignment="Center"/>
+        </StackPanel>
+
+        <TextBlock Text="{markup:Translate Key=AboutDescription}"
+                   TextWrapping="Wrap"
+                   TextAlignment="Center"
+                   FontSize="13"
+                   Foreground="#CCCCCC"/>
+
+        <Border Background="#1E1E20"
+                BorderBrush="#333333"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="12,8">
+            <SelectableTextBlock x:Name="RuntimeText"
+                                 TextWrapping="Wrap"
+                                 TextAlignment="Center"
+                                 FontSize="11"
+                                 Foreground="#888888"/>
+        </Border>
+
+        <TextBlock Text="{markup:Translate Key=AboutLicense}"
+                   FontSize="11"
+                   Foreground="#888888"
+                   HorizontalAlignment="Center"/>
+
+        <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+
+            <Button Grid.Column="0"
+                    Classes="link"
+                    Content="{markup:Translate Key=AboutGitHub}"
+                    Click="OnGitHubClick"/>
+
+            <Button Grid.Column="1"
+                    Classes="link"
+                    Content="{markup:Translate Key=AboutReportBug}"
+                    Click="OnReportBugClick"
+                    Margin="8,0,0,0"/>
+
+            <Button Grid.Column="3"
+                    Content="{markup:Translate Key=Close}"
+                    Click="OnCloseClick"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="White"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    CornerRadius="6"
+                    IsCancel="True"
+                    IsDefault="True"/>
+        </Grid>
+    </StackPanel>
+</Window>

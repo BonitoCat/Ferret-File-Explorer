@@ -17,14 +17,6 @@
     </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../MetadataGenerator/MetadataGenerator/MetadataGenerator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-  </ItemGroup>
-  
-  <ItemGroup>
-    <AdditionalFiles Include="builds/fe-linux-x64-full/DEBIAN/control" />
-  </ItemGroup>
-  
-  <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
 </Project>
