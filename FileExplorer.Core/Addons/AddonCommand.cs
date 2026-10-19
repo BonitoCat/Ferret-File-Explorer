@@ -7,6 +7,7 @@ public enum AddonCommandKind
     Status,
     Message,
     Open,
+    Prompt,
 }
 
 public sealed record AddonCommand(AddonCommandKind Kind, string Argument)
@@ -33,6 +34,7 @@ public sealed record AddonCommand(AddonCommandKind Kind, string Argument)
             "status" => AddonCommandKind.Status,
             "message" or "alert" => AddonCommandKind.Message,
             "open" => AddonCommandKind.Open,
+            "prompt" or "input" => AddonCommandKind.Prompt,
             _ => null,
         };
         if (kind == null)

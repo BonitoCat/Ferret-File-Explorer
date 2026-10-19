@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -398,11 +399,12 @@ public partial class MainWindow
             return;
         }
 
+        Process? process = null;
         try
         {
-            AddonRunner.Start(
+            process = AddonRunner.Start(
                 launch,
-                command => Dispatcher.UIThread.Post(() => HandleAddonCommand(addonName, command)),
+                command => Dispatcher.UIThread.Post(() => HandleAddonCommand(addonName, command, process)),
                 (exitCode, stderr) => Dispatcher.UIThread.Post(() => OnAddonExited(action, addonName, exitCode, stderr)));
         }
         catch (Exception ex)
@@ -427,7 +429,7 @@ public partial class MainWindow
             : LocalizationService.Format("AddonExitedWithError", addonName, lastError);
     }
 
-    private async void HandleAddonCommand(string addonName, AddonCommand command)
+    private async void HandleAddonCommand(string addonName, AddonCommand command, Process? process)
     {
         string argument = command.Argument.Trim();
         switch (command.Kind)
@@ -448,6 +450,40 @@ public partial class MainWindow
             case AddonCommandKind.Open:
                 OpenAddonPath(ResolveAddonPath(argument));
                 break;
+            case AddonCommandKind.Prompt:
+                InputDialog input = new(addonName, command.Argument);
+                string? answer = await input.ShowDialog<string?>(this);
+                ReplyToAddon(process, answer);
+                break;
+        }
+    }
+
+    private static void ReplyToAddon(Process? process, string? answer)
+    {
+        if (process == null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (process.HasExited)
+            {
+                return;
+            }
+
+            if (answer == null)
+            {
+                process.StandardInput.Close();
+                return;
+            }
+
+            process.StandardInput.WriteLine(answer.Replace("\r", " ").Replace('\n', ' '));
+            process.StandardInput.Flush();
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            Logger.LogW($"Could not send prompt answer to addon: {ex.Message}");
         }
     }
 

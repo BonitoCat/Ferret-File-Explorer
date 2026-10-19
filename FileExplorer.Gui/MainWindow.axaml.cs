@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Threading.Tasks;
 using Avalonia;
@@ -11,6 +12,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -52,6 +54,10 @@ public partial class MainWindow : Window
     private HashSet<string> _pendingSelectPaths = new();
     private Point _fileDragStart;
     private FileItemViewModel? _draggedFile;
+    private PointerPressedEventArgs? _fileDragPressEvent;
+    private List<string>? _activeDragPaths;
+    private IDataTransfer? _dragPathsSource;
+    private List<string> _dragPaths = new();
     private FileItemViewModel? _clickedAlreadySelectedItem;
 
     private Button? _hoveredBreadcrumbButton;
@@ -142,35 +148,7 @@ public partial class MainWindow : Window
             {
                 X11WindowHelper.ConfigureWindow(handle.Handle);
                 X11WindowHelper.CompleteStartupNotification(handle.Handle);
-                X11XdndHook.Hook(
-                    this,
-                    (paths, rootX, rootY, isCopy) =>
-                    {
-                        Point? clientPoint = (rootX > 0 || rootY > 0)
-                            ? ((IRenderRoot) this).PointToClient(new PixelPoint(rootX, rootY))
-                            : null;
-
-                        HandleFilesDropped(paths, clientPoint, isCopy);
-                        ClearDropTargets();
-                    },
-                    (rootX, rootY) =>
-                    {
-                        Point clientPoint = ((IRenderRoot) this).PointToClient(new PixelPoint(rootX, rootY));
-                        HighlightDropTarget(clientPoint);
-                    },
-                    () =>
-                    {
-                        ClearDropTargets();
-                    },
-                    (paths, rootX, rootY) =>
-                    {
-                        Point? clientPoint = (rootX > 0 || rootY > 0)
-                            ? ((IRenderRoot) this).PointToClient(new PixelPoint(rootX, rootY))
-                            : null;
-
-                        HandleFilesLinked(paths, clientPoint);
-                        ClearDropTargets();
-                    });
+                X11DragFeedback.FixNoDropCursor();
             }
         };
         
@@ -630,7 +608,7 @@ public partial class MainWindow : Window
         e.Handled = true;
         string text = (PathTextBox.Text ?? "").Trim();
         string path = ResolvePathBarLocation(text);
-        if (PaneViewModel.IsNavigable(path) || path.Contains("://", StringComparison.Ordinal))
+        if (PaneViewModel.IsNavigable(path) || IsUrl(path))
         {
             ViewModel.NavigateTo(path);
             ViewModel.IsPathEditing = false;
@@ -646,6 +624,17 @@ public partial class MainWindow : Window
         PathTextBox.Text = ViewModel.CurrentPath;
         ViewModel.IsPathEditing = false;
         FocusActiveListBox();
+    }
+
+    private static bool IsUrl(string text)
+    {
+        int separator = text.IndexOf("://", StringComparison.Ordinal);
+        if (separator <= 0)
+        {
+            return false;
+        }
+
+        return char.IsLetter(text[0]) && text[..separator].All(c => char.IsLetterOrDigit(c) || c is '+' or '-' or '.');
     }
 
     private string ResolvePathBarLocation(string? text)
@@ -719,7 +708,7 @@ public partial class MainWindow : Window
         if (e.Key == Key.Escape)
         {
             SearchTextBox.Text = "";
-            TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+            TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
             FocusActiveListBox();
             e.Handled = true;
             return;
@@ -727,7 +716,7 @@ public partial class MainWindow : Window
 
         if (e.Key == Key.Enter)
         {
-            TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+            TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
             FocusActiveListBox();
             e.Handled = true;
         }
@@ -761,7 +750,7 @@ public partial class MainWindow : Window
             bool isInsideSearch = FindVisualParent<TextBox>(hit) == SearchTextBox;
             if (!isInsideSearch)
             {
-                GetTopLevel(this)?.FocusManager?.ClearFocus();
+                GetTopLevel(this)?.FocusManager?.Focus(null);
             }
         }
 
@@ -786,7 +775,7 @@ public partial class MainWindow : Window
         SyncPaneSelection(pane);
     }
 
-    private void OnPaneGotFocus(object? sender, GotFocusEventArgs e)
+    private void OnPaneGotFocus(object? sender, FocusChangedEventArgs e)
     {
         PaneViewModel? pane = GetPane(sender);
         if (pane == null)
@@ -1589,7 +1578,7 @@ public partial class MainWindow : Window
         if (IsAltKey(e.Key))
         {
             _altChordHandled = false;
-            _altUsedForDrag |= X11XdndHook.IsDragActive;
+            _altUsedForDrag |= _activeDragPaths != null;
             return;
         }
 
@@ -1773,7 +1762,7 @@ public partial class MainWindow : Window
         {
             if (e.Key == Key.Left)
             {
-                TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+                TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
                 FocusActiveListBox();
                 ViewModel.GoBack();
                 e.Handled = true;
@@ -1782,7 +1771,7 @@ public partial class MainWindow : Window
 
             if (e.Key == Key.Right)
             {
-                TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+                TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
                 FocusActiveListBox();
                 ViewModel.GoForward();
                 e.Handled = true;
@@ -1791,7 +1780,7 @@ public partial class MainWindow : Window
 
             if (e.Key == Key.Up)
             {
-                TopLevel.GetTopLevel(this)?.FocusManager?.ClearFocus();
+                TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
                 FocusActiveListBox();
                 ViewModel.GoUp();
                 e.Handled = true;
@@ -2058,6 +2047,7 @@ public partial class MainWindow : Window
                     !e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
                     _draggedFile = fileItem;
+                    _fileDragPressEvent = e;
                     _fileDragStart = e.GetPosition(this);
                     _potentialFileDrag = true;
                     _clickedAlreadySelectedItem = fileItem;
@@ -2077,6 +2067,7 @@ public partial class MainWindow : Window
                     activeList.SelectedItem = fileItem;
 
                     _draggedFile = fileItem;
+                    _fileDragPressEvent = e;
                     _fileDragStart = e.GetPosition(this);
                     _potentialFileDrag = true;
                 }
@@ -2192,17 +2183,16 @@ public partial class MainWindow : Window
                     paths.Add(_draggedFile.FullPath);
                 }
 
+                PointerPressedEventArgs? pressEvent = _fileDragPressEvent;
                 FileItemViewModel draggedItem = _draggedFile;
                 _draggedFile = null;
-
-                if (OperatingSystem.IsLinux())
+                _fileDragPressEvent = null;
+                if (pressEvent == null)
                 {
-                    X11XdndHook.StartDrag(this, paths, draggedItem);
                     return;
                 }
 
-                DataObject data = new();
-                List<IStorageItem> storageItems = new();
+                DataTransfer data = new();
                 foreach (string path in paths)
                 {
                     IStorageItem? item = Directory.Exists(path)
@@ -2210,29 +2200,25 @@ public partial class MainWindow : Window
                         : await StorageProvider.TryGetFileFromPathAsync(path);
                     if (item != null)
                     {
-                        storageItems.Add(item);
+                        data.Add(DataTransferItem.CreateFile(item));
                     }
                 }
 
-                if (storageItems.Count > 0)
+                if (data.Items.Count == 0)
                 {
-                    data.Set(DataFormats.Files, storageItems);
-                }
-                else
-                {
-                    data.Set(DataFormats.Files, paths);
+                    return;
                 }
 
-                string uriList = string.Join("\r\n", paths.Select(p => new Uri(p, UriKind.Absolute).AbsoluteUri)) + "\r\n";
-                data.Set("text/uri-list", uriList);
-                data.Set(DataFormats.Text, string.Join(Environment.NewLine, paths));
-
+                _activeDragPaths = paths;
+                X11DragFeedback.ShowPreview(this, draggedItem, paths.Count);
                 try
                 {
-                    await DragDrop.DoDragDrop(e, data, DragDropEffects.Copy | DragDropEffects.Move);
+                    await DoDragDropAsync(pressEvent, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
                 }
                 finally
                 {
+                    X11DragFeedback.HidePreview();
+                    _activeDragPaths = null;
                     ClearDropTargets();
                 }
             }
@@ -2260,16 +2246,62 @@ public partial class MainWindow : Window
         ClearDropTargets();
         _potentialFileDrag = false;
         _draggedFile = null;
-
-        if (OperatingSystem.IsLinux() && X11XdndHook.IsDragActive)
-        {
-            X11XdndHook.DropDrag();
-        }
+        _fileDragPressEvent = null;
     }
 
     private void OnAppDragLeave(object? sender, DragEventArgs e)
     {
+        _dragPathsSource = null;
         ClearDropTargets();
+    }
+
+    private List<string> GetDragPaths(DragEventArgs e)
+    {
+        if (_activeDragPaths != null)
+        {
+            return _activeDragPaths;
+        }
+
+        if (!ReferenceEquals(e.DataTransfer, _dragPathsSource))
+        {
+            _dragPathsSource = e.DataTransfer;
+            _dragPaths = ExtractDroppedPaths(e.DataTransfer);
+        }
+
+        return _dragPaths;
+    }
+
+    private DragDropEffects ChooseDropEffect(DragEventArgs e, List<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return DragDropEffects.None;
+        }
+
+        string targetDir = ResolveDropTarget(paths, e.GetPosition(this));
+        if (NetworkBrowseService.IsBrowseLocation(targetDir))
+        {
+            return DragDropEffects.None;
+        }
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        {
+            return DragDropEffects.Link;
+        }
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            return DragDropEffects.Copy;
+        }
+
+        bool isMove = e.KeyModifiers.HasFlag(KeyModifiers.Shift) || paths.All(path => FileUtils.AreOnSameFileSystem(path, targetDir));
+        if (!isMove)
+        {
+            return DragDropEffects.Copy;
+        }
+
+        bool isAlreadyThere = paths.All(path => string.Equals(Path.GetDirectoryName(path.TrimEnd('/')), targetDir.TrimEnd('/'), StringComparison.Ordinal));
+        return isAlreadyThere ? DragDropEffects.None : DragDropEffects.Move;
     }
 
     private bool IsInvalidDropDestination(string targetPath, IEnumerable<string>? sourcePaths = null)
@@ -2279,7 +2311,7 @@ public partial class MainWindow : Window
             return true;
         }
 
-        IEnumerable<string> sources = sourcePaths ?? X11XdndHook.ActiveDragPaths ?? GetSelectedItems().Select(i => i.FullPath);
+        IEnumerable<string> sources = sourcePaths ?? _activeDragPaths ?? GetSelectedItems().Select(i => i.FullPath);
         string normTarget = Path.GetFullPath(targetPath).TrimEnd(Path.DirectorySeparatorChar);
 
         foreach (string src in sources)
@@ -2349,7 +2381,7 @@ public partial class MainWindow : Window
 
     private void OnAppDragOver(object? sender, DragEventArgs e)
     {
-        e.DragEffects = DragDropEffects.Copy | DragDropEffects.Move;
+        e.DragEffects = ChooseDropEffect(e, GetDragPaths(e));
         e.Handled = true;
 
         HighlightDropTarget(e.GetPosition(this));
@@ -2431,22 +2463,24 @@ public partial class MainWindow : Window
 
     private void OnAppDragDrop(object? sender, DragEventArgs e)
     {
-        List<string> paths = ExtractDroppedPaths(e.Data);
-        if (paths.Count == 0)
+        List<string> paths = GetDragPaths(e);
+        DragDropEffects effect = ChooseDropEffect(e, paths);
+        _dragPathsSource = null;
+        if (effect == DragDropEffects.None)
         {
+            ClearDropTargets();
             return;
         }
 
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        e.DragEffects = effect;
+        e.Handled = true;
+        if (effect == DragDropEffects.Link)
         {
             HandleFilesLinked(paths, e.GetPosition(this));
-            e.Handled = true;
             return;
         }
 
-        bool isCopy = e.KeyModifiers.HasFlag(KeyModifiers.Control);
-        HandleFilesDropped(paths, e.GetPosition(this), isCopy);
-        e.Handled = true;
+        HandleFilesDropped(paths, e.GetPosition(this), effect == DragDropEffects.Copy);
     }
 
     private void OnCancelOperationClick(object? sender, RoutedEventArgs e)
@@ -2454,16 +2488,12 @@ public partial class MainWindow : Window
         ViewModel.CancelOperation();
     }
 
-    private static List<string> ExtractDroppedPaths(IDataObject data)
+    private static List<string> ExtractDroppedPaths(IDataTransfer data)
     {
         List<string> paths = new();
 
-        object? filesObj = data.Get(DataFormats.Files);
-        if (filesObj is IEnumerable<string> stringPaths)
-        {
-            paths.AddRange(stringPaths);
-        }
-        else if (filesObj is IEnumerable<IStorageItem> storageItems)
+        IStorageItem[]? storageItems = data.TryGetFiles();
+        if (storageItems != null)
         {
             foreach (IStorageItem item in storageItems)
             {
@@ -2479,14 +2509,7 @@ public partial class MainWindow : Window
         string[] formats = ["text/uri-list", "x-special/gnome-copied-files", "text/plain", "STRING", "UTF8_STRING"];
         foreach (string format in formats)
         {
-            object? val = data.Get(format);
-            string? text = val switch
-            {
-                string s => s,
-                byte[] b => Encoding.UTF8.GetString(b),
-                _ => null,
-            };
-
+            string? text = data.TryGetValue(DataFormat.CreateStringPlatformFormat(format));
             if (string.IsNullOrEmpty(text))
             {
                 continue;

@@ -185,7 +185,7 @@ public class StretchWrapPanel : VirtualizingPanel
             return realized;
         }
 
-        if (this.GetVisualRoot() == null)
+        if (this.GetPresentationSource() == null)
         {
             return null;
         }

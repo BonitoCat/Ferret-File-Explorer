@@ -16,6 +16,9 @@ public static partial class FileUtils
     [LibraryImport("libc.so.6", EntryPoint = "statvfs", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int LinuxStatVfs(string path, out StatVfs buffer);
 
+    [LibraryImport("libc.so.6", EntryPoint = "stat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+    private static partial int LinuxStat(string path, [Out] byte[] buffer);
+
     [StructLayout(LayoutKind.Sequential)]
     private struct StatVfs
     {
@@ -122,6 +125,30 @@ public static partial class FileUtils
             return root == null ? null : new DriveInfo(root).AvailableFreeSpace;
         }
         catch
+        {
+            return null;
+        }
+    }
+
+    public static bool AreOnSameFileSystem(string path, string otherPath)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return string.Equals(Path.GetPathRoot(Path.GetFullPath(path)), Path.GetPathRoot(Path.GetFullPath(otherPath)), StringComparison.OrdinalIgnoreCase);
+        }
+
+        ulong? device = GetDeviceId(path);
+        return device != null && device == GetDeviceId(otherPath);
+    }
+
+    private static ulong? GetDeviceId(string path)
+    {
+        byte[] buffer = new byte[256];
+        try
+        {
+            return LinuxStat(path, buffer) == 0 ? BitConverter.ToUInt64(buffer, 0) : null;
+        }
+        catch (EntryPointNotFoundException)
         {
             return null;
         }

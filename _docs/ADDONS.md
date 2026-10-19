@@ -225,6 +225,22 @@ A script can control Ferret by printing these lines to stdout. Ferret ignores al
 | `fe:status <text>`   | Show text in the status bar                       |
 | `fe:message <text>`  | Show a message dialog (`\n` for line breaks)      |
 | `fe:open <path>`     | Open a file with its default application          |
+| `fe:prompt <text>`   | Ask the user for text (see below)                 |
+
+### Asking for input
+
+`fe:prompt <text>` opens a small dialog with your text, an input field, and OK and Cancel buttons. Ferret sends the answer back to your script's stdin as a single line. If the user clicks Cancel, Ferret closes stdin, so `read` fails. That way an empty answer and a cancel can be told apart.
+
+```bash
+echo "fe:prompt Name of the new branch:"
+if ! IFS= read -r branch; then
+    exit 0
+fi
+
+git switch -c "$branch"
+```
+
+Prompts only work for actions without `terminal: true`. In a terminal, use `read` directly.
 
 ### Full example
 

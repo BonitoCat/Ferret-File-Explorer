@@ -47,6 +47,7 @@ public static class AddonRunner
             FileName = launch.Command[0],
             WorkingDirectory = launch.WorkingDirectory,
             UseShellExecute = false,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             CreateNoWindow = true,
