@@ -257,6 +257,12 @@ public sealed class Addon
             }
 
             AddonAction action = new(this, manifest, location, targets, separatorBefore, separatorAfter, i);
+            if (location == AddonLocation.PathBar && action.Keywords.Count == 0)
+            {
+                SetError("AddonErrorNoKeywords", action.Id);
+                continue;
+            }
+
             if (action.Command == null && action.ScriptPath == null)
             {
                 SetError("AddonErrorNoScript", action.Id);
@@ -289,6 +295,9 @@ public sealed class Addon
                 return true;
             case "addonsmenu" or "addons" or "menu":
                 location = AddonLocation.AddonsMenu;
+                return true;
+            case "pathbar" or "path" or "locationbar":
+                location = AddonLocation.PathBar;
                 return true;
             default:
                 location = AddonLocation.ContextMenu;

@@ -1,0 +1,47 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:markup="using:FileExplorer.Gui.Markup"
+             x:Class="FileExplorer.Gui.Controls.AppChooser">
+
+    <Grid RowDefinitions="*,Auto,Auto">
+
+        <ListBox Grid.Row="0"
+                 x:Name="AppsListBox"
+                 Background="#1C1C1E"
+                 CornerRadius="8"
+                 SelectionChanged="OnAppSelectionChanged"
+                 DoubleTapped="OnAppDoubleTapped"/>
+
+        <TextBlock Grid.Row="1"
+                   Text="{markup:Translate Key=CommandOrExecutable}"
+                   FontSize="12"
+                   Foreground="#AAAAAA"
+                   Margin="0,12,0,6"/>
+
+        <Grid Grid.Row="2"
+              ColumnDefinitions="*,Auto">
+
+            <TextBox Grid.Column="0"
+                     x:Name="CommandTextBox"
+                     CornerRadius="6,0,0,6"
+                     FontSize="13"
+                     Watermark="{markup:Translate Key=OpenWithWatermark}"
+                     TextChanged="OnCommandTextChanged"/>
+
+            <Button Grid.Column="1"
+                    Click="OnBrowseProgramClick"
+                    Background="#333338"
+                    BorderBrush="#3E3E42"
+                    BorderThickness="0,1,1,1"
+                    CornerRadius="0,6,6,0"
+                    Padding="10,0"
+                    Height="32"
+                    VerticalContentAlignment="Center"
+                    ToolTip.Tip="{markup:Translate Key=BrowseForProgram}">
+                <Image Source="{markup:Icon Key=folder}"
+                       Width="15"
+                       Height="15"/>
+            </Button>
+        </Grid>
+    </Grid>
+</UserControl>

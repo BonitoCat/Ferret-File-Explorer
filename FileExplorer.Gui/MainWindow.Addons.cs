@@ -363,6 +363,18 @@ public partial class MainWindow
         return false;
     }
 
+    private bool TryRunAddonPathBarCommand(string keyword, string input)
+    {
+        AddonAction? action = AddonService.Instance.FindPathBarAction(keyword);
+        if (action == null)
+        {
+            return false;
+        }
+
+        RunAddonAction(action, new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath), input));
+        return true;
+    }
+
     private async void RunAddonAction(AddonAction action, AddonContext context)
     {
         string language = LocalizationService.Instance.LanguageCode;

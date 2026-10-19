@@ -89,7 +89,7 @@
 
             <Button Content="{markup:Translate Key=Connect}"
                     Click="OnConnectClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="90"
                     Padding="14,6"

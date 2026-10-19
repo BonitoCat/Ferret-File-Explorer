@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -10,6 +13,7 @@ using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
+using FileExplorer.Core.Entries;
 using FileExplorer.Gui.ViewModels;
 
 namespace FileExplorer.Gui.Services;
@@ -20,6 +24,7 @@ public static class ThumbnailService
     private const int MaxMemoryEntries = 4000;
     private const int JpegHeaderReadSize = 256 * 1024;
     private const string AllowedUriChars = "/!$&'()*+,;=:@-._~";
+    private static readonly TimeSpan ThumbnailerTimeout = TimeSpan.FromSeconds(15);
 
     private static readonly ConcurrentDictionary<string, CachedThumbnail> _memoryCache = new(StringComparer.Ordinal);
     private static readonly Channel<ThumbnailRequest> _queue = Channel.CreateUnbounded<ThumbnailRequest>();
@@ -29,6 +34,7 @@ public static class ThumbnailService
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache"),
         "thumbnails");
     private static readonly uint[] _crcTable = BuildCrcTable();
+    private static readonly Lazy<Dictionary<string, string[]>> _thumbnailers = new(LoadThumbnailers);
 
     private readonly record struct ThumbnailRequest(FileItemViewModel Item, long MTime, CancellationToken Token);
 
@@ -47,6 +53,11 @@ public static class ThumbnailService
             };
             worker.Start();
         }
+    }
+
+    public static bool CanThumbnail(string? mimeType)
+    {
+        return mimeType != null && _thumbnailers.Value.ContainsKey(mimeType);
     }
 
     public static void Request(FileItemViewModel item, DateTime lastWriteTime, CancellationToken token)
@@ -96,7 +107,7 @@ public static class ThumbnailService
             Bitmap? bitmap = null;
             try
             {
-                bitmap = LoadThumbnail(path, request.MTime);
+                bitmap = LoadThumbnail(request.Item, request.MTime);
             }
             catch
             {
@@ -128,8 +139,9 @@ public static class ThumbnailService
         _memoryCache[path] = new(mtime, bitmap);
     }
 
-    private static Bitmap? LoadThumbnail(string path, long mtime)
+    private static Bitmap? LoadThumbnail(FileItemViewModel item, long mtime)
     {
+        string path = item.FullPath;
         string uri = ToFileUri(path);
         string hash = Convert.ToHexString(MD5.HashData(Encoding.UTF8.GetBytes(uri))).ToLowerInvariant();
 
@@ -137,6 +149,11 @@ public static class ThumbnailService
         if (cached != null)
         {
             return cached;
+        }
+
+        if (item.FileType != FileType.Image)
+        {
+            return RunThumbnailer(path, uri, hash, mtime, item.MimeType);
         }
 
         Bitmap? embedded = LoadEmbeddedJpegThumbnail(path);
@@ -366,6 +383,163 @@ public static class ThumbnailService
         return new((width - contentWidth) / 2, (height - contentHeight) / 2, contentWidth, contentHeight);
     }
 
+    private static Bitmap? RunThumbnailer(string path, string uri, string hash, long mtime, string? mimeType)
+    {
+        if (mimeType == null || !_thumbnailers.Value.TryGetValue(mimeType, out string[]? exec))
+        {
+            return null;
+        }
+
+        string output = Path.Combine(Path.GetTempPath(), $"fe-thumb-{Environment.ProcessId}-{Guid.NewGuid():N}.png");
+        try
+        {
+            ProcessStartInfo psi = new()
+            {
+                FileName = exec[0],
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (string arg in exec.Skip(1))
+            {
+                psi.ArgumentList.Add(arg
+                    .Replace("%i", path)
+                    .Replace("%u", uri)
+                    .Replace("%o", output)
+                    .Replace("%s", ThumbnailSize.ToString())
+                    .Replace("%%", "%"));
+            }
+
+            using Process? process = Process.Start(psi);
+            if (process == null)
+            {
+                return null;
+            }
+
+            _ = process.StandardOutput.ReadToEndAsync();
+            _ = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(ThumbnailerTimeout))
+            {
+                process.Kill(true);
+                return null;
+            }
+
+            if (process.ExitCode != 0 || !File.Exists(output))
+            {
+                return null;
+            }
+
+            return ScaleAndCache(output, uri, hash, mtime);
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(output);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static Dictionary<string, string[]> LoadThumbnailers()
+    {
+        Dictionary<string, string[]> result = new(StringComparer.OrdinalIgnoreCase);
+        string dataHome = Environment.GetEnvironmentVariable("XDG_DATA_HOME") is { Length: > 0 } home
+            ? home
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local", "share");
+        string dataDirs = Environment.GetEnvironmentVariable("XDG_DATA_DIRS") is { Length: > 0 } dirs ? dirs : "/usr/local/share:/usr/share";
+
+        foreach (string dataDir in dataDirs.Split(':', StringSplitOptions.RemoveEmptyEntries).Reverse().Append(dataHome))
+        {
+            string dir = Path.Combine(dataDir, "thumbnailers");
+            if (!Directory.Exists(dir))
+            {
+                continue;
+            }
+
+            foreach (string file in Directory.EnumerateFiles(dir, "*.thumbnailer"))
+            {
+                ParseThumbnailer(file, result);
+            }
+        }
+
+        return result;
+    }
+
+    private static void ParseThumbnailer(string file, Dictionary<string, string[]> result)
+    {
+        string? tryExec = null;
+        string? exec = null;
+        string[] mimeTypes = [];
+        try
+        {
+            foreach (string rawLine in File.ReadLines(file))
+            {
+                string line = rawLine.Trim();
+                if (line.StartsWith("TryExec=", StringComparison.Ordinal))
+                {
+                    tryExec = line[8..].Trim();
+                }
+                else if (line.StartsWith("Exec=", StringComparison.Ordinal))
+                {
+                    exec = line[5..].Trim();
+                }
+                else if (line.StartsWith("MimeType=", StringComparison.Ordinal))
+                {
+                    mimeTypes = line[9..].Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                }
+            }
+        }
+        catch
+        {
+            return;
+        }
+
+        if (string.IsNullOrEmpty(exec))
+        {
+            return;
+        }
+
+        string[] args = exec.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (!IsExecutableAvailable(tryExec ?? args[0]))
+        {
+            return;
+        }
+
+        foreach (string mimeType in mimeTypes)
+        {
+            result[mimeType] = args;
+        }
+    }
+
+    private static bool IsExecutableAvailable(string program)
+    {
+        if (Path.IsPathRooted(program))
+        {
+            return File.Exists(program);
+        }
+
+        string pathVariable = Environment.GetEnvironmentVariable("PATH") ?? "";
+        return pathVariable.Split(':', StringSplitOptions.RemoveEmptyEntries).Any(dir => File.Exists(Path.Combine(dir, program)));
+    }
+
+    private static Bitmap? ScaleAndCache(string imagePath, string uri, string hash, long mtime)
+    {
+        Bitmap thumbnail;
+        using (FileStream stream = File.OpenRead(imagePath))
+        {
+            thumbnail = Bitmap.DecodeToWidth(stream, ThumbnailSize);
+        }
+
+        return FinishThumbnail(thumbnail, uri, hash, mtime);
+    }
+
     private static Bitmap? GenerateThumbnail(string path, string uri, string hash, long mtime)
     {
         Bitmap thumbnail;
@@ -374,6 +548,11 @@ public static class ThumbnailService
             thumbnail = Bitmap.DecodeToWidth(stream, ThumbnailSize);
         }
 
+        return FinishThumbnail(thumbnail, uri, hash, mtime);
+    }
+
+    private static Bitmap? FinishThumbnail(Bitmap thumbnail, string uri, string hash, long mtime)
+    {
         if (thumbnail.PixelSize.Height > ThumbnailSize)
         {
             int scaledWidth = Math.Max(1, thumbnail.PixelSize.Width * ThumbnailSize / thumbnail.PixelSize.Height);

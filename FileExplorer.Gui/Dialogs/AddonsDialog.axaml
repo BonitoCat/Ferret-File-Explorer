@@ -151,7 +151,7 @@
         <Button Grid.Row="2"
                 Content="{markup:Translate Key=Close}"
                 Click="OnCloseClick"
-                Background="#3584E4"
+                Background="{DynamicResource AccentBrush}"
                 Foreground="White"
                 MinWidth="90"
                 Padding="14,6"

@@ -8,4 +8,14 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor || true
     fi
+    if command -v pkill >/dev/null 2>&1; then
+        pkill -x ferret-portal || true
+        pkill -f -x /usr/libexec/xdg-desktop-portal || true
+    fi
+fi
+
+if [ "$1" = "upgrade" ]; then
+    if command -v pkill >/dev/null 2>&1; then
+        pkill -x ferret-portal || true
+    fi
 fi

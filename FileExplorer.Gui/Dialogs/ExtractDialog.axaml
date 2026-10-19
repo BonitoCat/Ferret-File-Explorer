@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.ExtractDialog"
+        Title="{markup:Translate Key=Extract}"
+        Width="380"
+        SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <StackPanel Margin="18"
+                Spacing="10">
+
+        <TextBlock x:Name="PromptLabel"
+                   FontSize="13"
+                   TextWrapping="Wrap"/>
+
+        <CheckBox x:Name="IntoFolderCheckBox"
+                  Content="{markup:Translate Key=ExtractIntoFolder}"
+                  IsChecked="True"
+                  FontSize="13"
+                  IsCheckedChanged="OnIntoFolderChanged"/>
+
+        <TextBox x:Name="FolderNameTextBox"
+                 CornerRadius="6"
+                 FontSize="13"
+                 TextChanged="OnFolderNameChanged"/>
+
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="8"
+                    Margin="0,2,0,0">
+
+            <Button Content="{markup:Translate Key=Cancel}"
+                    Click="OnCancelClick"
+                    Background="#333333"
+                    MinWidth="75"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsCancel="True"/>
+
+            <Button x:Name="ExtractButton"
+                    Content="{markup:Translate Key=Extract}"
+                    Click="OnExtractClick"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="White"
+                    MinWidth="75"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </StackPanel>
+</Window>

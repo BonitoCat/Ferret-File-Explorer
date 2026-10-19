@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using FileExplorer.Gui.Services;
 using static Avalonia.Interactivity.RoutingStrategies;
 
 namespace FileExplorer.Gui.Dialogs;
@@ -9,6 +10,11 @@ namespace FileExplorer.Gui.Dialogs;
 public partial class ConfirmDialog : Window
 {
     public bool Confirmed { get; private set; }
+
+    public string CancelText
+    {
+        set => CancelButton.Content = value;
+    }
 
     public ConfirmDialog()
     {
@@ -53,7 +59,7 @@ public partial class ConfirmDialog : Window
         }
         else
         {
-            ConfirmButton.Background = new SolidColorBrush(Color.Parse("#3584E4"));
+            ConfirmButton.Background = ThemeService.AccentBrush;
         }
     }
 

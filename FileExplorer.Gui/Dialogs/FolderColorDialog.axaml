@@ -62,7 +62,7 @@
 
             <Button Content="{markup:Translate Key=Apply}"
                     Click="OnApplyClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="90"
                     Padding="14,6"

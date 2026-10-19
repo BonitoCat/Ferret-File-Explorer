@@ -17,6 +17,50 @@ public static class GuiSettings
         set => SetBool("window_maximized", value);
     }
 
+    public static string? PrimaryColor
+    {
+        get => GetString("primary_color");
+        set => SetString("primary_color", value);
+    }
+
+    public static string? AccentColor
+    {
+        get => GetString("accent_color");
+        set => SetString("accent_color", value);
+    }
+
+    public static string? SelectionColor
+    {
+        get => GetString("selection_color");
+        set => SetString("selection_color", value);
+    }
+
+    private static string? GetString(string key)
+    {
+        lock (SaveLock)
+        {
+            return Load().TryGetValue(key, out string? value) && !string.IsNullOrEmpty(value) ? value : null;
+        }
+    }
+
+    private static void SetString(string key, string? value)
+    {
+        lock (SaveLock)
+        {
+            Dictionary<string, string> values = Load();
+            if (value == null)
+            {
+                values.Remove(key);
+            }
+            else
+            {
+                values[key] = value;
+            }
+
+            Save(values);
+        }
+    }
+
     private static bool GetBool(string key, bool fallback)
     {
         lock (SaveLock)
@@ -31,14 +75,19 @@ public static class GuiSettings
         {
             Dictionary<string, string> values = Load();
             values[key] = value ? "true" : "false";
-            try
-            {
-                AppPaths.EnsureDir(AppPaths.DataDir);
-                File.WriteAllLines(SettingsFile, values.Select(pair => $"{pair.Key}={pair.Value}"));
-            }
-            catch
-            {
-            }
+            Save(values);
+        }
+    }
+
+    private static void Save(Dictionary<string, string> values)
+    {
+        try
+        {
+            AppPaths.EnsureDir(AppPaths.DataDir);
+            File.WriteAllLines(SettingsFile, values.Select(pair => $"{pair.Key}={pair.Value}"));
+        }
+        catch
+        {
         }
     }
 

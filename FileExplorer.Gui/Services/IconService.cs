@@ -53,7 +53,7 @@ public static class IconService
             FileType.Archive => Get("archive"),
             FileType.Image => Get("image"),
             FileType.Video => Get("video"),
-            FileType.Audio => Get("audio"),
+            FileType.Audio => Get("file-audio"),
             FileType.Deb => Get("package"),
             _ => Get("file"),
         };
@@ -108,7 +108,24 @@ public static class IconService
             return color == null ? Get(GetForFolder(path)) : GetColored(GetForFolder(path), color);
         }
 
-        return GetForFile(type);
+        if (string.IsNullOrEmpty(path))
+        {
+            return GetForFile(type);
+        }
+
+        IImage? custom = LoadFile(FileTypeIconService.GetCustomIconPath(path));
+        if (custom != null)
+        {
+            return custom;
+        }
+
+        if (type == FileType.Executable)
+        {
+            return GetForFile(type);
+        }
+
+        string? builtIn = FileTypeIconService.GetBuiltInIcon(path);
+        return builtIn != null ? Get(builtIn) : GetForFile(type);
     }
 
     public static IImage? GetColored(string iconName, string hex, bool cache = true)
@@ -235,61 +252,22 @@ public static class IconService
 
     private static IImage? LoadIcon(string iconName)
     {
-        string fileName = iconName.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
-            ? iconName
-            : $"{iconName}.svg";
-
-        string userOverridePath = Path.Combine(_userIconsDir, fileName);
-        if (File.Exists(userOverridePath))
+        string? svg = ReadIconSvg(iconName);
+        if (svg == null)
         {
-            try
-            {
-                using FileStream stream = File.OpenRead(userOverridePath);
-                SvgSource? source = SvgSource.LoadFromStream(stream, null);
-                if (source != null)
-                {
-                    return new SvgImage { Source = source };
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        string localAssetsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "Icons", fileName);
-        if (File.Exists(localAssetsPath))
-        {
-            try
-            {
-                using FileStream stream = File.OpenRead(localAssetsPath);
-                SvgSource? source = SvgSource.LoadFromStream(stream, null);
-                if (source != null)
-                {
-                    return new SvgImage { Source = source };
-                }
-            }
-            catch
-            {
-            }
+            return null;
         }
 
         try
         {
-            Uri resourceUri = new($"avares://FileExplorer.Gui/Assets/Icons/{fileName}");
-            if (AssetLoader.Exists(resourceUri))
-            {
-                using Stream stream = AssetLoader.Open(resourceUri);
-                SvgSource? source = SvgSource.LoadFromStream(stream, null);
-                if (source != null)
-                {
-                    return new SvgImage { Source = source };
-                }
-            }
+            string recolored = svg.Replace(FolderColorService.DefaultFolderColor, ThemeService.PrimaryColor, StringComparison.OrdinalIgnoreCase);
+            using MemoryStream stream = new(Encoding.UTF8.GetBytes(recolored));
+            SvgSource? source = SvgSource.LoadFromStream(stream, null);
+            return source != null ? new SvgImage { Source = source } : null;
         }
         catch
         {
+            return null;
         }
-
-        return null;
     }
 }

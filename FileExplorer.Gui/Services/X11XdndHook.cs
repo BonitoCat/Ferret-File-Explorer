@@ -262,6 +262,7 @@ public static class X11XdndHook
 
     private static readonly Dictionary<IntPtr, Delegate> OriginalHandlers = new();
     private static readonly Dictionary<IntPtr, Action<List<string>, int, int, bool>> DropCallbacks = new();
+    private static readonly Dictionary<IntPtr, Action<List<string>, int, int>> LinkCallbacks = new();
     private static readonly Dictionary<IntPtr, Action<int, int>> DragOverCallbacks = new();
     private static readonly Dictionary<IntPtr, Action> DragLeaveCallbacks = new();
     private static readonly Dictionary<IntPtr, IntPtr> ActiveSources = new();
@@ -282,6 +283,7 @@ public static class X11XdndHook
     private static IntPtr _xdndProxy;
     private static IntPtr _xdndActionCopy;
     private static IntPtr _xdndActionMove;
+    private static IntPtr _xdndActionLink;
     private static IntPtr _textUriList;
     private static IntPtr _atomTargets;
     private static IntPtr _atomAtom;
@@ -293,6 +295,7 @@ public static class X11XdndHook
 
     private static IntPtr _cursorCopy;
     private static IntPtr _cursorMove;
+    private static IntPtr _cursorLink;
     private static IntPtr _cursorNone;
     private static bool _cursorsLoaded;
 
@@ -373,7 +376,8 @@ public static class X11XdndHook
         Window window,
         Action<List<string>, int, int, bool> onDropped,
         Action<int, int>? onDragOver = null,
-        Action? onDragLeave = null)
+        Action? onDragLeave = null,
+        Action<List<string>, int, int>? onLinked = null)
     {
         if (!OperatingSystem.IsLinux())
         {
@@ -437,6 +441,11 @@ public static class X11XdndHook
         if (onDragLeave != null)
         {
             DragLeaveCallbacks[xid] = onDragLeave;
+        }
+
+        if (onLinked != null)
+        {
+            LinkCallbacks[xid] = onLinked;
         }
 
         Type delegateType = origHandler.GetType();
@@ -510,8 +519,7 @@ public static class X11XdndHook
         _lastRootX = rootX;
         _lastRootY = rootY;
 
-        bool isControl = (mask & 4) != 0;
-        _activeDragAction = isControl ? _xdndActionCopy : _xdndActionMove;
+        _activeDragAction = GetDragAction(mask);
 
         _activeDragSourceWindow = xid;
         _activeDragPaths = filePaths;
@@ -528,7 +536,7 @@ public static class X11XdndHook
 
         ShowPreview(rootX, rootY, firstItem, filePaths.Count);
 
-        IntPtr initialCursor = (_activeDragAction == _xdndActionCopy) ? _cursorCopy : _cursorMove;
+        IntPtr initialCursor = GetActionCursor();
         if (initialCursor == IntPtr.Zero)
         {
             initialCursor = _cursorMove != IntPtr.Zero ? _cursorMove : _cursorCopy;
@@ -569,12 +577,12 @@ public static class X11XdndHook
             return;
         }
 
-        bool isControl = (mask & 4) != 0;
-        IntPtr newAction = isControl ? _xdndActionCopy : _xdndActionMove;
+        IntPtr newAction = GetDragAction(mask);
         bool actionChanged = newAction != _activeDragAction;
         _activeDragAction = newAction;
         if (actionChanged)
         {
+            _previewWindow?.SetLinkMode(_activeDragAction == _xdndActionLink);
             UpdateGrabCursor(_dragTargetAccepted);
         }
 
@@ -633,7 +641,14 @@ public static class X11XdndHook
 
         if (_dragTargetWindow == _activeDragSourceWindow)
         {
-            if (_activeDragPaths != null && _activeDragPaths.Count > 0 && DropCallbacks.TryGetValue(_activeDragSourceWindow, out Action<List<string>, int, int, bool>? cb))
+            if (_activeDragAction == _xdndActionLink && _activeDragPaths != null && _activeDragPaths.Count > 0 && LinkCallbacks.TryGetValue(_activeDragSourceWindow, out Action<List<string>, int, int>? linkCb))
+            {
+                List<string> paths = new(_activeDragPaths);
+                int dropX = _lastRootX;
+                int dropY = _lastRootY;
+                Dispatcher.UIThread.Post(() => linkCb(paths, dropX, dropY));
+            }
+            else if (_activeDragPaths != null && _activeDragPaths.Count > 0 && DropCallbacks.TryGetValue(_activeDragSourceWindow, out Action<List<string>, int, int, bool>? cb))
             {
                 List<string> paths = new(_activeDragPaths);
                 bool isCopy = (_activeDragAction == _xdndActionCopy);
@@ -823,6 +838,7 @@ public static class X11XdndHook
         }
 
         (int w, int h) = _previewWindow.UpdateContent(firstItem, count);
+        _previewWindow.SetLinkMode(_activeDragAction == _xdndActionLink);
         _previewWidth = w;
         _previewHeight = h;
 
@@ -858,11 +874,11 @@ public static class X11XdndHook
         IntPtr cursor;
         if (_dragTargetWindow != IntPtr.Zero && !accepted)
         {
-            cursor = _cursorNone != IntPtr.Zero ? _cursorNone : ((_activeDragAction == _xdndActionCopy) ? _cursorCopy : _cursorMove);
+            cursor = _cursorNone != IntPtr.Zero ? _cursorNone : GetActionCursor();
         }
         else
         {
-            cursor = (_activeDragAction == _xdndActionCopy) ? _cursorCopy : _cursorMove;
+            cursor = GetActionCursor();
         }
 
         if (cursor == IntPtr.Zero)
@@ -876,6 +892,26 @@ public static class X11XdndHook
             XChangeActivePointerGrab(_display, grabMask, cursor, IntPtr.Zero);
             XFlush(_display);
         }
+    }
+
+    private static IntPtr GetDragAction(uint mask)
+    {
+        if ((mask & 8) != 0)
+        {
+            return _xdndActionLink;
+        }
+
+        return (mask & 4) != 0 ? _xdndActionCopy : _xdndActionMove;
+    }
+
+    private static IntPtr GetActionCursor()
+    {
+        if (_activeDragAction == _xdndActionLink && _cursorLink != IntPtr.Zero)
+        {
+            return _cursorLink;
+        }
+
+        return _activeDragAction == _xdndActionMove ? _cursorMove : _cursorCopy;
     }
 
     private static void EnsureCursors(IntPtr display)
@@ -902,6 +938,12 @@ public static class X11XdndHook
             if (_cursorMove == IntPtr.Zero)
             {
                 _cursorMove = XcursorLibraryLoadCursor(display, "closedhand");
+            }
+
+            _cursorLink = XcursorLibraryLoadCursor(display, "dnd-link");
+            if (_cursorLink == IntPtr.Zero)
+            {
+                _cursorLink = XcursorLibraryLoadCursor(display, "alias");
             }
 
             _cursorNone = XcursorLibraryLoadCursor(display, "dnd-none");
@@ -1193,7 +1235,7 @@ public static class X11XdndHook
 
     private static void SendStatus(IntPtr xid, IntPtr sourceWin, IntPtr requestedAction)
     {
-        IntPtr acceptedAction = (requestedAction == _xdndActionMove) ? _xdndActionMove : _xdndActionCopy;
+        IntPtr acceptedAction = (requestedAction == _xdndActionMove || requestedAction == _xdndActionLink) ? requestedAction : _xdndActionCopy;
 
         XClientMessageEvent reply = new()
         {
@@ -1222,7 +1264,7 @@ public static class X11XdndHook
             format = 32,
             l0 = xid,
             l1 = new(1),
-            l2 = (action == _xdndActionMove) ? _xdndActionMove : _xdndActionCopy,
+            l2 = (action == _xdndActionMove || action == _xdndActionLink) ? action : _xdndActionCopy,
             l3 = IntPtr.Zero,
             l4 = IntPtr.Zero,
         };
@@ -1257,6 +1299,12 @@ public static class X11XdndHook
         }
 
         List<string> paths = ParseUriList(text);
+        if (paths.Count > 0 && action == _xdndActionLink && LinkCallbacks.TryGetValue(xid, out Action<List<string>, int, int>? linkCallback))
+        {
+            Dispatcher.UIThread.Post(() => linkCallback(paths, rootPos.X, rootPos.Y));
+            return;
+        }
+
         bool isCopy = (action == _xdndActionCopy);
         if (paths.Count > 0 && DropCallbacks.TryGetValue(xid, out Action<List<string>, int, int, bool>? callback))
         {
@@ -1341,6 +1389,7 @@ public static class X11XdndHook
         _xdndProxy = XInternAtom(display, "XdndProxy", 0);
         _xdndActionCopy = XInternAtom(display, "XdndActionCopy", 0);
         _xdndActionMove = XInternAtom(display, "XdndActionMove", 0);
+        _xdndActionLink = XInternAtom(display, "XdndActionLink", 0);
         _textUriList = XInternAtom(display, "text/uri-list", 0);
         _atomTargets = XInternAtom(display, "TARGETS", 0);
         _atomAtom = XInternAtom(display, "ATOM", 0);

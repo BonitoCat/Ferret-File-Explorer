@@ -58,7 +58,7 @@
 
             <Button Content="{markup:Translate Key=OK}"
                     Click="OnOkClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="75"
                     Padding="14,6"

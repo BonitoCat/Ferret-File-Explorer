@@ -21,9 +21,13 @@ class Program
                 Options:
                  --file-picker, --file-selection      Open as a file picker
                  --folder-picker, --directory         Open as a folder picker
+                 --save-picker, --save                Open as a save dialog
                  --multiple, --multi                  Allow selecting multiple items
                  --title <TEXT>, -t <TEXT>            Set dialog title
                  --path <PATH>, -p <PATH>             Set initial directory
+                 --name <NAME>                        Set the initial file name (save dialog)
+                 --accept-label <TEXT>                Set the confirm button text
+                 --filter "<NAME>|<PATTERNS>"         Add a file filter, e.g. "Images|*.png *.jpg"
                  -h, --help                           Show help message
                 
                 """);

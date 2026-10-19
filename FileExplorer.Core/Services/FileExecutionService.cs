@@ -223,6 +223,33 @@ public class FileExecutionService
         }
     }
 
+    public static void OpenWith(string program, string path)
+    {
+        ProcessStartInfo psi = new()
+        {
+            UseShellExecute = false,
+        };
+
+        if (program.EndsWith(".desktop", StringComparison.Ordinal))
+        {
+            psi.FileName = "gtk-launch";
+            psi.ArgumentList.Add(program);
+        }
+        else
+        {
+            psi.FileName = program;
+        }
+
+        psi.ArgumentList.Add(path);
+
+        if (OperatingSystem.IsLinux())
+        {
+            psi.EnvironmentVariables["DESKTOP_STARTUP_ID"] = $"ferret_{Environment.ProcessId}_TIME{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+        }
+
+        Process.Start(psi);
+    }
+
     public static void OpenAsRoot(string path)
     {
         string exe = Environment.ProcessPath ?? "";

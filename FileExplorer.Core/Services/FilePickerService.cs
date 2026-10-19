@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using FileExplorer.Core.Models;
 
@@ -17,6 +18,9 @@ public class FilePickerService
         string? initialPath = null;
         string? title = null;
         bool allowMultiple = false;
+        string? initialName = null;
+        string? acceptLabel = null;
+        List<PickerFilter> filters = new();
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -35,6 +39,47 @@ public class FilePickerService
                 arg.Equals("--folder", StringComparison.OrdinalIgnoreCase))
             {
                 mode = PickerMode.Folder;
+                continue;
+            }
+
+            if (arg.Equals("--save-picker", StringComparison.OrdinalIgnoreCase) ||
+                arg.Equals("--save", StringComparison.OrdinalIgnoreCase))
+            {
+                mode = PickerMode.Save;
+                continue;
+            }
+
+            if (arg.Equals("--name", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                initialName = args[++i];
+                continue;
+            }
+
+            if (arg.Equals("--accept-label", StringComparison.OrdinalIgnoreCase) && i + 1 < args.Length)
+            {
+                acceptLabel = args[++i];
+                continue;
+            }
+
+            if ((arg.Equals("--filter", StringComparison.OrdinalIgnoreCase) || arg.Equals("--file-filter", StringComparison.OrdinalIgnoreCase)) && i + 1 < args.Length)
+            {
+                PickerFilter? filter = PickerFilter.Parse(args[++i]);
+                if (filter != null)
+                {
+                    filters.Add(filter);
+                }
+
+                continue;
+            }
+
+            if (arg.StartsWith("--file-filter=", StringComparison.OrdinalIgnoreCase))
+            {
+                PickerFilter? filter = PickerFilter.Parse(arg["--file-filter=".Length..]);
+                if (filter != null)
+                {
+                    filters.Add(filter);
+                }
+
                 continue;
             }
 
@@ -77,7 +122,10 @@ public class FilePickerService
             Mode = mode,
             InitialPath = initialPath,
             Title = title,
-            AllowMultiple = allowMultiple
+            AllowMultiple = allowMultiple,
+            InitialName = initialName,
+            ActionButtonText = acceptLabel,
+            Filters = filters
         };
     }
 

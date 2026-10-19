@@ -1,12 +1,9 @@
-using System;
 using System.IO;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using FileExplorer.Core.Models;
 using static Avalonia.Interactivity.RoutingStrategies;
 
-using FileExplorer.Gui.Services;
 namespace FileExplorer.Gui.Dialogs;
 
 public class OpenWithResult
@@ -23,6 +20,13 @@ public partial class OpenWithDialog : Window
     {
         InitializeComponent();
 
+        Opened += (_, _) =>
+        {
+            Chooser.FocusInput();
+        };
+
+        Chooser.ProgramActivated += Confirm;
+
         AddHandler(KeyDownEvent, (_, e) =>
         {
             if (e.Key == Key.Escape)
@@ -34,50 +38,33 @@ public partial class OpenWithDialog : Window
         }, Tunnel);
     }
 
-    public OpenWithDialog(string extension) : this()
+    public OpenWithDialog(string path) : this()
     {
+        string extension = Path.GetExtension(path);
         if (!string.IsNullOrEmpty(extension))
         {
             AlwaysOpenCheckBox.Content = $"{AlwaysOpenCheckBox.Content} ({extension})";
         }
-    }
 
-    private async void OnBrowseProgramClick(object? sender, RoutedEventArgs e)
-    {
-        string initialPath = "/";
-        if (!Directory.Exists(initialPath))
-        {
-            initialPath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        }
-
-        FilePickerOptions options = new()
-        {
-            Mode = PickerMode.File,
-            InitialPath = initialPath,
-            Title = LocalizationService.Get("SelectApplication"),
-            ActionButtonText = LocalizationService.Get("Select")
-        };
-
-        MainWindow picker = new(initialPath, options);
-        FilePickerResult result = await picker.ShowPickerAsync(this);
-
-        if (result.IsSuccess && !string.IsNullOrWhiteSpace(result.SelectedPath))
-        {
-            CommandTextBox.Text = result.SelectedPath;
-        }
+        _ = Chooser.LoadAsync(path);
     }
 
     private void OnOkClick(object? sender, RoutedEventArgs e)
     {
-        string text = CommandTextBox.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(text))
+        Confirm();
+    }
+
+    private void Confirm()
+    {
+        string? program = Chooser.SelectedProgram;
+        if (string.IsNullOrEmpty(program))
         {
             return;
         }
 
         Result = new()
         {
-            Program = text,
+            Program = program,
             Always = AlwaysOpenCheckBox.IsChecked ?? false
         };
 

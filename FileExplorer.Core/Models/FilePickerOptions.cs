@@ -13,4 +13,8 @@ public class FilePickerOptions
     public string? FilterPattern { get; set; }
 
     public string? ActionButtonText { get; set; }
+
+    public string? InitialName { get; set; }
+
+    public List<PickerFilter> Filters { get; set; } = new();
 }

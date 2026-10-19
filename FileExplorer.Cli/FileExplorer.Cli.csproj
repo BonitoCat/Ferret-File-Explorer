@@ -21,7 +21,7 @@
   </ItemGroup>
   
   <ItemGroup>
-    <AdditionalFiles Include="builds/fe-linux-x64-full/DEBIAN/control" />
+    <AdditionalFiles Include="../_builds/fe-linux-x64-full/DEBIAN/control" />
   </ItemGroup>
   
   <ItemGroup>

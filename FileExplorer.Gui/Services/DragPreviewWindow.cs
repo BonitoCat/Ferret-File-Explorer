@@ -2,6 +2,7 @@ using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
+using Avalonia.Controls.Shapes;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform;
@@ -14,6 +15,7 @@ public class DragPreviewWindow : Window
     private readonly StackPanel _container;
     private readonly Image _iconImage;
     private readonly Border _badgeBorder;
+    private readonly Border _linkBorder;
     private readonly TextBlock _badgeBlock;
     private readonly TextBlock _nameBlock;
     private readonly Border _nameBorder;
@@ -50,7 +52,7 @@ public class DragPreviewWindow : Window
 
         _badgeBorder = new()
         {
-            Background = new SolidColorBrush(Color.Parse("#3584E4")),
+            Background = ThemeService.AccentBrush,
             CornerRadius = new(10),
             MinWidth = 20,
             Height = 20,
@@ -67,6 +69,30 @@ public class DragPreviewWindow : Window
             IsVisible = false,
         };
 
+        _linkBorder = new()
+        {
+            Background = new SolidColorBrush(Color.Parse("#2B2B30")),
+            BorderBrush = new SolidColorBrush(Color.Parse("#E0E0E0")),
+            BorderThickness = new(1),
+            CornerRadius = new(11),
+            Width = 22,
+            Height = 22,
+            Margin = new(0, 0, 2, 4),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Child = new Path
+            {
+                Data = Geometry.Parse("M0,8 L8,0 M2,0 L8,0 L8,6"),
+                Stroke = new SolidColorBrush(Color.Parse("#E0E0E0")),
+                StrokeThickness = 1.8,
+                StrokeLineCap = PenLineCap.Round,
+                StrokeJoin = PenLineJoin.Round,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+            IsVisible = false,
+        };
+
         Panel iconPanel = new()
         {
             Width = 64,
@@ -76,6 +102,7 @@ public class DragPreviewWindow : Window
         };
         iconPanel.Children.Add(_iconImage);
         iconPanel.Children.Add(_badgeBorder);
+        iconPanel.Children.Add(_linkBorder);
 
         _nameBlock = new()
         {
@@ -149,8 +176,16 @@ public class DragPreviewWindow : Window
         return (width, height);
     }
 
+    public void SetLinkMode(bool isLink)
+    {
+        _linkBorder.IsVisible = isLink;
+        _badgeBorder.VerticalAlignment = isLink ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+    }
+
     public void Reset()
     {
+        _linkBorder.IsVisible = false;
+        _badgeBorder.VerticalAlignment = VerticalAlignment.Bottom;
         _iconImage.Source = null;
         _nameBlock.Text = string.Empty;
         _nameBorder.IsVisible = false;

@@ -4,6 +4,32 @@
              Name="ferret"
              RequestedThemeVariant="Dark">
 
+    <Application.Resources>
+        <SolidColorBrush x:Key="PrimaryBrush"
+                         Color="#84B4FA"/>
+
+        <SolidColorBrush x:Key="AccentBrush"
+                         Color="#3584E4"/>
+
+        <SolidColorBrush x:Key="AccentSubtleBrush"
+                         Color="#2A4B7C"/>
+
+        <SolidColorBrush x:Key="AccentLightBrush"
+                         Color="#84B4FA"/>
+
+        <SolidColorBrush x:Key="AccentTranslucentBrush"
+                         Color="#333584E4"/>
+
+        <SolidColorBrush x:Key="SelectionBrush"
+                         Color="#197EB1"/>
+
+        <SolidColorBrush x:Key="SelectionSubtleBrush"
+                         Color="#194F6B"/>
+
+        <SolidColorBrush x:Key="SelectionTranslucentBrush"
+                         Color="#33197EB1"/>
+    </Application.Resources>
+
     <Application.Styles>
         <FluentTheme/>
 

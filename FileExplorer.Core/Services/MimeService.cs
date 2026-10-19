@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using FileExplorer.Core.Models;
 
 namespace FileExplorer.Core.Services;
 
@@ -13,6 +15,8 @@ public class MimeService
         "application/x-zerosize",
         "text/plain",
     };
+
+    private static readonly ConcurrentDictionary<string, string?> ExtensionMimeCache = new(StringComparer.OrdinalIgnoreCase);
 
     private static string UserHome => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
@@ -135,6 +139,21 @@ public class MimeService
         return sniffed;
     }
 
+    public static string? GetMimeTypeForExtension(string extension)
+    {
+        if (string.IsNullOrEmpty(extension) || !OperatingSystem.IsLinux())
+        {
+            return null;
+        }
+
+        return ExtensionMimeCache.GetOrAdd(extension, LookupGlobMimeType);
+    }
+
+    public static bool IsCustomMimeType(string mimeType)
+    {
+        return mimeType.StartsWith(CustomMimePrefix, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static string? LookupGlobMimeType(string extension)
     {
         string pattern = "*." + extension.TrimStart('.');
@@ -225,6 +244,18 @@ public class MimeService
         }
 
         return apps;
+    }
+
+    public static AppAssociations GetAppAssociations(string filePath)
+    {
+        string mime = GetMimeType(filePath);
+        string? defaultApp = GetDefaultApplication(mime);
+        List<AppChoice> apps = GetApplicationsForMimeType(mime)
+            .Select(id => new AppChoice(id, GetDesktopAppName(id)))
+            .OrderByDescending(a => a.Id == defaultApp)
+            .ToList();
+        string? defaultName = defaultApp == null ? null : GetDesktopAppName(defaultApp);
+        return new(mime, defaultApp, defaultName, apps);
     }
 
     public static string GetDesktopAppName(string desktopId)

@@ -87,7 +87,7 @@ public static class Program
            | Escape / Arrow Left / Alt + Up Arrow - Go up one directory
            | Alt + Left Arrow - Return to previous directory
            | Alt + Right Arrow - Go forward to next directory
-           | Ctrl + L / Ctrl + W - Go to specific directory by path
+           | Ctrl + L - Go to specific directory by path
            | F4 - Switch to Quick Access / Bookmarks
            | Ctrl + D - Open terminal in current directory
            
@@ -637,7 +637,6 @@ public static class Program
         _keybinds.Add(new NemoKeybind { Context = context, Keys = new() { Key.Ctrl, Key.O } });
         _keybinds.Add(new HelpKeybind { Context = context, Keys = new() { Key.F1 } });
         _keybinds.Add(new DirPathKeybind { Context = context, Keys = new() { Key.Ctrl, Key.L } });
-        _keybinds.Add(new DirPathKeybind { Context = context, Keys = new() { Key.Ctrl, Key.W } });
         _keybinds.Add(new MultiSelectUpKeybind { Context = context, Keys = new() { Key.Shift, Key.ArrowUp } });
         _keybinds.Add(new MultiSelectDownKeybind { Context = context, Keys = new() { Key.Shift, Key.ArrowDown } });
         _keybinds.Add(new SelectAllKeybind { Context = context, Keys = new() { Key.Ctrl, Key.A } });

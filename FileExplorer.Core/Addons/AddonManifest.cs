@@ -31,6 +31,7 @@ public sealed class AddonActionManifest
     public List<string>? Args { get; set; }
     public bool Terminal { get; set; }
     public string? Shortcut { get; set; }
+    public List<string>? Keywords { get; set; }
     public string? Icon { get; set; }
     public string? Confirm { get; set; }
     public string? Separator { get; set; }

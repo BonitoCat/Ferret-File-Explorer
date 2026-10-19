@@ -1,6 +1,8 @@
 using System;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
+using Avalonia.Media;
 using FileExplorer.Gui.Services;
 
 namespace FileExplorer.Gui.Markup;
@@ -22,6 +24,14 @@ public class IconExtension : MarkupExtension
     {
         if (string.IsNullOrEmpty(Key)) return AvaloniaProperty.UnsetValue;
 
-        return (object?) IconService.Get(Key) ?? AvaloniaProperty.UnsetValue;
+        IImage? icon = IconService.Get(Key);
+        if (icon == null) return AvaloniaProperty.UnsetValue;
+
+        if (serviceProvider.GetService(typeof(IProvideValueTarget)) is IProvideValueTarget { TargetProperty: AvaloniaProperty { PropertyType: var type } } && type == typeof(object))
+        {
+            return new Image { Source = icon };
+        }
+
+        return icon;
     }
 }

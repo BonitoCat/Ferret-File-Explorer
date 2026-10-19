@@ -45,6 +45,8 @@ public class PaneViewModel : ViewModelBase, IDisposable
         _showHiddenFiles = showHiddenFiles;
     }
 
+    public Func<string, bool>? FileFilter { get; set; }
+
     public BulkObservableCollection<FileItemViewModel> Items { get; } = new();
     public ObservableCollection<FileItemViewModel> SelectedItems { get; } = new();
 
@@ -297,6 +299,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
         }
 
         bool showHidden = _showHiddenFiles();
+        Func<string, bool>? fileFilter = FileFilter;
         Task.Run(() =>
         {
             if (token.IsCancellationRequested)
@@ -328,6 +331,11 @@ public class PaneViewModel : ViewModelBase, IDisposable
                     }
 
                     if (!showHidden && entry.IsHidden)
+                    {
+                        continue;
+                    }
+
+                    if (fileFilter != null && entry is FileEntry && !fileFilter(entry.FullName))
                     {
                         continue;
                     }
@@ -476,6 +484,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
         string path = _currentPath;
         string? search = string.IsNullOrEmpty(_searchPattern) ? null : _searchPattern;
         bool showHidden = _showHiddenFiles();
+        Func<string, bool>? fileFilter = FileFilter;
 
         Task.Run(() =>
         {
@@ -501,6 +510,11 @@ public class PaneViewModel : ViewModelBase, IDisposable
                 foreach (IFileSystemEntry entry in _fileService.EnumerateFolderEntries(path, search, CancellationToken.None))
                 {
                     if (!showHidden && entry.IsHidden)
+                    {
+                        continue;
+                    }
+
+                    if (fileFilter != null && entry is FileEntry && !fileFilter(entry.FullName))
                     {
                         continue;
                     }

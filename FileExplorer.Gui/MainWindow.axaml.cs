@@ -22,6 +22,7 @@ using FileExplorer.Core.Addons;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Models;
 using FileExplorer.Core.Services;
+using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Dialogs;
 using FileExplorer.Gui.Models;
 using FileExplorer.Gui.Services;
@@ -46,6 +47,9 @@ public partial class MainWindow : Window
     private Point _rubberBandStart;
 
     private bool _potentialFileDrag;
+    private ListBoxItem? _hoveredGridItem;
+    private PaneViewModel? _pendingSelectPane;
+    private HashSet<string> _pendingSelectPaths = new();
     private Point _fileDragStart;
     private FileItemViewModel? _draggedFile;
     private FileItemViewModel? _clickedAlreadySelectedItem;
@@ -65,6 +69,8 @@ public partial class MainWindow : Window
     private DateTime _typeAheadLastKeyTime = DateTime.MinValue;
 
     private const string GridFilesListName = "GridFilesListBox";
+    private static readonly string[] TerminalKeywords = ["cmd", "terminal", "term"];
+    private const double GridLabelHitWidth = 76;
     private const string ListFilesListName = "ListFilesListBox";
     private readonly List<ListBox> _fileListBoxes = new();
 
@@ -85,8 +91,18 @@ public partial class MainWindow : Window
 
         if (pickerOptions != null)
         {
-            Title = pickerOptions.Title ?? (pickerOptions.Mode == PickerMode.Folder ? LocalizationService.Get("SelectFolder") : LocalizationService.Get("SelectFile"));
+            Title = pickerOptions.Title ?? pickerOptions.Mode switch
+            {
+                PickerMode.Folder => LocalizationService.Get("SelectFolder"),
+                PickerMode.Save => LocalizationService.Get("SaveFile"),
+                _ => LocalizationService.Get("SelectFile"),
+            };
             ViewModel.PickerCompleted += OnPickerCompleted;
+            ViewModel.OverwriteConfirmer = ConfirmOverwriteAsync;
+            if (pickerOptions.Mode == PickerMode.Save)
+            {
+                Opened += (_, _) => FocusSaveName();
+            }
         }
         else if (GuiSettings.WindowMaximized)
         {
@@ -105,12 +121,18 @@ public partial class MainWindow : Window
         ViewModel.ScriptOpenRequested += OnScriptOpenRequested;
         ViewModel.NetworkLoginRequested += OnNetworkLoginRequested;
         ViewModel.NetworkServerLoginRequested += OnNetworkServerLoginRequested;
+        ViewModel.AccessDenied += OnAccessDenied;
+        ViewModel.DirectoryAccessDenied += OnDirectoryAccessDenied;
+        ViewModel.TransferCompleted += OnTransferCompleted;
         ViewModel.ConflictResolver = ResolveConflictAsync;
+        ThemeService.ColorsChanged += RefreshAllIcons;
+        FileTypeIconService.Changed += RefreshAllIcons;
         InitializeAddons();
 
         foreach (PaneViewModel pane in ViewModel.Panes)
         {
             pane.BeforeLoad += OnPaneBeforeLoad;
+            pane.ContentChanged += OnPaneContentLoaded;
         }
 
         Opened += (s, e) =>
@@ -139,6 +161,15 @@ public partial class MainWindow : Window
                     () =>
                     {
                         ClearDropTargets();
+                    },
+                    (paths, rootX, rootY) =>
+                    {
+                        Point? clientPoint = (rootX > 0 || rootY > 0)
+                            ? ((IRenderRoot) this).PointToClient(new PixelPoint(rootX, rootY))
+                            : null;
+
+                        HandleFilesLinked(paths, clientPoint);
+                        ClearDropTargets();
                     });
             }
         };
@@ -146,6 +177,8 @@ public partial class MainWindow : Window
         Closed += (s, e) =>
         {
             AddonService.Instance.AddonsChanged -= OnAddonsChanged;
+            ThemeService.ColorsChanged -= RefreshAllIcons;
+            FileTypeIconService.Changed -= RefreshAllIcons;
             ViewModel.Dispose();
             GuiInstanceRegistry.Unregister(Environment.ProcessId);
         };
@@ -182,6 +215,7 @@ public partial class MainWindow : Window
         SyncSidebarSelection(ViewModel.CurrentPath);
 
         SidebarListBox.AddHandler(PointerPressedEvent, OnSidebarPointerPressed, Tunnel);
+        SidebarListBox.AddHandler(ContextRequestedEvent, OnSidebarContextRequested, Tunnel);
         SidebarListBox.AddHandler(PointerMovedEvent, OnSidebarPointerMoved, Tunnel);
         SidebarListBox.AddHandler(PointerReleasedEvent, OnSidebarPointerReleased, Tunnel);
 
@@ -191,6 +225,7 @@ public partial class MainWindow : Window
 
         Focusable = true;
         Activated += OnWindowActivated;
+        Deactivated += (_, _) => _isRestoringFocus = true;
         AddHandler(PointerPressedEvent, OnWindowPointerPressed, Tunnel);
         AddHandler(KeyDownEvent, OnGlobalKeyDown, Tunnel);
         AddHandler(KeyDownEvent, OnAltChordKeyDown, Tunnel | Bubble, true);
@@ -314,6 +349,47 @@ public partial class MainWindow : Window
         list.AddHandler(PointerPressedEvent, OnFilePointerPressed, Tunnel);
         list.AddHandler(PointerMovedEvent, OnFilePointerMoved, Tunnel);
         list.AddHandler(PointerReleasedEvent, OnFilePointerReleased, Tunnel);
+        list.AddHandler(PointerWheelChangedEvent, (_, _) => SetGridHover(null), Tunnel);
+        list.PointerExited += (_, _) => SetGridHover(null);
+        list.Loaded += (_, _) =>
+        {
+            list.ItemsPanelRoot?.RemoveHandler(RequestBringIntoViewEvent, OnFileItemBringIntoView);
+            list.ItemsPanelRoot?.AddHandler(RequestBringIntoViewEvent, OnFileItemBringIntoView);
+        };
+    }
+
+    private void OnFileItemBringIntoView(object? sender, RequestBringIntoViewEventArgs e)
+    {
+        if (!_isRestoringFocus || e.TargetObject is not ListBoxItem item || FocusManager?.GetFocusedElement() != item)
+        {
+            return;
+        }
+
+        e.Handled = true;
+    }
+
+    private void SetGridHover(ListBoxItem? item)
+    {
+        if (_hoveredGridItem == item)
+        {
+            return;
+        }
+
+        _hoveredGridItem?.Classes.Remove("hover");
+        _hoveredGridItem = item;
+        _hoveredGridItem?.Classes.Add("hover");
+    }
+
+    private void UpdateGridHover(ListBox list, PointerEventArgs e)
+    {
+        ListBoxItem? item = FindVisualParent<ListBoxItem>(e.Source as Visual);
+        if (!IsGridList(list) || item == null || !IsOnItemHitZone(list, item, e.GetPosition(list)))
+        {
+            SetGridHover(null);
+            return;
+        }
+
+        SetGridHover(item);
     }
 
     private static PaneViewModel? GetPane(object? sender)
@@ -340,6 +416,10 @@ public partial class MainWindow : Window
 
     private void OnPaneBeforeLoad(PaneViewModel pane)
     {
+        SetGridHover(null);
+        _typeAheadBuffer = "";
+        _typeAheadLastKeyTime = DateTime.MinValue;
+
         foreach (ListBox list in _fileListBoxes.Where(l => l.DataContext == pane))
         {
             list.Selection.Clear();
@@ -433,9 +513,42 @@ public partial class MainWindow : Window
         FocusActiveListBox();
     }
 
-    private void OnTogglePreviewPaneClick(object? sender, RoutedEventArgs e)
+    private async void OnThemeColorsClick(object? sender, RoutedEventArgs e)
     {
-        ViewModel.ShowDetailsPane = !ViewModel.ShowDetailsPane;
+        ThemeColorsDialog dialog = new();
+        await dialog.ShowDialog(this);
+    }
+
+    private void OnViewMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        SystemPickerMenuItem.IsEnabled = SystemPickerService.IsInstalled;
+        SystemPickerMenuItem.IsChecked = SystemPickerService.IsEnabled;
+        ToolTip.SetTip(SystemPickerMenuItem, SystemPickerService.IsInstalled ? null : LocalizationService.Get("SystemPickerNotInstalled"));
+    }
+
+    private async void OnSystemPickerClick(object? sender, RoutedEventArgs e)
+    {
+        bool enable = !SystemPickerService.IsEnabled;
+        try
+        {
+            SystemPickerService.SetEnabled(enable);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ConfirmDialog error = new(LocalizationService.Get("Error"), ex.Message);
+            await error.ShowDialog(this);
+            return;
+        }
+
+        ViewModel.StatusText = LocalizationService.Get(enable ? "SystemPickerEnabled" : "SystemPickerDisabled");
+    }
+
+    private void RefreshAllIcons()
+    {
+        foreach (FileItemViewModel item in ViewModel.AllItems)
+        {
+            item.RefreshIcon();
+        }
     }
 
     private void OnSetGridViewClick(object? sender, RoutedEventArgs e)
@@ -466,6 +579,11 @@ public partial class MainWindow : Window
             return;
         }
 
+        StartPathEditing();
+    }
+
+    private void StartPathEditing()
+    {
         ViewModel.IsPathEditing = true;
         PathTextBox.Focus();
         PathTextBox.SelectAll();
@@ -475,7 +593,18 @@ public partial class MainWindow : Window
     {
         Button? button = sender as Button;
         string? targetPath = button?.Tag as string;
-        if (string.IsNullOrEmpty(targetPath) || !PaneViewModel.IsNavigable(targetPath))
+        if (string.IsNullOrEmpty(targetPath))
+        {
+            return;
+        }
+
+        if (string.Equals(targetPath.TrimEnd('/'), ViewModel.CurrentPath.TrimEnd('/'), StringComparison.Ordinal))
+        {
+            StartPathEditing();
+            return;
+        }
+
+        if (!PaneViewModel.IsNavigable(targetPath))
         {
             return;
         }
@@ -498,17 +627,81 @@ public partial class MainWindow : Window
             return;
         }
 
-        string path = (PathTextBox.Text ?? "").Trim();
+        e.Handled = true;
+        string text = (PathTextBox.Text ?? "").Trim();
+        string path = ResolvePathBarLocation(text);
         if (PaneViewModel.IsNavigable(path) || path.Contains("://", StringComparison.Ordinal))
         {
             ViewModel.NavigateTo(path);
             ViewModel.IsPathEditing = false;
+            return;
         }
+
+        if (!TryRunPathBarCommand(text))
+        {
+            ViewModel.StatusText = LocalizationService.Format("PathBarUnknown", text);
+            return;
+        }
+
+        PathTextBox.Text = ViewModel.CurrentPath;
+        ViewModel.IsPathEditing = false;
+        FocusActiveListBox();
+    }
+
+    private string ResolvePathBarLocation(string? text)
+    {
+        string path = LocationResolver.Resolve(text);
+        if (path.Length == 0 || Path.IsPathRooted(path) || path.Contains(':') || !Directory.Exists(ViewModel.CurrentPath))
+        {
+            return path;
+        }
+
+        string relative = Path.GetFullPath(Path.Combine(ViewModel.CurrentPath, path));
+        return Directory.Exists(relative) ? relative : path;
+    }
+
+    private bool TryRunPathBarCommand(string text)
+    {
+        if (text.Length == 0 || ViewModel.IsPickerMode)
+        {
+            return false;
+        }
+
+        string dir = ViewModel.CommandDirectory;
+        if (text.StartsWith('>'))
+        {
+            string command = text[1..].Trim();
+            if (command.Length == 0)
+            {
+                ViewModel.OpenTerminal(dir);
+                return true;
+            }
+
+            ViewModel.RunInTerminalAt(dir, ["bash", "-c", command]);
+            return true;
+        }
+
+        int space = text.IndexOf(' ');
+        string keyword = space < 0 ? text : text[..space];
+        string input = space < 0 ? "" : text[(space + 1)..].Trim();
+
+        if (TryRunAddonPathBarCommand(keyword, input) || TryRunBuiltInPathBarCommand(keyword, input))
+        {
+            return true;
+        }
+
+        if (TerminalKeywords.Contains(keyword, StringComparer.OrdinalIgnoreCase))
+        {
+            ViewModel.OpenTerminal(dir);
+            return true;
+        }
+
+        return MainWindowViewModel.IsProgramAvailable(keyword, dir) && ViewModel.RunShellCommand(dir, text);
     }
 
     private void OnPathLostFocus(object? sender, RoutedEventArgs e)
     {
-        string path = (PathTextBox.Text ?? "").Trim();
+        string path = ResolvePathBarLocation(PathTextBox.Text);
         if (PaneViewModel.IsNavigable(path) && path != ViewModel.CurrentPath)
         {
             ViewModel.NavigateTo(path);
@@ -606,6 +799,9 @@ public partial class MainWindow : Window
 
     private bool _isSyncingSidebar;
     private PlaceItem? _contextPlace;
+    private int _sidebarContextVersion;
+    private int _sidebarOpenedContextVersion;
+    private bool _sidebarContextOnBackground;
 
     private void SyncSidebarSelection(string? path)
     {
@@ -733,15 +929,7 @@ public partial class MainWindow : Window
     {
         if (e.GetCurrentPoint(SidebarListBox).Properties.IsRightButtonPressed)
         {
-            ListBoxItem? rightClickedItem = FindVisualParent<ListBoxItem>((Visual?) e.Source);
-            if (rightClickedItem?.DataContext is PlaceItem rightPlace)
-            {
-                _contextPlace = rightPlace;
-                _isSyncingSidebar = true;
-                SidebarListBox.SelectedItem = rightPlace;
-                _isSyncingSidebar = false;
-            }
-
+            e.Handled = true;
             return;
         }
 
@@ -907,10 +1095,38 @@ public partial class MainWindow : Window
         }
     }
 
+    private void OnSidebarContextRequested(object? sender, ContextRequestedEventArgs e)
+    {
+        _sidebarContextVersion++;
+        ListBoxItem? item = FindVisualParent<ListBoxItem>(e.Source as Visual);
+        if (item?.DataContext is PlaceItem place)
+        {
+            _contextPlace = place;
+            _sidebarContextOnBackground = false;
+            _isSyncingSidebar = true;
+            SidebarListBox.SelectedItem = place;
+            _isSyncingSidebar = false;
+            return;
+        }
+
+        _contextPlace = null;
+        _sidebarContextOnBackground = e.TryGetPosition(SidebarListBox, out _);
+        if (_sidebarContextOnBackground)
+        {
+            SyncSidebarSelection(ViewModel.CurrentPath);
+        }
+    }
+
     private void OnSidebarContextMenuClosed(object? sender, RoutedEventArgs e)
     {
+        int closedVersion = _sidebarOpenedContextVersion;
         Dispatcher.UIThread.Post(() =>
         {
+            if (_sidebarContextVersion != closedVersion)
+            {
+                return;
+            }
+
             _contextPlace = null;
             SyncSidebarSelection(ViewModel.CurrentPath);
         }, DispatcherPriority.Background);
@@ -918,8 +1134,12 @@ public partial class MainWindow : Window
 
     private void OnSidebarContextMenuOpening(object? sender, CancelEventArgs e)
     {
+        bool onBackground = _sidebarContextOnBackground;
+        _sidebarContextOnBackground = false;
+        _sidebarOpenedContextVersion = _sidebarContextVersion;
+
         PlaceItem? selected = _contextPlace ?? SidebarListBox.SelectedItem as PlaceItem;
-        if (selected == null)
+        if (onBackground || selected == null)
         {
             e.Cancel = true;
             return;
@@ -1026,22 +1246,12 @@ public partial class MainWindow : Window
     private async void OnSidebarOpenClick(object? sender, RoutedEventArgs e)
     {
         PlaceItem? selected = GetContextPlaceItem(sender);
-        if (selected == null || selected.IsHeader || string.IsNullOrEmpty(selected.Path))
+        if (selected == null)
         {
             return;
         }
 
-        if (selected.Category == PlaceCategory.Network && !selected.IsMounted)
-        {
-            await ConnectToNetworkBookmarkAsync(selected);
-            return;
-        }
-
-        string selectedPath = selected.Path;
-        if (await Task.Run(() => Directory.Exists(selectedPath)))
-        {
-            ViewModel.NavigateTo(selected.Path);
-        }
+        await NavigateToPlaceItemAsync(selected);
     }
 
     private async void OnSidebarConnectClick(object? sender, RoutedEventArgs e)
@@ -1158,12 +1368,34 @@ public partial class MainWindow : Window
         }
 
         ArchiveService archiveService = new();
-        pane.IsLoading = true;
 
         try
         {
             foreach (FileItemViewModel item in targets)
             {
+                ExtractDialog extractDialog = new(item.Name);
+                if (await extractDialog.ShowDialog<bool?>(this) != true)
+                {
+                    continue;
+                }
+
+                string destination = extractDialog.IntoFolder ? Path.Combine(currentDir, extractDialog.FolderName) : currentDir;
+                if (extractDialog.IntoFolder)
+                {
+                    (string? resolved, bool cancelled) = await ResolveExtractConflictAsync(item.FullPath, destination);
+                    if (cancelled)
+                    {
+                        break;
+                    }
+
+                    if (resolved == null)
+                    {
+                        continue;
+                    }
+
+                    destination = resolved;
+                }
+
                 string? password = null;
                 bool isEncrypted = await archiveService.IsEncryptedArchiveAsync(item.FullPath);
                 if (isEncrypted)
@@ -1176,7 +1408,9 @@ public partial class MainWindow : Window
                     }
                 }
 
-                (bool success, string error) = await archiveService.ExtractHereAsync(item.FullPath, currentDir, password);
+                pane.IsLoading = true;
+                (bool success, string error) = await archiveService.ExtractHereAsync(item.FullPath, destination, password);
+                pane.IsLoading = false;
                 if (!success && !string.IsNullOrEmpty(error))
                 {
                     ConfirmDialog errDialog = new(LocalizationService.Get("Error"), error);
@@ -1189,6 +1423,38 @@ public partial class MainWindow : Window
         {
             pane.IsLoading = false;
             ViewModel.Refresh();
+        }
+    }
+
+    private async Task<(string? Destination, bool Cancelled)> ResolveExtractConflictAsync(string archivePath, string destination)
+    {
+        bool isDirectory = Directory.Exists(destination);
+        if (!isDirectory && !File.Exists(destination))
+        {
+            return (destination, false);
+        }
+
+        ConflictResolution resolution = await ResolveConflictAsync(new(archivePath, destination, true, isDirectory, true, false));
+        ConflictAction action = resolution.Action;
+        if (action == ConflictAction.Cancel)
+        {
+            return (null, true);
+        }
+
+        if (action == ConflictAction.Skip)
+        {
+            return (null, false);
+        }
+
+        try
+        {
+            return (FileOperationService.ResolveConflict(action, archivePath, destination), false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ConfirmDialog errDialog = new(LocalizationService.Get("Error"), ex.Message);
+            await errDialog.ShowDialog(this);
+            return (null, true);
         }
     }
 
@@ -1310,6 +1576,8 @@ public partial class MainWindow : Window
     }
 
     private bool _altChordHandled;
+    private bool _altUsedForDrag;
+    private bool _isRestoringFocus;
 
     private static bool IsAltKey(Key key)
     {
@@ -1321,6 +1589,7 @@ public partial class MainWindow : Window
         if (IsAltKey(e.Key))
         {
             _altChordHandled = false;
+            _altUsedForDrag |= X11XdndHook.IsDragActive;
             return;
         }
 
@@ -1332,12 +1601,13 @@ public partial class MainWindow : Window
 
     private void OnAltKeyUp(object? sender, KeyEventArgs e)
     {
-        if (!IsAltKey(e.Key) || !_altChordHandled)
+        if (!IsAltKey(e.Key) || (!_altChordHandled && !_altUsedForDrag))
         {
             return;
         }
 
         _altChordHandled = false;
+        _altUsedForDrag = false;
         Dispatcher.UIThread.Post(() =>
         {
             if (MainMenu.IsOpen)
@@ -1354,13 +1624,23 @@ public partial class MainWindow : Window
         Dispatcher.UIThread.Post(() =>
         {
             IInputElement? focused = FocusManager?.GetFocusedElement();
-            if (focused != null && focused != this)
+            if (focused == null || focused == this || IsStaleFileItemFocus(focused))
             {
-                return;
+                FocusActiveSelection();
             }
 
-            FocusActiveSelection();
+            _isRestoringFocus = false;
         }, DispatcherPriority.Input);
+    }
+
+    private bool IsStaleFileItemFocus(IInputElement focused)
+    {
+        if (focused is not ListBoxItem item || FindVisualParent<ListBox>(item) is not ListBox list || !_fileListBoxes.Contains(list))
+        {
+            return false;
+        }
+
+        return !list.Selection.SelectedItems.Contains(item.DataContext);
     }
 
     private void FocusActiveSelection()
@@ -1433,8 +1713,50 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool TryListViewArrowNavigation(KeyEventArgs e)
+    {
+        if (e.KeyModifiers != KeyModifiers.None || (e.Key != Key.Left && e.Key != Key.Right) || !ViewModel.IsListView)
+        {
+            return false;
+        }
+
+        IInputElement? focused = FocusManager?.GetFocusedElement();
+        if (focused is TextBox)
+        {
+            return false;
+        }
+
+        if (focused is Visual visual && (FindVisualParent<ListBox>(visual) == SidebarListBox || FindVisualParent<Menu>(visual) != null))
+        {
+            return false;
+        }
+
+        if (e.Key == Key.Left)
+        {
+            ViewModel.GoUp();
+            FocusActiveListBox();
+            return true;
+        }
+
+        FileItemViewModel? selected = ViewModel.ActivePane.SelectedItem ?? GetSelectedItems().FirstOrDefault();
+        if (selected == null)
+        {
+            return false;
+        }
+
+        ViewModel.OpenEntry(selected);
+        FocusActiveListBox();
+        return true;
+    }
+
     private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
     {
+        if (TryListViewArrowNavigation(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (TryRedirectArrowKey(e))
         {
             e.Handled = true;
@@ -1570,6 +1892,95 @@ public partial class MainWindow : Window
         _typeAheadBuffer = candidate;
     }
 
+    private void SelectWhenLoaded(string? path)
+    {
+        SelectWhenLoaded(ViewModel.ActivePane, path == null ? [] : [path]);
+    }
+
+    private void SelectWhenLoaded(PaneViewModel? pane, IEnumerable<string> paths)
+    {
+        _pendingSelectPaths = paths.Select(Path.GetFullPath).ToHashSet(StringComparer.Ordinal);
+        _pendingSelectPane = _pendingSelectPaths.Count == 0 ? null : pane;
+    }
+
+    private void OnTransferCompleted(string destinationDirectory, IReadOnlyList<string> targets)
+    {
+        string normDest = Path.GetFullPath(destinationDirectory).TrimEnd(Path.DirectorySeparatorChar);
+        PaneViewModel? pane = ViewModel.Panes
+            .Where(p => p == ViewModel.ActivePane || ViewModel.IsDualPane)
+            .OrderByDescending(p => p == ViewModel.ActivePane)
+            .FirstOrDefault(p => !p.IsVirtual && p.CurrentPath.Length > 0 && string.Equals(Path.GetFullPath(p.CurrentPath).TrimEnd(Path.DirectorySeparatorChar), normDest, StringComparison.Ordinal));
+        if (pane == null)
+        {
+            return;
+        }
+
+        SelectWhenLoaded(pane, targets);
+    }
+
+    private void OnPaneContentLoaded(PaneViewModel pane)
+    {
+        if (_pendingSelectPaths.Count == 0 || pane != _pendingSelectPane)
+        {
+            return;
+        }
+
+        List<FileItemViewModel> items = pane.Items.Where(i => _pendingSelectPaths.Contains(i.FullPath)).ToList();
+        if (items.Count < _pendingSelectPaths.Count && pane.IsLoading)
+        {
+            return;
+        }
+
+        _pendingSelectPaths = new();
+        _pendingSelectPane = null;
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        if (items.Count == 1 && pane == ViewModel.ActivePane)
+        {
+            SelectTypeAheadMatch(items[0]);
+            return;
+        }
+
+        SelectItems(pane, items);
+    }
+
+    private void SelectItems(PaneViewModel pane, List<FileItemViewModel> items)
+    {
+        ListBox? list = GetListBox(pane);
+        if (list == null)
+        {
+            return;
+        }
+
+        list.Selection.Clear();
+        foreach (FileItemViewModel item in items)
+        {
+            int index = pane.Items.IndexOf(item);
+            if (index >= 0)
+            {
+                list.Selection.Select(index);
+            }
+        }
+
+        list.ScrollIntoView(items[0]);
+        SyncPaneSelection(pane);
+
+        if (pane != ViewModel.ActivePane)
+        {
+            return;
+        }
+
+        list.Focus();
+        int firstIndex = pane.Items.IndexOf(items[0]);
+        if (firstIndex >= 0)
+        {
+            list.ContainerFromIndex(firstIndex)?.Focus();
+        }
+    }
+
     private void SelectTypeAheadMatch(FileItemViewModel match)
     {
         ListBox? activeList = GetActiveListBox();
@@ -1609,11 +2020,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        bool switchedPane = ViewModel.ActivePane != pane;
         ViewModel.ActivePane = pane;
         (Canvas canvas, Border rect) = GetRubberBand(activeList);
         PointerPoint point = e.GetCurrentPoint(activeList);
         ListBoxItem? clickedItem = FindVisualParent<ListBoxItem>((Visual?) e.Source);
-        
+        if (clickedItem != null && !IsOnItemHitZone(activeList, clickedItem, point.Position))
+        {
+            clickedItem = null;
+            e.Handled = true;
+        }
+
         if (point.Properties.IsRightButtonPressed)
         {
             if (clickedItem?.DataContext is FileItemViewModel fileItem)
@@ -1668,6 +2085,12 @@ public partial class MainWindow : Window
             {
                 activeList.Focus();
                 _clickedAlreadySelectedItem = null;
+                if (switchedPane)
+                {
+                    e.Handled = true;
+                    return;
+                }
+
                 if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
                     activeList.Selection.Clear();
@@ -1698,6 +2121,8 @@ public partial class MainWindow : Window
 
         if (_isRubberBanding)
         {
+            SetGridHover(null);
+
             Point curr = e.GetPosition(canvas);
             double maxX = Math.Max(0, canvas.Bounds.Width);
             double maxY = Math.Max(0, canvas.Bounds.Height);
@@ -1731,10 +2156,7 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                Point pt = container.TranslatePoint(new(0, 0), canvas) ?? new();
-                Rect itemBounds = new(pt.X, pt.Y, container.Bounds.Width, container.Bounds.Height);
-
-                if (selBounds.Intersects(itemBounds))
+                if (GetItemHitZones(activeList, container, canvas).Any(zone => selBounds.Intersects(zone)))
                 {
                     if (!IsInListSelection(activeList, fileItem))
                     {
@@ -1752,6 +2174,8 @@ public partial class MainWindow : Window
 
             return;
         }
+
+        UpdateGridHover(activeList, e);
 
         if (_potentialFileDrag && _draggedFile != null && !ViewModel.ActivePane.IsVirtual)
         {
@@ -1894,7 +2318,7 @@ public partial class MainWindow : Window
 
                 _hoveredBreadcrumbButton = hoverBreadcrumb;
                 _hoveredBreadcrumbPath = bcPath;
-                hoverBreadcrumb.Background = Brush.Parse("#2A4B7C");
+                hoverBreadcrumb.Background = ThemeService.AccentSubtleBrush;
                 return;
             }
         }
@@ -1940,6 +2364,37 @@ public partial class MainWindow : Window
 
         _ = Logger.LogI($"Dropped {paths.Count} items (copy: {isCopy})");
 
+        string targetDir = ResolveDropTarget(paths, windowPosition);
+        ClearDropTargets();
+        if (NetworkBrowseService.IsBrowseLocation(targetDir))
+        {
+            return;
+        }
+
+        ViewModel.TransferItemsTo(paths, targetDir, isCopy);
+    }
+
+    public async void HandleFilesLinked(List<string> paths, Point? windowPosition = null)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        _ = Logger.LogI($"Dropped {paths.Count} items as symlinks");
+
+        string targetDir = ResolveDropTarget(paths, windowPosition);
+        ClearDropTargets();
+
+        List<string> created = await ViewModel.CreateSymlinksAsync(paths, targetDir);
+        if (targetDir == ViewModel.CurrentPath)
+        {
+            SelectWhenLoaded(created.FirstOrDefault());
+        }
+    }
+
+    private string ResolveDropTarget(List<string> paths, Point? windowPosition)
+    {
         string targetDir = ViewModel.CurrentPath;
         if (windowPosition.HasValue)
         {
@@ -1971,13 +2426,7 @@ public partial class MainWindow : Window
             }
         }
 
-        ClearDropTargets();
-        if (NetworkBrowseService.IsBrowseLocation(targetDir))
-        {
-            return;
-        }
-
-        ViewModel.TransferItemsTo(paths, targetDir, isCopy);
+        return targetDir;
     }
 
     private void OnAppDragDrop(object? sender, DragEventArgs e)
@@ -1985,6 +2434,13 @@ public partial class MainWindow : Window
         List<string> paths = ExtractDroppedPaths(e.Data);
         if (paths.Count == 0)
         {
+            return;
+        }
+
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        {
+            HandleFilesLinked(paths, e.GetPosition(this));
+            e.Handled = true;
             return;
         }
 
@@ -2087,6 +2543,53 @@ public partial class MainWindow : Window
         }
     }
 
+    private static bool IsGridList(ListBox list)
+    {
+        return list.Name == GridFilesListName;
+    }
+
+    private static IEnumerable<Rect> GetItemHitZones(ListBox list, ListBoxItem container, Visual relativeTo)
+    {
+        if (!IsGridList(list))
+        {
+            Point origin = container.TranslatePoint(new(0, 0), relativeTo) ?? new();
+            yield return new(origin, container.Bounds.Size);
+            yield break;
+        }
+
+        foreach (Control zone in container.GetVisualDescendants().OfType<Control>())
+        {
+            if (!zone.Classes.Contains("hit-zone") || !zone.IsEffectivelyVisible)
+            {
+                continue;
+            }
+
+            Point? origin = zone.TranslatePoint(new(0, 0), relativeTo);
+            if (origin != null)
+            {
+                yield return GetHitZoneRect(zone, origin.Value);
+            }
+        }
+    }
+
+    private static Rect GetHitZoneRect(Control zone, Point origin)
+    {
+        if (zone is not TextBlock { MaxLines: > 1 } textBlock)
+        {
+            return new(origin, zone.Bounds.Size);
+        }
+
+        int lineCount = Math.Max(1, textBlock.TextLayout.TextLines.Count);
+        double lineHeight = zone.Bounds.Height / lineCount;
+        double centerX = origin.X + zone.Bounds.Width / 2;
+        return new(centerX - GridLabelHitWidth / 2, origin.Y, GridLabelHitWidth, lineHeight);
+    }
+
+    private static bool IsOnItemHitZone(ListBox list, ListBoxItem container, Point point)
+    {
+        return GetItemHitZones(list, container, list).Any(zone => zone.Contains(point));
+    }
+
     private static bool IsOverItemDropZone(Visual? visual)
     {
         while (visual != null && visual is not ListBoxItem)
@@ -2132,6 +2635,18 @@ public partial class MainWindow : Window
 
         InjectAddonContextItems(menu);
 
+        MenuItem? openWithMenu = menu.Items.OfType<MenuItem>().FirstOrDefault(m => m.Tag is "open-with");
+        if (openWithMenu != null)
+        {
+            PopulateOpenWithMenu(openWithMenu);
+        }
+
+        bool canPaste = MainWindowViewModel.HasPasteContent();
+        foreach (MenuItem item in menu.Items.OfType<MenuItem>().Where(m => m.Tag is "paste" or "paste-link"))
+        {
+            item.IsEnabled = canPaste;
+        }
+
         MenuItem? colorMenu = menu.Items
             .OfType<MenuItem>()
             .FirstOrDefault(m => m.Name == "FolderColorMenuItem");
@@ -2141,6 +2656,46 @@ public partial class MainWindow : Window
         }
 
         PopulateFolderColorMenu(colorMenu);
+    }
+
+    private async void PopulateOpenWithMenu(MenuItem menu)
+    {
+        FileItemViewModel? item = ViewModel.ActivePane.SelectedItem;
+        if (item == null || item.IsDirectory)
+        {
+            return;
+        }
+
+        MenuItem other = new() { Header = LocalizationService.Get("OtherApplication") };
+        other.Click += OnMenuOpenWithClick;
+        menu.ItemsSource = new List<object> { other };
+
+        string path = item.FullPath;
+        AppAssociations associations = await Task.Run(() => MimeService.GetAppAssociations(path));
+        if (ViewModel.ActivePane.SelectedItem?.FullPath != path)
+        {
+            return;
+        }
+
+        List<object> items = new();
+        foreach (AppChoice app in associations.Apps)
+        {
+            MenuItem appItem = new()
+            {
+                Header = app.Id == associations.DefaultApp ? LocalizationService.Format("AppDefault", app.Name) : app.Name,
+                Tag = app.Id,
+            };
+            appItem.Click += (_, _) => ViewModel.OpenWith(item, app.Id, false);
+            items.Add(appItem);
+        }
+
+        if (items.Count > 0)
+        {
+            items.Add(new Separator());
+        }
+
+        items.Add(other);
+        menu.ItemsSource = items;
     }
 
     private void PopulateFolderColorMenu(MenuItem menu)
@@ -2237,6 +2792,31 @@ public partial class MainWindow : Window
             ConflictResolution? resolution = await dialog.ShowDialog<ConflictResolution?>(this);
             return resolution ?? new ConflictResolution(ConflictAction.Cancel);
         });
+    }
+
+    private async void OnAccessDenied(string message)
+    {
+        ConfirmDialog dialog = new(LocalizationService.Get("AccessDenied"), message);
+        await dialog.ShowDialog<bool?>(this);
+    }
+
+    private async void OnDirectoryAccessDenied(string path)
+    {
+        ConfirmDialog dialog = new(
+            LocalizationService.Get("AccessDenied"),
+            LocalizationService.Format("DirectoryAccessDenied", path),
+            LocalizationService.Get("OpenAsRoot"),
+            true,
+            false)
+        {
+            CancelText = LocalizationService.Get("OK"),
+        };
+        if (await dialog.ShowDialog<bool?>(this) != true)
+        {
+            return;
+        }
+
+        ViewModel.OpenAsRoot(path);
     }
 
     private async void OnScriptOpenRequested(string path)
@@ -2485,6 +3065,13 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            {
+                OnMenuPasteAsSymlinkClick(sender, e);
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == Key.V)
             {
                 ViewModel.Paste();
@@ -2644,7 +3231,7 @@ public partial class MainWindow : Window
         string? result = await dialog.ShowDialog<string?>(this);
         if (!string.IsNullOrWhiteSpace(result))
         {
-            ViewModel.CreateFolder(result);
+            SelectWhenLoaded(ViewModel.CreateFolder(result));
         }
         else
         {
@@ -2661,7 +3248,7 @@ public partial class MainWindow : Window
         string? result = await dialog.ShowDialog<string?>(this);
         if (!string.IsNullOrWhiteSpace(result))
         {
-            ViewModel.CreateFile(result);
+            SelectWhenLoaded(ViewModel.CreateFile(result));
         }
         else
         {
@@ -2704,8 +3291,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        string ext = Path.GetExtension(activeSelected.FullPath);
-        OpenWithDialog dialog = new(ext);
+        OpenWithDialog dialog = new(activeSelected.FullPath);
         OpenWithResult? result = await dialog.ShowDialog<OpenWithResult?>(this);
         if (result != null && !string.IsNullOrWhiteSpace(result.Program))
         {
@@ -2785,6 +3371,19 @@ public partial class MainWindow : Window
     private void OnMenuPasteClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.Paste();
+    }
+
+    private void OnEditMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        bool canPaste = MainWindowViewModel.HasPasteContent();
+        EditPasteMenuItem.IsEnabled = canPaste;
+        EditPasteSymlinkMenuItem.IsEnabled = canPaste;
+    }
+
+    private async void OnMenuPasteAsSymlinkClick(object? sender, RoutedEventArgs e)
+    {
+        List<string> created = await ViewModel.PasteAsSymlinksAsync();
+        SelectWhenLoaded(created.FirstOrDefault());
     }
 
     private void OnMenuDuplicateClick(object? sender, RoutedEventArgs e)
@@ -2997,6 +3596,25 @@ public partial class MainWindow : Window
         }
 
         return PickerResult ?? FilePickerResult.Cancelled();
+    }
+
+    private void FocusSaveName()
+    {
+        string text = PickerNameTextBox.Text ?? "";
+        PickerNameTextBox.Focus();
+        PickerNameTextBox.SelectionStart = 0;
+        PickerNameTextBox.SelectionEnd = FileUtils.GetNameLength(text);
+    }
+
+    private async Task<bool> ConfirmOverwriteAsync(string path)
+    {
+        ConfirmDialog dialog = new(
+            LocalizationService.Get("ReplaceFileTitle"),
+            LocalizationService.Format("ReplaceFilePrompt", Path.GetFileName(path)),
+            LocalizationService.Get("Replace"),
+            true,
+            true);
+        return await dialog.ShowDialog<bool?>(this) == true;
     }
 
     private void OnPickerCompleted(FilePickerResult result)

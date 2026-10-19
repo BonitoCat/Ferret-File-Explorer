@@ -225,7 +225,7 @@
             <Button Content="{markup:Translate Key=Connect}"
                     x:Name="ConnectButton"
                     Click="OnConnectClick"
-                    Background="#3584E4"
+                    Background="{DynamicResource AccentBrush}"
                     Foreground="White"
                     MinWidth="85"
                     Padding="14,6"
