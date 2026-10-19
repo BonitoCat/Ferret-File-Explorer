@@ -13,7 +13,9 @@ CONTROL_X64_HEADLESS="$SCRIPT_DIR/fe-linux-x64-headless/DEBIAN/control"
 CONTROL_ARM64_FULL="$SCRIPT_DIR/fe-linux-arm64-full/DEBIAN/control"
 CONTROL_ARM64_HEADLESS="$SCRIPT_DIR/fe-linux-arm64-headless/DEBIAN/control"
 
-CURRENT_VERSION=$(sed -n 's/^Version: //p' "$CONTROL_X64_FULL" | head -n 1)
+VERSION_PROPS="$ROOT_DIR/Directory.Build.props"
+
+CURRENT_VERSION=$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' "$VERSION_PROPS" | head -n 1)
 echo "Current version: $CURRENT_VERSION"
 
 if [ -n "$1" ]; then
@@ -26,6 +28,8 @@ else
 fi
 
 echo "Building version: $NEW_VERSION"
+
+sed -i "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|" "$VERSION_PROPS"
 
 for ctrl in "$CONTROL_X64_FULL" "$CONTROL_X64_HEADLESS" "$CONTROL_ARM64_FULL" "$CONTROL_ARM64_HEADLESS"; do
     if [ -f "$ctrl" ]; then

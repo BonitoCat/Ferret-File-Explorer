@@ -15,6 +15,8 @@ using Avalonia.Platform;
 using Avalonia.Threading;
 using FileExplorer.Core.Entries;
 using FileExplorer.Gui.ViewModels;
+using SkiaSharp;
+using Svg.Skia;
 
 namespace FileExplorer.Gui.Services;
 
@@ -542,6 +544,13 @@ public static class ThumbnailService
 
     private static Bitmap? GenerateThumbnail(string path, string uri, string hash, long mtime)
     {
+        string extension = Path.GetExtension(path).ToLowerInvariant();
+        if (extension is ".svg" or ".svgz")
+        {
+            Bitmap? rendered = RenderSvg(path);
+            return rendered != null ? FinishThumbnail(rendered, uri, hash, mtime) : null;
+        }
+
         Bitmap thumbnail;
         using (FileStream stream = File.OpenRead(path))
         {
@@ -549,6 +558,37 @@ public static class ThumbnailService
         }
 
         return FinishThumbnail(thumbnail, uri, hash, mtime);
+    }
+
+    private static Bitmap? RenderSvg(string path)
+    {
+        using SKSvg svg = new();
+        SKPicture? picture = svg.Load(path);
+        if (picture == null)
+        {
+            return null;
+        }
+
+        SKRect bounds = picture.CullRect;
+        if (bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return null;
+        }
+
+        float scale = Math.Min(ThumbnailSize / bounds.Width, ThumbnailSize / bounds.Height);
+        int width = Math.Max(1, (int) Math.Round(bounds.Width * scale));
+        int height = Math.Max(1, (int) Math.Round(bounds.Height * scale));
+
+        using SKBitmap surface = new(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
+        using (SKCanvas canvas = new(surface))
+        {
+            canvas.Clear(SKColors.Transparent);
+            canvas.Scale(scale);
+            canvas.Translate(-bounds.Left, -bounds.Top);
+            canvas.DrawPicture(picture);
+        }
+
+        return new(PixelFormat.Bgra8888, AlphaFormat.Premul, surface.GetPixels(), new(width, height), new(96, 96), surface.RowBytes);
     }
 
     private static Bitmap? FinishThumbnail(Bitmap thumbnail, string uri, string hash, long mtime)

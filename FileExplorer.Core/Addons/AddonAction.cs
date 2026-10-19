@@ -54,7 +54,7 @@ public sealed class AddonAction
             .Where(k => k.Length > 0 && !k.Contains(' '))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        IconPath = addon.ResolvePath(manifest.Icon) ?? addon.IconPath;
+        IconPath = addon.ResolvePath(manifest.Icon);
         ConfirmKey = string.IsNullOrWhiteSpace(manifest.Confirm) ? null : manifest.Confirm.Trim();
         SeparatorBefore = separatorBefore;
         SeparatorAfter = separatorAfter;

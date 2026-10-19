@@ -125,6 +125,13 @@ public partial class AddonsDialog : Window
         LoadAddons(null);
     }
 
+    private async void OnAddonStoreClick(object? sender, RoutedEventArgs e)
+    {
+        AddonStoreDialog dialog = new();
+        await dialog.ShowDialog(this);
+        LoadAddons(SelectedAddon?.Id);
+    }
+
     private async void OnInstallFolderClick(object? sender, RoutedEventArgs e)
     {
         await InstallAsync(PickerMode.Folder);

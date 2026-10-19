@@ -69,7 +69,7 @@ my-addon/
 | `terminal`    | Run inside a terminal window                                                | `false`         |
 | `confirm`     | Ask this question before running                                            |                 |
 | `shortcut`    | Keyboard shortcut, e.g. `Ctrl+Alt+C`                                        |                 |
-| `icon`        | Icon for this entry                                                         | addon `icon`    |
+| `icon`        | Icon for this entry                                                         | none            |
 | `after`       | Place it after this menu entry (see placement)                              |                 |
 | `before`      | Place it before this menu entry                                             |                 |
 | `index`       | Fixed position in the context menu (see placement)                          | end             |
@@ -82,6 +82,10 @@ my-addon/
 | `file`       | files (all selected items must match)        |
 | `folder`     | folders                                      |
 | `background` | empty space in a folder                      |
+
+### Addon store
+
+Addons → Browse Addon Store lists every verified addon from [Ferret-Addons](https://github.com/BonitoCat/Ferret-Addons). To publish yours, open a pull request there that adds your addon folder as `addons/<id>/` (plain files, no zip). Store addons need an `id` and a `version`; raise `version` to ship an update. Downloads are checked against their SHA-256 hash before they are installed.
 
 ### Placement in the context menu
 

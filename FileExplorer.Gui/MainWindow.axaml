@@ -177,6 +177,7 @@
                                 </Button>
 
                                 <Button Click="OnEmptyTrashClick"
+                                        IsEnabled="{Binding !!Items.Count}"
                                         Background="#C0392B"
                                         Foreground="White"
                                         Padding="12,5"
@@ -871,6 +872,10 @@
                               Icon="{markup:Icon Key=extension}"
                               Click="OnMenuManageAddonsClick"/>
 
+                    <MenuItem Header="{markup:Translate Key=BrowseAddonStore}"
+                              Icon="{markup:Icon Key=asset-store}"
+                              Click="OnMenuAddonStoreClick"/>
+
                     <MenuItem Header="{markup:Translate Key=InstallAddonFolder}"
                               Icon="{markup:Icon Key=download}"
                               Click="OnMenuInstallAddonFolderClick"/>
@@ -895,6 +900,12 @@
                     <MenuItem Header="{markup:Translate Key=Shortcuts}"
                               Icon="{markup:Icon Key=keyboard}"
                               Click="OnMenuShortcutsClick"/>
+
+                    <Separator/>
+
+                    <MenuItem Header="{markup:Translate Key=About}"
+                              Icon="{markup:Icon Key=info}"
+                              Click="OnMenuAboutClick"/>
                 </MenuItem>
             </Menu>
 

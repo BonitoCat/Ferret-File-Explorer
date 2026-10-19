@@ -129,6 +129,10 @@
                 <Separator Margin="0,4"/>
 
                 <Button Classes="side"
+                        Content="{markup:Translate Key=BrowseAddonStore}"
+                        Click="OnAddonStoreClick"/>
+
+                <Button Classes="side"
                         Content="{markup:Translate Key=InstallAddonFolder}"
                         Click="OnInstallFolderClick"/>
 

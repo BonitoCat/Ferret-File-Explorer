@@ -108,7 +108,7 @@ public static partial class FileUtils
 
         if (OperatingSystem.IsLinux() && Environment.Is64BitProcess)
         {
-            if (LinuxStatVfs(path, out StatVfs stat) != 0)
+            if (LinuxStatVfs(path, out StatVfs stat) != 0 || stat.Blocks == 0)
             {
                 return null;
             }

@@ -478,6 +478,12 @@ public partial class MainWindow
         await dialog.ShowDialog(this);
     }
 
+    private async void OnMenuAddonStoreClick(object? sender, RoutedEventArgs e)
+    {
+        AddonStoreDialog dialog = new();
+        await dialog.ShowDialog(this);
+    }
+
     private async void OnMenuInstallAddonFolderClick(object? sender, RoutedEventArgs e)
     {
         await InstallAddonAsync(PickerMode.Folder);

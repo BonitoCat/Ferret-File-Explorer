@@ -9,8 +9,6 @@ using FileExplorer.Core.Services;
 using FileExplorer.Core.States;
 using FileExplorer.Core.Utilities;
 
-using Generated;
-
 using FileLib;
 using LoggerLib;
 
@@ -151,7 +149,7 @@ public static class Program
                 
                 case "--version":
                 case "-v":
-                    string version = BuildInfo.Version;
+                    string version = AppInfo.Version;
                     Console.WriteLine($"v{version}\n");
                     
                     return;

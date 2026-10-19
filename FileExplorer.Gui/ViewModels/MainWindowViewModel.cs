@@ -2512,6 +2512,77 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Refresh();
     }
 
+    public void BulkRename(IReadOnlyList<BulkRenameEntry> renames)
+    {
+        if (ActivePane.IsVirtual || renames.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> sourcePaths = new(renames.Select(rename => rename.Path), StringComparer.Ordinal);
+        List<(string TempPath, string OriginalName, string NewName)> staged = new();
+        List<BulkRenameEntry> direct = new();
+        foreach (BulkRenameEntry rename in renames)
+        {
+            string directory = Path.GetDirectoryName(rename.Path) ?? "";
+            if (!sourcePaths.Contains(Path.Combine(directory, rename.NewName)))
+            {
+                direct.Add(rename);
+                continue;
+            }
+
+            string tempName = $".fe-rename-{Guid.NewGuid():N}";
+            try
+            {
+                _operationService.Rename(rename.Path, tempName);
+                staged.Add((Path.Combine(directory, tempName), Path.GetFileName(rename.Path), rename.NewName));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileError("RenameFailed", ex);
+            }
+        }
+
+        foreach (BulkRenameEntry rename in direct)
+        {
+            try
+            {
+                _operationService.Rename(rename.Path, rename.NewName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileError("RenameFailed", ex);
+            }
+        }
+
+        foreach ((string tempPath, string originalName, string newName) in staged)
+        {
+            try
+            {
+                _operationService.Rename(tempPath, newName);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                ReportFileError("RenameFailed", ex);
+                TryRestoreStagedRename(tempPath, originalName);
+            }
+        }
+
+        Refresh();
+    }
+
+    private void TryRestoreStagedRename(string tempPath, string originalName)
+    {
+        try
+        {
+            _operationService.Rename(tempPath, originalName);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _ = Logger.LogI($"Could not restore {tempPath} to {originalName}");
+        }
+    }
+
     public void DuplicateSelected(IEnumerable<FileItemViewModel>? selection = null)
     {
         List<FileItemViewModel> targets = ResolveTargets(selection);

@@ -30,14 +30,14 @@ public static class AddonInstaller
         return await InstallFromPathAsync(owner, result.SelectedPath);
     }
 
-    public static async Task<Addon?> InstallFromPathAsync(Window owner, string sourcePath)
+    public static async Task<Addon?> InstallFromPathAsync(Window owner, string sourcePath, bool confirmReplace = true)
     {
         AddonService service = AddonService.Instance;
         try
         {
             string id = service.GetInstallId(sourcePath);
-            bool overwrite = false;
-            if (service.IsInstalled(id))
+            bool overwrite = service.IsInstalled(id);
+            if (overwrite && confirmReplace)
             {
                 ConfirmDialog confirm = new(
                     LocalizationService.Get("ReplaceAddonTitle"),
@@ -49,8 +49,6 @@ public static class AddonInstaller
                 {
                     return null;
                 }
-
-                overwrite = true;
             }
 
             return service.Install(sourcePath, overwrite);

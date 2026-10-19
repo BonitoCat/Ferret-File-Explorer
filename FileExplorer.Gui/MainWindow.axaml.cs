@@ -3261,15 +3261,43 @@ public partial class MainWindow : Window
         ViewModel.OpenTerminal();
     }
 
-    private void OnEmptyTrashClick(object? sender, RoutedEventArgs e)
+    private async void OnEmptyTrashClick(object? sender, RoutedEventArgs e)
     {
+        ConfirmDialog confirm = new(
+            LocalizationService.Get("EmptyTrash"),
+            LocalizationService.Get("EmptyTrashConfirm"),
+            LocalizationService.Get("EmptyTrash"),
+            true,
+            true);
+        if (await confirm.ShowDialog<bool?>(this) != true)
+        {
+            return;
+        }
+
         ViewModel.EmptyTrash();
     }
 
-    private void OnRecoverClick(object? sender, RoutedEventArgs e)
+    private async void OnRecoverClick(object? sender, RoutedEventArgs e)
     {
         PaneViewModel? pane = GetPane(sender);
         if (pane == null)
+        {
+            return;
+        }
+
+        int count = pane.GetSelection().Count;
+        if (count == 0)
+        {
+            return;
+        }
+
+        ConfirmDialog confirm = new(
+            LocalizationService.Get("RecoverSelected"),
+            LocalizationService.Format("RecoverSelectedConfirm", count),
+            LocalizationService.Get("Recover"),
+            true,
+            false);
+        if (await confirm.ShowDialog<bool?>(this) != true)
         {
             return;
         }
@@ -3399,6 +3427,13 @@ public partial class MainWindow : Window
             return;
         }
 
+        List<FileItemViewModel> selection = GetSelectedItems().ToList();
+        if (selection.Count > 1)
+        {
+            await ShowBulkRenameDialog(selection);
+            return;
+        }
+
         InputDialog dialog = new(LocalizationService.Get("RenameTitle"), LocalizationService.Get("NewNamePrompt"), activeSelected.Name)
         {
             SelectNameOnly = !activeSelected.IsDirectory,
@@ -3412,6 +3447,27 @@ public partial class MainWindow : Window
         {
             await Logger.LogI("Rename canceled");
         }
+    }
+
+    private async Task ShowBulkRenameDialog(List<FileItemViewModel> selection)
+    {
+        if (ViewModel.ActivePane.IsVirtual)
+        {
+            return;
+        }
+
+        List<FileItemViewModel> ordered = selection
+            .OrderBy(item => ViewModel.ActivePane.Items.IndexOf(item))
+            .ToList();
+        BulkRenameDialog dialog = new(ordered);
+        List<BulkRenameEntry>? renames = await dialog.ShowDialog<List<BulkRenameEntry>?>(this);
+        if (renames == null || renames.Count == 0)
+        {
+            await Logger.LogI("Bulk rename canceled");
+            return;
+        }
+
+        ViewModel.BulkRename(renames);
     }
 
     private void OnMenuTrashClick(object? sender, RoutedEventArgs e)
@@ -3517,6 +3573,12 @@ public partial class MainWindow : Window
     {
         InputDialog dialog = new(LocalizationService.Get("Shortcuts"), LocalizationService.Get("ShortcutsText"), "");
         await dialog.ShowDialog<string?>(this);
+    }
+
+    private async void OnMenuAboutClick(object? sender, RoutedEventArgs e)
+    {
+        AboutDialog dialog = new();
+        await dialog.ShowDialog(this);
     }
 
     private void OnColResizePointerPressed(object? sender, PointerPressedEventArgs e)

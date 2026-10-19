@@ -157,7 +157,7 @@ public sealed class Addon
         return addon;
     }
 
-    private static IEnumerable<string> GetLanguageChain(string languageCode)
+    internal static IEnumerable<string> GetLanguageChain(string languageCode)
     {
         List<string> chain = new();
         if (!string.IsNullOrWhiteSpace(languageCode))
