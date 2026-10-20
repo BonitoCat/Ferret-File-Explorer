@@ -1,0 +1,67 @@
+id: image-tools
+name: $AddonName
+description: $AddonDescription
+version: 1.0.0
+author: BonitoCat
+icon: icon.svg
+script: scripts/image.sh
+
+dependencies:
+  - command: convert
+    apt: imagemagick
+    dnf: ImageMagick
+    pacman: imagemagick
+    zypper: ImageMagick
+
+settings:
+  - id: format
+    title: $SettingFormat
+    type: choice
+    choices: [webp, png, jpg, gif]
+    default: webp
+
+  - id: quality
+    title: $SettingQuality
+    description: $SettingQualityHint
+    type: number
+    default: 85
+    min: 1
+    max: 100
+
+  - id: max_size
+    title: $SettingMaxSize
+    type: number
+    default: 1920
+    min: 16
+    max: 20000
+
+actions:
+  - id: convert
+    title: $Convert
+    location: context-menu
+    after: compress
+    targets: [file]
+    extensions: [.png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, .tiff, .avif, .heic]
+
+  - id: resize
+    title: $Resize
+    location: context-menu
+    after: image-tools/convert
+    targets: [file]
+    extensions: [.png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, .tiff, .avif, .heic]
+
+  - id: strip
+    title: $Strip
+    location: context-menu
+    after: image-tools/resize
+    targets: [file]
+    extensions: [.png, .jpg, .jpeg, .webp, .tif, .tiff, .avif, .heic]
+    confirm: $StripConfirm
+
+  - id: info
+    title: $Info
+    location: context-menu
+    after: image-tools/strip
+    targets: [file]
+    multiple: false
+    extensions: [.png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, .tiff, .avif, .heic, .svg, .ico]

@@ -56,6 +56,7 @@ public static class AddonInstaller
             try
             {
                 addon = service.Install(sourcePath, overwrite);
+                await AddonDependencyDialog.ResolveAsync(owner, addon);
             }
             finally
             {

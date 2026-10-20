@@ -1,0 +1,50 @@
+id: pdf-tools
+name: $AddonName
+description: $AddonDescription
+version: 1.0.0
+author: BonitoCat
+icon: icon.svg
+script: scripts/pdf.sh
+
+dependencies:
+  - command: gs
+    package: ghostscript
+
+settings:
+  - id: resolution
+    title: $SettingResolution
+    description: $SettingResolutionHint
+    type: choice
+    choices: [72, 150, 300]
+    default: 150
+
+actions:
+  - id: merge
+    title: $Merge
+    location: context-menu
+    after: compress
+    targets: [file]
+    extensions: [.pdf]
+
+  - id: compress
+    title: $Compress
+    location: context-menu
+    after: pdf-tools/merge
+    targets: [file]
+    extensions: [.pdf]
+
+  - id: extract
+    title: $Extract
+    location: context-menu
+    after: pdf-tools/compress
+    targets: [file]
+    multiple: false
+    extensions: [.pdf]
+
+  - id: split
+    title: $Split
+    location: context-menu
+    after: pdf-tools/extract
+    targets: [file]
+    multiple: false
+    extensions: [.pdf]

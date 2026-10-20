@@ -309,7 +309,7 @@ public partial class MainWindow
         }
 
         AddonField field = new("choice", "", "", AddonFieldType.Choice, parts[1], parts.Skip(1).ToList());
-        AddonFormDialog dialog = new(run.AddonName, parts[0], [field]);
+        AddonFormDialog dialog = new(run.AddonName, TranslateAddonText(run, parts[0]), [field]);
         Dictionary<string, string>? values = await dialog.ShowDialog<Dictionary<string, string>?>(this);
         ReplyToRun(run, values?.GetValueOrDefault(field.Id));
     }
@@ -323,7 +323,7 @@ public partial class MainWindow
             return;
         }
 
-        string label = parts.Count > 2 ? parts[2] : parts[0];
+        string label = parts.Count > 2 ? TranslateAddonText(run, parts[2]) : parts[0];
         string value = parts.Count > 3 ? parts[3] : "";
         List<string> choices = new();
         if (type == AddonFieldType.Choice)
@@ -371,7 +371,7 @@ public partial class MainWindow
     {
         int space = argument.IndexOf(' ');
         string id = space < 0 ? argument : argument[..space];
-        string text = space < 0 ? "" : argument[(space + 1)..].Trim();
+        string text = space < 0 ? "" : TranslateAddonText(run, argument[(space + 1)..].Trim());
         if (id.Length == 0)
         {
             ReportInvalidAddonArgument(run, "statusbar", argument);
@@ -412,7 +412,7 @@ public partial class MainWindow
             return;
         }
 
-        item.Tooltip = space < 0 ? "" : argument[(space + 1)..].Trim().Replace("\\n", "\n");
+        item.Tooltip = space < 0 ? "" : TranslateAddonText(run, argument[(space + 1)..].Trim().Replace("\\n", "\n"));
     }
 
     private AddonStatusItemViewModel? FindAddonStatusItem(string addonId, string id)

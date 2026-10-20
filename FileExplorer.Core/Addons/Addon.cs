@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Addons;
 
@@ -12,6 +14,7 @@ public sealed class Addon
     public const char TranslationPrefix = '$';
 
     private static readonly string[] TranslationDirNames = ["translations", "translation"];
+    private static readonly Regex TranslationTokenRegex = new(@"\$[A-Za-z_][A-Za-z0-9_]*", RegexOptions.Compiled);
 
     private static readonly IDeserializer ManifestDeserializer = new DeserializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
@@ -28,7 +31,10 @@ public sealed class Addon
     private readonly List<AddonAction> _actions = new();
     private readonly Dictionary<AddonHook, string> _hooks = new();
     private readonly List<AddonField> _settings = new();
+    private readonly List<AddonDependency> _dependencies = new();
     private readonly List<AddonPlace> _places = new();
+    private readonly List<AddonDonation> _donations = new();
+    private readonly List<string> _invalidDonations = new();
 
     public string Id { get; internal set; }
     public string RootPath { get; }
@@ -48,6 +54,9 @@ public sealed class Addon
     public IReadOnlyDictionary<AddonHook, string> Hooks => _hooks;
     public IReadOnlyList<AddonField> Settings => _settings;
     public IReadOnlyList<AddonPlace> Places => _places;
+    public IReadOnlyList<AddonDependency> Dependencies => _dependencies;
+    public IReadOnlyList<AddonDonation> Donations => _donations;
+    public IReadOnlyList<string> InvalidDonations => _invalidDonations;
     public string? ServicePath { get; private set; }
 
     private Addon(string rootPath, AddonManifest manifest)
@@ -86,6 +95,8 @@ public sealed class Addon
         addon.LoadService();
         addon.LoadSettings();
         addon.LoadPlaces();
+        addon.LoadDependencies();
+        addon.LoadDonations();
         addon.LoadActions();
         return addon;
     }
@@ -134,6 +145,16 @@ public sealed class Addon
         }
 
         return key;
+    }
+
+    public string TranslateText(string? text, string languageCode)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains(TranslationPrefix))
+        {
+            return text ?? "";
+        }
+
+        return TranslationTokenRegex.Replace(text, match => Translate(match.Value, languageCode));
     }
 
     public bool SupportsMode(AddonMode mode)
@@ -351,14 +372,79 @@ public sealed class Addon
         }
     }
 
-    public static string ExpandHome(string path)
+    private void LoadDependencies()
     {
-        if (path != "~" && !path.StartsWith("~/", StringComparison.Ordinal))
+        foreach (object? entry in Manifest.Dependencies ?? [])
         {
-            return path;
+            if (entry is string command)
+            {
+                AddDependency(command, command, new Dictionary<string, string>());
+                continue;
+            }
+
+            if (entry is not IDictionary<object, object> map)
+            {
+                SetError("AddonErrorDependencyInvalid", entry?.ToString() ?? "");
+                continue;
+            }
+
+            Dictionary<string, string> values = map
+                .Where(e => e.Key is string && e.Value is string)
+                .ToDictionary(e => ((string) e.Key).Trim().ToLowerInvariant(), e => ((string) e.Value).Trim());
+            Dictionary<string, string> packages = values
+                .Where(e => AddonDependency.PackageManagers.Contains(e.Key) && e.Value.Length > 0)
+                .ToDictionary(e => e.Key, e => e.Value);
+            AddDependency(values.GetValueOrDefault("command", ""), values.GetValueOrDefault("package"), packages);
+        }
+    }
+
+    private void AddDependency(string command, string? package, IReadOnlyDictionary<string, string> packages)
+    {
+        command = command.Trim();
+        if (command.Length == 0)
+        {
+            SetError("AddonErrorDependencyNoCommand", package ?? "");
+            return;
         }
 
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), path.TrimStart('~').TrimStart('/'));
+        if (_dependencies.Any(d => d.Command == command))
+        {
+            return;
+        }
+
+        _dependencies.Add(new(command, string.IsNullOrWhiteSpace(package) ? null : package.Trim(), packages));
+    }
+
+    private void LoadDonations()
+    {
+        List<object> entries = Manifest.Donate switch
+        {
+            null => [],
+            List<object> list => list,
+            _ => [Manifest.Donate],
+        };
+
+        foreach (object? entry in entries)
+        {
+            string url = entry?.ToString()?.Trim() ?? "";
+            if (!AddonDonation.TryParse(url, out AddonDonation? donation) || donation == null)
+            {
+                _invalidDonations.Add(url);
+                continue;
+            }
+
+            if (_donations.Any(d => d.Provider == donation.Provider))
+            {
+                continue;
+            }
+
+            _donations.Add(donation);
+        }
+    }
+
+    public static string ExpandHome(string path)
+    {
+        return PathManager.ExpandHome(path);
     }
 
     private void LoadActions()

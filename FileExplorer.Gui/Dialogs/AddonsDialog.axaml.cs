@@ -65,6 +65,7 @@ public partial class AddonsDialog : Window
         MoveDownButton.IsEnabled = index >= 0 && index < items.Count - 1;
         UninstallButton.IsEnabled = selected != null;
         SettingsButton.IsEnabled = selected != null && AddonService.Instance.Find(selected.Id)?.Settings.Count > 0;
+        DependenciesButton.IsEnabled = selected?.HasMissing == true;
     }
 
     private async void OnSettingsClick(object? sender, RoutedEventArgs e)
@@ -77,6 +78,19 @@ public partial class AddonsDialog : Window
         }
 
         await AddonSettingsEditor.EditAsync(this, addon);
+    }
+
+    private async void OnDependenciesClick(object? sender, RoutedEventArgs e)
+    {
+        AddonItemViewModel? selected = SelectedAddon;
+        Addon? addon = selected == null ? null : AddonService.Instance.Find(selected.Id);
+        if (addon == null)
+        {
+            return;
+        }
+
+        await AddonDependencyDialog.ResolveAsync(this, addon);
+        LoadAddons(addon.Id);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -165,6 +179,16 @@ public partial class AddonsDialog : Window
     {
         Addon? addon = await AddonInstaller.InstallAsync(this, mode);
         LoadAddons(addon?.Id ?? SelectedAddon?.Id);
+    }
+
+    private async void OnDonateClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string url } || !AddonDonation.TryParse(url, out _))
+        {
+            return;
+        }
+
+        await Launcher.LaunchUriAsync(new Uri(url));
     }
 
     private void OnOpenFolderClick(object? sender, RoutedEventArgs e)

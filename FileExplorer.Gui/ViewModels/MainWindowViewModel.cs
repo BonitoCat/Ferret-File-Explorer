@@ -38,7 +38,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private string _searchQuery = "";
     private bool _showHiddenFiles = true;
+    private int _gridNameLines = NormalizeGridNameLines(GuiSettings.GridNameLines);
     private string _statusText = "";
+    private DateTime _statusHoldUntil;
     private bool _isGridView = true;
     private bool _isDualPane;
     private double _colNameWidth = 260;
@@ -216,6 +218,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public IEnumerable<PaneViewModel> Panes => [Pane1, Pane2];
 
     private static readonly TimeSpan TransferSettleTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan StatusMessageHold = TimeSpan.FromSeconds(4);
     public IEnumerable<FileItemViewModel> AllItems => Pane1.Items.Concat(Pane2.Items);
 
     public PaneViewModel ActivePane
@@ -294,6 +297,28 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public string CurrentPath => ActivePane.CurrentPath;
 
+    private const string AppTitle = "Ferret";
+
+    public string CurrentLocationName
+    {
+        get
+        {
+            string path = CurrentPath;
+            if (string.IsNullOrEmpty(path))
+            {
+                return AppTitle;
+            }
+
+            if (PathManager.IsSameOrAncestor(LocationResolver.TrashFilesDir, path))
+            {
+                return LocalizationService.Get("Trash");
+            }
+
+            string? name = Breadcrumbs.FirstOrDefault(c => c.IsCurrent)?.Name ?? BuildBreadcrumbs(path).LastOrDefault()?.Name;
+            return string.IsNullOrWhiteSpace(name) ? AppTitle : name;
+        }
+    }
+
     public string SearchQuery
     {
         get => _searchQuery;
@@ -319,10 +344,33 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public int GridNameLines
+    {
+        get => _gridNameLines;
+        set
+        {
+            if (SetProperty(ref _gridNameLines, NormalizeGridNameLines(value)))
+            {
+                GuiSettings.GridNameLines = _gridNameLines;
+            }
+        }
+    }
+
+    private static int NormalizeGridNameLines(int lines)
+    {
+        return lines is 0 or 2 or 3 ? lines : 3;
+    }
+
     public string StatusText
     {
         get => _statusText;
         set => SetProperty(ref _statusText, value);
+    }
+
+    public void ShowStatusMessage(string text)
+    {
+        _statusHoldUntil = DateTime.UtcNow + StatusMessageHold;
+        StatusText = text;
     }
 
     public bool CanGoBack => ActivePane.CanGoBack;
@@ -536,13 +584,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         string current = CurrentPath;
         string? trail = ActivePane.BreadcrumbTrail;
-        if (trail == null || !IsSameOrAncestor(current, trail) || !Directory.Exists(trail))
+        if (trail == null || !PathManager.IsSameOrAncestor(current, trail) || !Directory.Exists(trail))
         {
             trail = current;
         }
 
         List<BreadcrumbItem> crumbs = BuildBreadcrumbs(trail);
-        if (!crumbs.Any(c => IsSamePath(c.FullPath, current)))
+        if (!crumbs.Any(c => PathManager.AreEqual(c.FullPath, current)))
         {
             trail = current;
             crumbs = BuildBreadcrumbs(trail);
@@ -550,7 +598,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         foreach (BreadcrumbItem crumb in crumbs)
         {
-            crumb.IsCurrent = IsSamePath(crumb.FullPath, current);
+            crumb.IsCurrent = PathManager.AreEqual(crumb.FullPath, current);
         }
 
         ActivePane.BreadcrumbTrail = trail;
@@ -560,35 +608,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             Breadcrumbs.Add(crumb);
         }
+
+        OnPropertyChanged(nameof(CurrentLocationName));
     }
 
     private void ResetActiveBreadcrumbTrail()
     {
         ActivePane.BreadcrumbTrail = null;
-    }
-
-    private static bool IsSamePath(string a, string b)
-    {
-        return string.Equals(NormalizeTrailPath(a), NormalizeTrailPath(b), StringComparison.Ordinal);
-    }
-
-    private static bool IsSameOrAncestor(string ancestor, string path)
-    {
-        string normAncestor = NormalizeTrailPath(ancestor);
-        string normPath = NormalizeTrailPath(path);
-        if (normAncestor == normPath)
-        {
-            return true;
-        }
-
-        string prefix = normAncestor == "/" ? "/" : normAncestor + "/";
-        return normPath.StartsWith(prefix, StringComparison.Ordinal);
-    }
-
-    private static string NormalizeTrailPath(string path)
-    {
-        string trimmed = path.TrimEnd('/');
-        return string.IsNullOrEmpty(trimmed) ? "/" : trimmed;
     }
 
     public void SetGridView(bool grid)
@@ -1022,7 +1048,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
                     extraPlaces.Add(new PlaceItem
                     {
-                        Name = resolvedPath == "/" ? LocalizationService.Get("Root") : BookmarkService.GetDisplayName(resolvedPath),
+                        Name = PathManager.IsRoot(resolvedPath) ? LocalizationService.Get("Root") : BookmarkService.GetDisplayName(resolvedPath),
                         Path = resolvedPath,
                         Icon = IconService.Get("bookmark"),
                         IsBookmark = true,
@@ -1108,12 +1134,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     string name = drive.VolumeLabel;
                     if (string.IsNullOrWhiteSpace(name) || name.Contains('/'))
                     {
-                        name = Path.GetFileName(mount.TrimEnd('/'));
+                        name = PathManager.GetName(mount);
                     }
 
                     if (string.IsNullOrWhiteSpace(name) || name.Contains('/'))
                     {
-                        name = Path.GetFileName(drive.Name.TrimEnd('/'));
+                        name = PathManager.GetName(drive.Name);
                     }
 
                     if (string.IsNullOrWhiteSpace(name))
@@ -1353,7 +1379,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             seenPaths.Add(mountpoint);
             seenPaths.Add(path);
 
-            string name = !string.IsNullOrWhiteSpace(label) ? label : (!string.IsNullOrWhiteSpace(partlabel) ? partlabel : (!string.IsNullOrWhiteSpace(model) ? model : Path.GetFileName(mountpoint.TrimEnd('/'))));
+            string name = !string.IsNullOrWhiteSpace(label) ? label : (!string.IsNullOrWhiteSpace(partlabel) ? partlabel : (!string.IsNullOrWhiteSpace(model) ? model : PathManager.GetName(mountpoint)));
             if (string.IsNullOrWhiteSpace(name))
             {
                 name = LocalizationService.Get("Drive");
@@ -1702,11 +1728,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _ = TransferItemsToAsync(paths, destinationDirectory, isCopy);
     }
 
-    public async Task TransferItemsToAsync(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
+    public async Task<bool> TransferItemsToAsync(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
     {
         if (string.IsNullOrEmpty(destinationDirectory) || !Directory.Exists(destinationDirectory))
         {
-            return;
+            return false;
         }
 
         string normDest = Path.GetFullPath(destinationDirectory).TrimEnd(Path.DirectorySeparatorChar);
@@ -1741,13 +1767,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (pathList.Count == 0)
         {
-            return;
+            return false;
         }
 
         using CancellationTokenSource cts = new();
         CancellationToken token = cts.Token;
 
-        string destName = Path.GetFileName(destinationDirectory.TrimEnd('/'));
+        string destName = PathManager.GetName(destinationDirectory);
         if (string.IsNullOrEmpty(destName))
         {
             destName = destinationDirectory;
@@ -1779,20 +1805,23 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             ClipboardMode mode = isCopy ? ClipboardMode.Copy : ClipboardMode.Cut;
             await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, progress, token), token);
-            List<string> targets = pathList.Select(p => Path.Combine(destinationDirectory, Path.GetFileName(p.TrimEnd('/')))).ToList();
+            List<string> targets = pathList.Select(p => Path.Combine(destinationDirectory, PathManager.GetName(p))).ToList();
             progressView.Status = LocalizationService.Get("FinishingTransfer");
             progressView.Item = "";
             await WaitForTargetsAsync(targets, token);
             StatusText = LocalizationService.Get($"{operation}Completed");
             TransferCompleted?.Invoke(destinationDirectory, targets);
+            return true;
         }
         catch (OperationCanceledException)
         {
             StatusText = LocalizationService.Get($"{operation}Cancelled");
+            return false;
         }
         catch (Exception ex)
         {
             StatusText = LocalizationService.Format($"{operation}Failed", ex.Message);
+            return false;
         }
         finally
         {
@@ -1950,7 +1979,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public async Task DismountPlaceAsync(PlaceItem item)
     {
-        if (item.IsHeader || string.IsNullOrEmpty(item.Path) || item.Path == "/")
+        if (item.IsHeader || string.IsNullOrEmpty(item.Path) || PathManager.IsRoot(item.Path))
         {
             return;
         }
@@ -2413,7 +2442,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             ProcessStartInfo psi = new()
             {
                 FileName = command[0],
-                WorkingDirectory = Path.GetDirectoryName(path) ?? "/",
+                WorkingDirectory = PathManager.GetParent(path),
                 UseShellExecute = false,
             };
             foreach (string arg in command.Skip(1))
@@ -2450,7 +2479,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void RunInTerminal(string path, string[] command)
     {
-        RunInTerminalAt(Path.GetDirectoryName(path) ?? "/", command);
+        RunInTerminalAt(PathManager.GetParent(path), command);
     }
 
     public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment = null)
@@ -2537,19 +2566,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        List<string> paths = targets.Select(t => t.FullPath).ToList();
-        try
-        {
-            ClipboardService.WritePaths(ClipboardMode.Copy, paths);
-            ClipboardService.Copy(string.Join(Environment.NewLine, paths));
-            Logger.LogI($"Copied {targets.Count} items to clipboard");
-        }
-        catch { }
-
-        foreach (FileItemViewModel item in AllItems)
-        {
-            item.IsCut = false;
-        }
+        WriteClipboardPaths(ClipboardMode.Copy, targets.Select(t => t.FullPath).ToList());
     }
 
     public void CutSelected(IEnumerable<FileItemViewModel>? selection = null)
@@ -2560,18 +2577,27 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        List<string> paths = targets.Select(t => t.FullPath).ToList();
+        WriteClipboardPaths(ClipboardMode.Cut, targets.Select(t => t.FullPath).ToList());
+    }
+
+    public void WriteClipboardPaths(ClipboardMode mode, IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
         try
         {
-            ClipboardService.WritePaths(ClipboardMode.Cut, paths);
+            ClipboardService.WritePaths(mode, paths);
             ClipboardService.Copy(string.Join(Environment.NewLine, paths));
-            Logger.LogI($"Cut {targets.Count} items to clipboard");
+            Logger.LogI($"{(mode == ClipboardMode.Cut ? "Cut" : "Copied")} {paths.Count} items to clipboard");
         }
         catch { }
 
         foreach (FileItemViewModel item in AllItems)
         {
-            item.IsCut = paths.Contains(item.FullPath);
+            item.IsCut = mode == ClipboardMode.Cut && paths.Contains(item.FullPath);
         }
     }
 
@@ -2656,6 +2682,19 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         List<string> paths = targets.Select(t => t.FullPath).ToList();
         _operationService.Delete(paths, permanent);
         Refresh();
+    }
+
+    public async Task<int> TrashPathsAsync(IEnumerable<string> paths)
+    {
+        List<string> existing = paths.Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
+        if (existing.Count == 0)
+        {
+            return 0;
+        }
+
+        await Task.Run(() => _operationService.Delete(existing));
+        Refresh();
+        return existing.Count;
     }
 
     public void RestoreSelectedFromTrash(PaneViewModel pane)
@@ -2964,9 +3003,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return crumbs;
         }
 
-        if (path == "/")
+        string root = PathManager.GetRoot(path);
+        if (PathManager.IsRoot(path))
         {
-            crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = true });
+            crumbs.Add(new BreadcrumbItem { Name = GetRootCrumbName(root), FullPath = root, IsLast = true });
             return crumbs;
         }
 
@@ -2988,13 +3028,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return crumbs;
         }
 
-        crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = false });
-        string[] rootParts = path.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        string currentAccum = "";
+        crumbs.Add(new BreadcrumbItem { Name = GetRootCrumbName(root), FullPath = root, IsLast = false });
+        string[] rootParts = PathManager.GetSegments(path);
+        string currentAccum = root;
 
         for (int i = 0; i < rootParts.Length; i++)
         {
-            currentAccum += "/" + rootParts[i];
+            currentAccum = Path.Combine(currentAccum, rootParts[i]);
             crumbs.Add(new BreadcrumbItem
             {
                 Name = rootParts[i],
@@ -3004,6 +3044,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         return crumbs;
+    }
+
+    private static string GetRootCrumbName(string root)
+    {
+        return root == PathManager.RootPath && !PathManager.IsWindows ? LocalizationService.Get("Root") : PathManager.TrimEnd(root).TrimEnd(PathManager.Separators);
     }
 
     private static void AddRootedCrumbs(List<BreadcrumbItem> crumbs, string rootPath, string rootName, string path)
@@ -3041,7 +3086,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             mountPath = gvfsRoot + mountDir;
             string mount = mountPath;
-            PlaceItem? place = Places.FirstOrDefault(p => !p.IsHeader && IsSamePath(p.Path, mount));
+            PlaceItem? place = Places.FirstOrDefault(p => !p.IsHeader && PathManager.AreEqual(p.Path, mount));
             name = place?.Name ?? GetGvfsFastName(mountPath);
             return true;
         }
@@ -3049,16 +3094,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         PlaceItem? device = Places
             .Where(p => !p.IsHeader && p.Category == PlaceCategory.Devices && p.IsMounted && Path.IsPathRooted(p.Path))
-            .Where(p => NormalizeTrailPath(p.Path) != "/" && !IsSameOrAncestor(p.Path, userProfile))
-            .Where(p => IsSameOrAncestor(p.Path, path))
-            .OrderByDescending(p => NormalizeTrailPath(p.Path).Length)
+            .Where(p => !PathManager.IsRoot(p.Path) && !PathManager.IsSameOrAncestor(p.Path, userProfile))
+            .Where(p => PathManager.IsSameOrAncestor(p.Path, path))
+            .OrderByDescending(p => PathManager.TrimEnd(p.Path).Length)
             .FirstOrDefault();
         if (device == null)
         {
             return false;
         }
 
-        mountPath = NormalizeTrailPath(device.Path);
+        mountPath = PathManager.TrimEnd(device.Path);
         name = device.Name;
         return true;
     }
@@ -3098,6 +3143,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void UpdateStatus()
     {
+        TimeSpan hold = _statusHoldUntil - DateTime.UtcNow;
+        if (hold > TimeSpan.Zero)
+        {
+            DispatcherTimer.RunOnce(UpdateStatus, hold);
+            return;
+        }
+
         PaneViewModel pane = ActivePane;
         if (pane.IsLoading)
         {

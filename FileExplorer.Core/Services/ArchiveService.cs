@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Services;
 
@@ -193,12 +194,12 @@ public class ArchiveService
         string format,
         CancellationToken cancellationToken)
     {
-        string parentDir = Path.GetDirectoryName(paths[0]) ?? "/";
+        string parentDir = PathManager.GetParent(paths[0]);
         List<string> relPaths = new();
 
         foreach (string p in paths)
         {
-            string pDir = Path.GetDirectoryName(p) ?? "/";
+            string pDir = PathManager.GetParent(p);
             if (pDir == parentDir)
             {
                 relPaths.Add(Path.GetFileName(p));

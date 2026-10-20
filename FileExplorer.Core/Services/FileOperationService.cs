@@ -32,12 +32,7 @@ public class FileOperationService
                 }
                 else
                 {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "gio",
-                        Arguments = $"trash \"{path}\"",
-                        UseShellExecute = false
-                    })?.WaitForExit();
+                    MoveToTrash(path);
                 }
 
                 if (hasColors)
@@ -53,12 +48,7 @@ public class FileOperationService
                 }
                 else
                 {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "gio",
-                        Arguments = $"trash \"{path}\"",
-                        UseShellExecute = false
-                    })?.WaitForExit();
+                    MoveToTrash(path);
                 }
             }
         }
@@ -91,6 +81,20 @@ public class FileOperationService
 
         _ = Logger.LogI($"Restored {restored} items from trash, {failed.Count} failed");
         return failed;
+    }
+
+    private static void MoveToTrash(string path)
+    {
+        ProcessStartInfo psi = new()
+        {
+            FileName = "gio",
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("trash");
+        psi.ArgumentList.Add("--");
+        psi.ArgumentList.Add(path);
+
+        Process.Start(psi)?.WaitForExit();
     }
 
     private static void ForgetFolderColors(string path, bool permanent)

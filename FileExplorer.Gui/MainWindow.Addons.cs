@@ -8,11 +8,13 @@ using System.Threading.Channels;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using FileExplorer.Core.Addons;
 using FileExplorer.Core.Models;
+using FileExplorer.Core.Services;
 using FileExplorer.Gui.Dialogs;
 using FileExplorer.Gui.Services;
 using FileExplorer.Gui.ViewModels;
@@ -74,6 +76,7 @@ public partial class MainWindow
         RebuildAddonsMenu();
         RefreshAddonPlaces();
         AddonLogService.ReportLoadErrors(AddonService.Instance.Addons);
+        AddonLogService.ReportMissingDependencies(AddonService.Instance.Addons);
         UpdateAddonErrorCount();
         Closed += (_, _) => ShutdownAddons();
 
@@ -108,6 +111,7 @@ public partial class MainWindow
         {
             RebuildAddonsMenu();
             AddonLogService.ReportLoadErrors(AddonService.Instance.Addons);
+            AddonLogService.ReportMissingDependencies(AddonService.Instance.Addons);
             RemoveInactiveAddonContent();
             RefreshAddonPlaces();
             if (_isAddonHookHost)
@@ -193,6 +197,7 @@ public partial class MainWindow
             }
         }
 
+        AddonLogService.ReportMissingDependencies(active);
         SyncAddonServices(false);
     }
 
@@ -646,16 +651,17 @@ public partial class MainWindow
             return;
         }
 
-        string? lastError = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim();
-        ViewModel.StatusText = string.IsNullOrEmpty(lastError)
+        string? lastError = TranslateAddonText(run, stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim());
+        ViewModel.ShowStatusMessage(string.IsNullOrEmpty(lastError)
             ? LocalizationService.Format("AddonExitedWithCode", run.AddonName, exitCode)
-            : LocalizationService.Format("AddonExitedWithError", run.AddonName, lastError);
+            : LocalizationService.Format("AddonExitedWithError", run.AddonName, lastError));
         AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Error, LocalizationService.Format("AddonLogExitCode", exitCode), stderr);
     }
 
     private async void HandleAddonCommand(AddonRun run, AddonCommand command)
     {
         string argument = command.Argument.Trim();
+        string text = TranslateAddonText(run, command.Argument);
         switch (command.Kind)
         {
             case AddonCommandKind.Navigate:
@@ -665,22 +671,22 @@ public partial class MainWindow
                 ViewModel.Refresh();
                 break;
             case AddonCommandKind.Status:
-                ViewModel.StatusText = command.Argument;
+                ViewModel.ShowStatusMessage(text);
                 break;
             case AddonCommandKind.Message:
-                ConfirmDialog dialog = new(run.AddonName, command.Argument);
+                ConfirmDialog dialog = new(run.AddonName, text);
                 await dialog.ShowDialog<bool?>(this);
                 break;
             case AddonCommandKind.Open:
                 OpenAddonPath(ResolveAddonPath(argument));
                 break;
             case AddonCommandKind.Prompt:
-                InputDialog input = new(run.AddonName, command.Argument);
+                InputDialog input = new(run.AddonName, text);
                 string? answer = await input.ShowDialog<string?>(this);
                 ReplyToRun(run, answer);
                 break;
             case AddonCommandKind.Confirm:
-                ConfirmDialog confirm = new(run.AddonName, command.Argument, LocalizationService.Get("OK"), true, false);
+                ConfirmDialog confirm = new(run.AddonName, text, LocalizationService.Get("OK"), true, false);
                 bool confirmed = await confirm.ShowDialog<bool?>(this) == true;
                 ReplyToRun(run, confirmed ? "yes" : "no");
                 break;
@@ -688,7 +694,7 @@ public partial class MainWindow
                 await ShowAddonChoiceAsync(run, command.Argument);
                 break;
             case AddonCommandKind.Form:
-                run.PendingForm = new(argument);
+                run.PendingForm = new(text.Trim());
                 break;
             case AddonCommandKind.Field:
                 AddAddonFormField(run, argument);
@@ -718,13 +724,13 @@ public partial class MainWindow
                 SetAddonProgressMaximum(run, argument);
                 break;
             case AddonCommandKind.ProgressTitle:
-                EditAddonProgress(run, p => p.Title = argument.Length > 0 ? argument : run.Title);
+                EditAddonProgress(run, p => p.Title = argument.Length > 0 ? text.Trim() : run.Title);
                 break;
             case AddonCommandKind.ProgressText:
-                EditAddonProgress(run, p => p.Text = argument);
+                EditAddonProgress(run, p => p.Text = text.Trim());
                 break;
             case AddonCommandKind.ProgressStatus:
-                EditAddonProgress(run, p => p.Status = argument);
+                EditAddonProgress(run, p => p.Status = text.Trim());
                 break;
             case AddonCommandKind.ProgressItem:
                 EditAddonProgress(run, p => p.Item = argument);
@@ -738,10 +744,48 @@ public partial class MainWindow
             case AddonCommandKind.Pick:
                 await PickFromAddonAsync(run, argument);
                 break;
+            case AddonCommandKind.Clipboard:
+                await ReplyAddonClipboardAsync(run);
+                break;
+            case AddonCommandKind.Copy:
+                await CopyFromAddonAsync(command.Argument);
+                break;
+            case AddonCommandKind.CopyFiles:
+                CopyAddonPathsToClipboard(run, argument, ClipboardMode.Copy);
+                break;
+            case AddonCommandKind.CutFiles:
+                CopyAddonPathsToClipboard(run, argument, ClipboardMode.Cut);
+                break;
+            case AddonCommandKind.CopyTo:
+                await TransferFromAddonAsync(run, argument, true);
+                break;
+            case AddonCommandKind.MoveTo:
+                await TransferFromAddonAsync(run, argument, false);
+                break;
+            case AddonCommandKind.Trash:
+                await TrashFromAddonAsync(run, argument);
+                break;
+            case AddonCommandKind.Reveal:
+                RevealFromAddon(run, argument);
+                break;
+            case AddonCommandKind.Terminal:
+                ViewModel.OpenTerminal(argument.Length > 0 ? ResolveAddonPath(Addon.ExpandHome(argument)) : null);
+                break;
+            case AddonCommandKind.Notify:
+                await NotifyFromAddonAsync(run, text.Trim());
+                break;
+            case AddonCommandKind.Log:
+                LogFromAddon(run, argument);
+                break;
             case AddonCommandKind.Unknown:
                 AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Warning, LocalizationService.Format("AddonLogUnknownCommand", command.Argument));
                 break;
         }
+    }
+
+    private static string TranslateAddonText(AddonRun run, string? text)
+    {
+        return run.Addon.TranslateText(text, LocalizationService.Instance.LanguageCode);
     }
 
     private OperationProgressViewModel? EnsureAddonProgress(AddonRun run)
@@ -818,7 +862,7 @@ public partial class MainWindow
 
         if (parts.Length > 1)
         {
-            progress.Text = parts[1];
+            progress.Text = TranslateAddonText(run, parts[1]);
         }
 
         if (isBusy)
@@ -887,6 +931,155 @@ public partial class MainWindow
         {
             AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Warning, LocalizationService.Format("AddonLogPickInvalid", path));
         }
+    }
+
+    private async Task ReplyAddonClipboardAsync(AddonRun run)
+    {
+        string text = Clipboard == null ? "" : await Clipboard.TryGetTextAsync() ?? "";
+        ReplyToRun(run, EscapeAddonReply(text.TrimEnd('\r', '\n')));
+    }
+
+    private async Task CopyFromAddonAsync(string text)
+    {
+        if (Clipboard == null)
+        {
+            return;
+        }
+
+        await Clipboard.SetTextAsync(text);
+    }
+
+    private List<string> ResolveAddonPaths(IEnumerable<string> parts)
+    {
+        return parts
+            .Where(p => p.Length > 0)
+            .Select(p => ResolveAddonPath(Addon.ExpandHome(p)))
+            .ToList();
+    }
+
+    private void CopyAddonPathsToClipboard(AddonRun run, string argument, ClipboardMode mode)
+    {
+        List<string> paths = ResolveAddonPaths(SplitAddonArguments(argument))
+            .Where(p => File.Exists(p) || Directory.Exists(p))
+            .ToList();
+        if (paths.Count == 0)
+        {
+            ReportInvalidAddonArgument(run, mode == ClipboardMode.Cut ? "cut-files" : "copy-files", argument);
+            return;
+        }
+
+        ViewModel.WriteClipboardPaths(mode, paths);
+    }
+
+    private async Task TransferFromAddonAsync(AddonRun run, string argument, bool isCopy)
+    {
+        List<string> parts = SplitAddonArguments(argument);
+        List<string> sources = ResolveAddonPaths(parts.Skip(1));
+        string destination = parts[0].Length > 0 ? ResolveAddonPath(Addon.ExpandHome(parts[0])) : "";
+        if (sources.Count == 0 || !Directory.Exists(destination))
+        {
+            ReportInvalidAddonArgument(run, isCopy ? "copy-to" : "move-to", argument);
+            ReplyToRun(run, "no");
+            return;
+        }
+
+        bool completed = await ViewModel.TransferItemsToAsync(sources, destination, isCopy);
+        ReplyToRun(run, completed ? "yes" : "no");
+    }
+
+    private async Task TrashFromAddonAsync(AddonRun run, string argument)
+    {
+        int count = await ViewModel.TrashPathsAsync(ResolveAddonPaths(SplitAddonArguments(argument)));
+        if (count == 0)
+        {
+            ReportInvalidAddonArgument(run, "trash", argument);
+            return;
+        }
+
+        ViewModel.ShowStatusMessage(LocalizationService.Format("AddonTrashed", run.AddonName, count));
+    }
+
+    private void RevealFromAddon(AddonRun run, string argument)
+    {
+        List<string> paths = ResolveAddonPaths(SplitAddonArguments(argument))
+            .Select(p => Path.TrimEndingDirectorySeparator(p))
+            .Where(p => File.Exists(p) || Directory.Exists(p))
+            .ToList();
+        string? folder = paths.Count > 0 ? Path.GetDirectoryName(paths[0]) : null;
+        if (folder == null)
+        {
+            ReportInvalidAddonArgument(run, "reveal", argument);
+            return;
+        }
+
+        List<string> targets = paths.Where(p => Path.GetDirectoryName(p) == folder).ToList();
+        PaneViewModel pane = ViewModel.ActivePane;
+        SelectWhenLoaded(pane, targets);
+        if (!IsSameAddonFolder(pane.CurrentPath, folder))
+        {
+            ViewModel.NavigateTo(folder);
+            return;
+        }
+
+        if (targets.All(t => pane.Items.Any(i => i.FullPath == t)))
+        {
+            OnPaneContentLoaded(pane);
+            return;
+        }
+
+        ViewModel.Refresh();
+    }
+
+    private static bool IsSameAddonFolder(string a, string b)
+    {
+        return a.Length > 0 && Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)) == Path.TrimEndingDirectorySeparator(Path.GetFullPath(b));
+    }
+
+    private async Task NotifyFromAddonAsync(AddonRun run, string text)
+    {
+        if (text.Length == 0)
+        {
+            ReportInvalidAddonArgument(run, "notify", text);
+            return;
+        }
+
+        if (await NotificationService.ShowAsync(run.AddonName, text, run.Addon.IconPath))
+        {
+            return;
+        }
+
+        ViewModel.ShowStatusMessage(text);
+        AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Warning, LocalizationService.Get("AddonLogNotifyFailed"));
+    }
+
+    private static void LogFromAddon(AddonRun run, string argument)
+    {
+        int space = argument.IndexOf(' ');
+        string first = (space < 0 ? argument : argument[..space]).ToLowerInvariant();
+        AddonLogLevel? level = first switch
+        {
+            "info" or "debug" => AddonLogLevel.Info,
+            "warning" or "warn" => AddonLogLevel.Warning,
+            "error" => AddonLogLevel.Error,
+            _ => null,
+        };
+        string message = level == null ? argument : space < 0 ? "" : argument[(space + 1)..].Trim();
+        if (message.Length == 0)
+        {
+            ReportInvalidAddonArgument(run, "log", argument);
+            return;
+        }
+
+        AddonLogService.Add(run.Addon, run.Source, level ?? AddonLogLevel.Info, message);
+    }
+
+    private static string EscapeAddonReply(string text)
+    {
+        return text
+            .Replace("\\", "\\\\")
+            .Replace("\r\n", "\n")
+            .Replace('\r', '\n')
+            .Replace("\n", "\\n");
     }
 
     private static bool TryParseAddonNumber(string text, out double value)

@@ -94,7 +94,7 @@ public partial class PropertiesDialog : Window
         _item = item;
         ItemIcon.Source = item.Icon;
         SetupTypeIconMenu();
-        LocationValue.Text = Path.GetDirectoryName(item.FullPath) ?? "/";
+        LocationValue.Text = PathManager.GetParent(item.FullPath);
         OpenWithTab.IsVisible = !_isDirectory;
         ChecksumCard.IsVisible = !_isDirectory;
         ExecutableCheckBox.IsVisible = !_isDirectory;
@@ -855,7 +855,7 @@ public partial class PropertiesDialog : Window
             return;
         }
 
-        string target = Path.Combine(Path.GetDirectoryName(_path) ?? "/", newName);
+        string target = Path.Combine(PathManager.GetParent(_path), newName);
         if (File.Exists(target) || Directory.Exists(target))
         {
             ShowRenameError(LocalizationService.Format("NameAlreadyExists", newName));

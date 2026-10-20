@@ -66,7 +66,7 @@ public static class IconService
             return "folder";
         }
 
-        string trimmed = path.TrimEnd('/');
+        string trimmed = PathManager.TrimEnd(path);
         if (trimmed == UserDirs.Desktop)
         {
             return "folder-desktop";

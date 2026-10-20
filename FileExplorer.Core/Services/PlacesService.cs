@@ -98,7 +98,7 @@ public class PlacesService
             places.Add(new()
             {
                 Kind = PlaceKind.Bookmarks,
-                Name = resolved == "/" ? "File System" : BookmarkService.GetDisplayName(resolved),
+                Name = PathManager.IsRoot(resolved) ? "File System" : BookmarkService.GetDisplayName(resolved),
                 Path = resolved,
                 IsBookmark = true,
             });
@@ -193,7 +193,7 @@ public class PlacesService
             places.Add(new()
             {
                 Kind = PlaceKind.Devices,
-                Name = FirstNonEmpty(label, partLabel, model) ?? System.IO.Path.GetFileName(mountPoint.TrimEnd('/')),
+                Name = FirstNonEmpty(label, partLabel, model) ?? PathManager.GetName(mountPoint),
                 Path = mountPoint,
                 DevicePath = path,
             });

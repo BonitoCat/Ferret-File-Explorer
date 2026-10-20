@@ -13,6 +13,7 @@ public static partial class AddonRunner
 {
     private const int SigTerm = 15;
     private const int SigKill = 9;
+    private const string TempDirPrefix = "fe-addon-";
     private static readonly TimeSpan StopPollInterval = TimeSpan.FromMilliseconds(100);
 
     [LibraryImport("libc", EntryPoint = "kill")]
@@ -244,6 +245,9 @@ public static partial class AddonRunner
             psi.Environment[variable.Key] = variable.Value;
         }
 
+        string tempDir = Directory.CreateTempSubdirectory(TempDirPrefix).FullName;
+        psi.Environment["FE_TEMP_DIR"] = tempDir;
+
         StringBuilder errors = new();
         Process process = new()
         {
@@ -283,13 +287,37 @@ public static partial class AddonRunner
                 stderr = errors.ToString().Trim();
             }
 
+            DeleteTempDir(tempDir);
             onExited(process.ExitCode, stderr);
         };
 
-        process.Start();
+        try
+        {
+            process.Start();
+        }
+        catch
+        {
+            DeleteTempDir(tempDir);
+            throw;
+        }
+
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
         return process;
+    }
+
+    private static void DeleteTempDir(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, true);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     private static IEnumerable<string> ExpandArgs(AddonAction action, AddonContext context)

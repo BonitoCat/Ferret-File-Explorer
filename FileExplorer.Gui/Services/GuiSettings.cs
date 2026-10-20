@@ -17,6 +17,12 @@ public static class GuiSettings
         set => SetBool("window_maximized", value);
     }
 
+    public static int GridNameLines
+    {
+        get => GetInt("grid_name_lines", 3);
+        set => SetString("grid_name_lines", value.ToString());
+    }
+
     public static string? PrimaryColor
     {
         get => GetString("primary_color");
@@ -58,6 +64,14 @@ public static class GuiSettings
             }
 
             Save(values);
+        }
+    }
+
+    private static int GetInt(string key, int fallback)
+    {
+        lock (SaveLock)
+        {
+            return Load().TryGetValue(key, out string? value) && int.TryParse(value, out int number) ? number : fallback;
         }
     }
 

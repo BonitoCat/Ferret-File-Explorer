@@ -8,6 +8,7 @@ public sealed class AddonManifest
     public string? Version { get; set; }
     public string? Author { get; set; }
     public string? Website { get; set; }
+    public object? Donate { get; set; }
     public string? Icon { get; set; }
     public string? Script { get; set; }
     public string? Interpreter { get; set; }
@@ -16,6 +17,7 @@ public sealed class AddonManifest
     public string? Service { get; set; }
     public List<AddonSettingManifest>? Settings { get; set; }
     public List<AddonPlaceManifest>? Places { get; set; }
+    public List<object>? Dependencies { get; set; }
     public List<AddonActionManifest> Actions { get; set; } = new();
 }
 

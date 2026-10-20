@@ -6,7 +6,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Generators;
 using Avalonia.Input;
+using Avalonia.Controls.Documents;
 using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using static Avalonia.Input.NavigationDirection;
@@ -16,6 +18,7 @@ namespace FileExplorer.Gui.Controls;
 public class StretchWrapPanel : VirtualizingPanel
 {
     private const int BufferRows = 2;
+    private const int BaseNameLines = 2;
     private const double FallbackViewportHeight = 1200;
 
     public static readonly StyledProperty<double> ItemWidthProperty =
@@ -23,6 +26,9 @@ public class StretchWrapPanel : VirtualizingPanel
 
     public static readonly StyledProperty<double> ItemHeightProperty =
         AvaloniaProperty.Register<StretchWrapPanel, double>(nameof(ItemHeight), 136);
+
+    public static readonly StyledProperty<int> NameLinesProperty =
+        AvaloniaProperty.Register<StretchWrapPanel, int>(nameof(NameLines), BaseNameLines);
 
     private static readonly AttachedProperty<object?> RecycleKeyProperty =
         AvaloniaProperty.RegisterAttached<StretchWrapPanel, Control, object?>("RecycleKey");
@@ -38,6 +44,10 @@ public class StretchWrapPanel : VirtualizingPanel
     private int _lastRealizedRow = -1;
     private bool _isInLayout;
 
+    private double[]? _rowTops;
+    private int _rowTopsColumns = -1;
+    private bool _rowTopsDirty = true;
+
     private Control? _focusedElement;
     private int _focusedIndex = -1;
     private Control? _scrollToElement;
@@ -45,7 +55,7 @@ public class StretchWrapPanel : VirtualizingPanel
 
     static StretchWrapPanel()
     {
-        AffectsMeasure<StretchWrapPanel>(ItemWidthProperty, ItemHeightProperty);
+        AffectsMeasure<StretchWrapPanel>(ItemWidthProperty, ItemHeightProperty, NameLinesProperty);
     }
 
     public StretchWrapPanel()
@@ -65,7 +75,23 @@ public class StretchWrapPanel : VirtualizingPanel
         set => SetValue(ItemHeightProperty, value);
     }
 
+    public int NameLines
+    {
+        get => GetValue(NameLinesProperty);
+        set => SetValue(NameLinesProperty, value);
+    }
+
     public int Columns { get; private set; } = 1;
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        if (change.Property == NameLinesProperty || change.Property == ItemHeightProperty || change.Property == TextElement.FontFamilyProperty)
+        {
+            _rowTopsDirty = true;
+        }
+    }
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -79,16 +105,16 @@ public class StretchWrapPanel : VirtualizingPanel
         Columns = columns;
         int rows = (items.Count + Columns - 1) / Columns;
         double width = double.IsInfinity(availableSize.Width) ? Columns * ItemWidth : availableSize.Width;
+        double height = GetRowTop(GetRowTops(), rows);
 
         if (ItemContainerGenerator == null)
         {
-            return new(width, rows * ItemHeight);
+            return new(width, height);
         }
 
         _isInLayout = true;
         try
         {
-            Size itemSize = new(ItemWidth, ItemHeight);
             (int firstIndex, int lastIndex) = GetRealizationRange(items.Count);
 
             if (_focusedElement != null && (ItemsControl == null || KeyboardNavigation.GetTabOnceActiveElement(ItemsControl) != _focusedElement))
@@ -107,18 +133,18 @@ public class StretchWrapPanel : VirtualizingPanel
             for (int index = firstIndex; index <= lastIndex; index++)
             {
                 Control element = GetOrCreateElement(items, index);
-                element.Measure(itemSize);
+                element.Measure(GetItemSize(index));
             }
 
-            _focusedElement?.Measure(itemSize);
-            _scrollToElement?.Measure(itemSize);
+            _focusedElement?.Measure(GetItemSize(_focusedIndex));
+            _scrollToElement?.Measure(GetItemSize(_scrollToIndex));
         }
         finally
         {
             _isInLayout = false;
         }
 
-        return new(width, rows * ItemHeight);
+        return new(width, height);
     }
 
     protected override Size ArrangeOverride(Size finalSize)
@@ -154,6 +180,7 @@ public class StretchWrapPanel : VirtualizingPanel
     protected override void OnItemsChanged(IReadOnlyList<object?> items, NotifyCollectionChangedEventArgs e)
     {
         base.OnItemsChanged(items, e);
+        _rowTopsDirty = true;
 
         if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems != null && e.NewStartingIndex >= 0)
         {
@@ -193,7 +220,7 @@ public class StretchWrapPanel : VirtualizingPanel
         Control element = GetOrCreateElement(items, index);
         _realized.Remove(index);
         _realizedIndices.Remove(element);
-        element.Measure(new(ItemWidth, ItemHeight));
+        element.Measure(GetItemSize(index));
         element.Arrange(GetItemRect(index, Bounds.Width));
         if (_scrollToElement != null && _scrollToElement != element)
         {
@@ -307,9 +334,12 @@ public class StretchWrapPanel : VirtualizingPanel
             return;
         }
 
-        int anchorIndex = (int) Math.Floor(_viewport.Top / ItemHeight) * oldColumns;
-        double rowOffset = _viewport.Top % ItemHeight;
-        double newTop = anchorIndex / newColumns * ItemHeight + rowOffset;
+        double[]? oldTops = GetRowTops();
+        double[]? newTops = BuildRowTops(newColumns);
+        int anchorRow = FindRow(oldTops, _viewport.Top);
+        int anchorIndex = anchorRow * oldColumns;
+        double rowOffset = _viewport.Top - GetRowTop(oldTops, anchorRow);
+        double newTop = GetRowTop(newTops, anchorIndex / newColumns) + rowOffset;
         double delta = newTop - _viewport.Top;
         if (Math.Abs(delta) < 0.5)
         {
@@ -346,9 +376,15 @@ public class StretchWrapPanel : VirtualizingPanel
     {
         double top = _viewport.Height > 0 ? _viewport.Top : 0;
         double bottom = _viewport.Height > 0 ? _viewport.Bottom : FallbackViewportHeight;
-        int firstRow = Math.Max(0, (int) Math.Floor(top / ItemHeight));
-        int lastRow = Math.Max(firstRow, (int) Math.Ceiling(bottom / ItemHeight));
-        return (firstRow, lastRow);
+        double[]? tops = GetRowTops();
+        if (tops == null)
+        {
+            int firstUniformRow = Math.Max(0, (int) Math.Floor(top / ItemHeight));
+            return (firstUniformRow, Math.Max(firstUniformRow, (int) Math.Ceiling(bottom / ItemHeight)));
+        }
+
+        int firstRow = FindRow(tops, top);
+        return (firstRow, Math.Max(firstRow, FindRow(tops, bottom) + 1));
     }
 
     private Rect GetItemRect(int index, double width)
@@ -357,7 +393,87 @@ public class StretchWrapPanel : VirtualizingPanel
         double offset = (cellWidth - ItemWidth) / 2;
         int row = index / Columns;
         int column = index % Columns;
-        return new(column * cellWidth + offset, row * ItemHeight, ItemWidth, ItemHeight);
+        double[]? tops = GetRowTops();
+        return new(column * cellWidth + offset, GetRowTop(tops, row), ItemWidth, GetRowHeight(tops, row));
+    }
+
+    private Size GetItemSize(int index)
+    {
+        return new(ItemWidth, index < 0 ? ItemHeight : GetRowHeight(GetRowTops(), index / Columns));
+    }
+
+    private double[]? GetRowTops()
+    {
+        if (!_rowTopsDirty && _rowTopsColumns == Columns)
+        {
+            return _rowTops;
+        }
+
+        _rowTops = BuildRowTops(Columns);
+        _rowTopsColumns = Columns;
+        _rowTopsDirty = false;
+        return _rowTops;
+    }
+
+    private double[]? BuildRowTops(int columns)
+    {
+        IReadOnlyList<object?> items = Items;
+        if (NameLines == BaseNameLines || items.Count == 0 || columns <= 0)
+        {
+            return null;
+        }
+
+        FontFamily fontFamily = GetValue(TextElement.FontFamilyProperty);
+        int rows = (items.Count + columns - 1) / columns;
+        double[] tops = new double[rows + 1];
+        for (int row = 0; row < rows; row++)
+        {
+            double extra = 0;
+            int end = Math.Min(items.Count, (row + 1) * columns);
+            for (int index = row * columns; index < end; index++)
+            {
+                if (items[index] is INamedItem item)
+                {
+                    extra = Math.Max(extra, GridNameMeasurer.GetExtraHeight(item.Name, NameLines, BaseNameLines, fontFamily));
+                }
+            }
+
+            tops[row + 1] = tops[row] + ItemHeight + Math.Ceiling(extra);
+        }
+
+        return tops;
+    }
+
+    private double GetRowTop(double[]? tops, int row)
+    {
+        if (tops == null)
+        {
+            return row * ItemHeight;
+        }
+
+        return tops[Math.Clamp(row, 0, tops.Length - 1)];
+    }
+
+    private double GetRowHeight(double[]? tops, int row)
+    {
+        if (tops == null || row < 0 || row >= tops.Length - 1)
+        {
+            return ItemHeight;
+        }
+
+        return tops[row + 1] - tops[row];
+    }
+
+    private int FindRow(double[]? tops, double y)
+    {
+        if (tops == null)
+        {
+            return Math.Max(0, (int) Math.Floor(y / ItemHeight));
+        }
+
+        int found = Array.BinarySearch(tops, y);
+        int row = found >= 0 ? found : ~found - 1;
+        return Math.Clamp(row, 0, Math.Max(0, tops.Length - 2));
     }
 
     private Control GetOrCreateElement(IReadOnlyList<object?> items, int index)
@@ -637,7 +753,9 @@ public class StretchWrapPanel : VirtualizingPanel
         ScrollViewer? scrollViewer = this.FindAncestorOfType<ScrollViewer>();
         double viewportHeight = scrollViewer?.Viewport.Height ?? Bounds.Height;
 
-        return Math.Max(1, (int) (viewportHeight / ItemHeight));
+        int rows = (Items.Count + Columns - 1) / Columns;
+        double rowHeight = rows > 0 ? GetRowTop(GetRowTops(), rows) / rows : ItemHeight;
+        return Math.Max(1, (int) (viewportHeight / Math.Max(1, rowHeight)));
     }
 
     private int GetColumnCount(double width, int count)

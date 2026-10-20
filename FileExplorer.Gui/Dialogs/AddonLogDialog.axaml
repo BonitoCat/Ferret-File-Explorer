@@ -36,7 +36,7 @@
                                   Margin="0,4">
 
                                 <Image Grid.Column="0"
-                                       Source="{markup:Icon Key=warning}"
+                                       Source="{Binding Icon}"
                                        Opacity="{Binding IconOpacity}"
                                        Width="16"
                                        Height="16"

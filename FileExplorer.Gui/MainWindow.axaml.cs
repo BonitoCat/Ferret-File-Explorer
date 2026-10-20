@@ -171,10 +171,7 @@ public partial class MainWindow : Window
         {
         }
 
-        if (Environment.IsPrivilegedProcess)
-        {
-            Title = LocalizationService.Get("WindowTitlePrivileged");
-        }
+        UpdateWindowTitle();
 
         ViewModel.PropertyChanged += (s, e) =>
         {
@@ -182,6 +179,11 @@ public partial class MainWindow : Window
             {
                 ScrollBreadcrumbsToCurrent();
                 SyncSidebarSelection(ViewModel.CurrentPath);
+                UpdateWindowTitle();
+            }
+            else if (e.PropertyName == nameof(MainWindowViewModel.CurrentLocationName))
+            {
+                UpdateWindowTitle();
             }
             else if (e.PropertyName == nameof(MainWindowViewModel.IsDualPane))
             {
@@ -477,7 +479,7 @@ public partial class MainWindow : Window
 
     private void OnGoRootClick(object? sender, RoutedEventArgs e)
     {
-        ViewModel.NavigateTo("/");
+        ViewModel.NavigateTo(PathManager.RootPath);
         FocusActiveListBox();
     }
 
@@ -498,11 +500,41 @@ public partial class MainWindow : Window
         await dialog.ShowDialog(this);
     }
 
+    private void UpdateWindowTitle()
+    {
+        if (ViewModel.IsPickerMode)
+        {
+            return;
+        }
+
+        string name = ViewModel.CurrentLocationName;
+        Title = Environment.IsPrivilegedProcess ? LocalizationService.Format("WindowTitlePrivileged", name) : name;
+    }
+
     private void OnViewMenuOpened(object? sender, RoutedEventArgs e)
     {
         SystemPickerMenuItem.IsEnabled = SystemPickerService.IsInstalled;
         SystemPickerMenuItem.IsChecked = SystemPickerService.IsEnabled;
         ToolTip.SetTip(SystemPickerMenuItem, SystemPickerService.IsInstalled ? null : LocalizationService.Get("SystemPickerNotInstalled"));
+        UpdateGridNameLinesMenu();
+    }
+
+    private void OnGridNameLinesClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string tag } || !int.TryParse(tag, out int lines))
+        {
+            return;
+        }
+
+        ViewModel.GridNameLines = lines;
+        UpdateGridNameLinesMenu();
+    }
+
+    private void UpdateGridNameLinesMenu()
+    {
+        GridNamesTwoLinesMenuItem.IsChecked = ViewModel.GridNameLines == 2;
+        GridNamesThreeLinesMenuItem.IsChecked = ViewModel.GridNameLines == 3;
+        GridNamesFullMenuItem.IsChecked = ViewModel.GridNameLines == 0;
     }
 
     private async void OnSystemPickerClick(object? sender, RoutedEventArgs e)
@@ -577,7 +609,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (string.Equals(targetPath.TrimEnd('/'), ViewModel.CurrentPath.TrimEnd('/'), StringComparison.Ordinal))
+        if (PathManager.AreEqual(targetPath, ViewModel.CurrentPath))
         {
             StartPathEditing();
             return;
@@ -2126,7 +2158,7 @@ public partial class MainWindow : Window
             {
                 activeList.Focus();
                 _clickedAlreadySelectedItem = null;
-                e.Handled = switchedPane;
+                e.Handled = e.Handled || switchedPane;
 
                 if (!switchedPane && !e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
@@ -2671,7 +2703,7 @@ public partial class MainWindow : Window
 
     private static Rect GetHitZoneRect(Control zone, Point origin)
     {
-        if (zone is not TextBlock { MaxLines: > 1 } textBlock)
+        if (zone is not TextBlock { MaxLines: not 1 } textBlock)
         {
             return new(origin, zone.Bounds.Size);
         }
@@ -3647,10 +3679,10 @@ public partial class MainWindow : Window
             {
                 Entry = new FolderEntry
                 {
-                    FullName = Path.GetFileName(currentDir.TrimEnd('/')),
+                    FullName = PathManager.GetName(currentDir),
                     FullPath = currentDir
                 },
-                Name = Path.GetFileName(currentDir.TrimEnd('/')),
+                Name = PathManager.GetName(currentDir),
                 FullPath = currentDir,
                 IsDirectory = true,
                 SizeString = "-",

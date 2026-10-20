@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using Avalonia.Media;
 using FileExplorer.Core.Addons;
 using LoggerLib;
 
@@ -9,6 +10,7 @@ namespace FileExplorer.Gui.Services;
 
 public enum AddonLogLevel
 {
+    Info,
     Warning,
     Error,
 }
@@ -25,7 +27,9 @@ public sealed class AddonLogEntry
 
     public bool HasDetail => Detail.Length > 0;
     public bool IsError => Level == AddonLogLevel.Error;
+    public bool IsInfo => Level == AddonLogLevel.Info;
     public double IconOpacity => IsError ? 1 : 0.55;
+    public IImage? Icon => IconService.Get(IsInfo ? "info" : "warning");
     public string Header => Source.Length > 0 ? $"{Time:HH:mm:ss}  ·  {AddonName}  ·  {Source}" : $"{Time:HH:mm:ss}  ·  {AddonName}";
 
     public AddonLogEntry(string addonId, string addonName, string source, AddonLogLevel level, string message, string detail)
@@ -112,7 +116,10 @@ public static class AddonLogService
                 LogEntries.RemoveAt(0);
             }
 
-            _unseenCount = Math.Min(_unseenCount + 1, MaxEntries);
+            if (level != AddonLogLevel.Info)
+            {
+                _unseenCount = Math.Min(_unseenCount + 1, MaxEntries);
+            }
         }
 
         Changed?.Invoke();
@@ -133,6 +140,61 @@ public static class AddonLogService
 
             Add(addon, LocalizationService.Get("AddonLogSourceLoad"), AddonLogLevel.Error, LocalizationService.Format(addon.ErrorKey!, addon.ErrorDetail));
         }
+
+        ReportInvalidDonations(addons);
+    }
+
+    private static void ReportInvalidDonations(IEnumerable<Addon> addons)
+    {
+        string allowed = string.Join(", ", AddonDonation.Providers.Select(p => p.Name));
+        foreach (Addon addon in addons)
+        {
+            foreach (string url in addon.InvalidDonations)
+            {
+                lock (Lock)
+                {
+                    if (!ReportedLoadErrors.Add($"{addon.RootPath}|donate|{url}"))
+                    {
+                        continue;
+                    }
+                }
+
+                Add(addon, LocalizationService.Get("AddonLogSourceLoad"), AddonLogLevel.Warning, LocalizationService.Format("AddonLogInvalidDonation", url, allowed));
+            }
+        }
+    }
+
+    public static void ReportMissingDependencies(IEnumerable<Addon> addons)
+    {
+        foreach (Addon addon in addons.Where(a => a.IsActive && !AddonHooks.IsInstalling(a.Id)))
+        {
+            foreach (AddonDependency dependency in AddonDependencyService.GetMissing(addon))
+            {
+                lock (Lock)
+                {
+                    if (!ReportedLoadErrors.Add(GetDependencyKey(addon, dependency.Command)))
+                    {
+                        continue;
+                    }
+                }
+
+                Add(addon, LocalizationService.Get("AddonLogSourceDependencies"), AddonLogLevel.Warning, LocalizationService.Format("AddonLogMissingDependency", dependency.Command));
+            }
+        }
+    }
+
+    public static void ForgetMissingDependencies(Addon addon)
+    {
+        string prefix = GetDependencyKey(addon, "");
+        lock (Lock)
+        {
+            ReportedLoadErrors.RemoveWhere(k => k.StartsWith(prefix, StringComparison.Ordinal));
+        }
+    }
+
+    private static string GetDependencyKey(Addon addon, string command)
+    {
+        return $"{addon.RootPath}|dependency|{command}";
     }
 
     public static void MarkSeen()

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Services;
 
@@ -40,7 +41,7 @@ public sealed class SmbShareService
 
     public static string SuggestName(string path)
     {
-        string name = Path.GetFileName(path.TrimEnd('/'));
+        string name = PathManager.GetName(path);
         foreach (char invalid in InvalidNameChars)
         {
             name = name.Replace(invalid, '_');
@@ -434,7 +435,7 @@ public sealed class SmbShareService
         }
 
         string? dir = Path.GetDirectoryName(NormalizePath(path));
-        while (!string.IsNullOrEmpty(dir) && dir != "/")
+        while (!string.IsNullOrEmpty(dir) && !PathManager.IsRoot(dir))
         {
             try
             {
@@ -518,8 +519,7 @@ public sealed class SmbShareService
 
     private static string NormalizePath(string path)
     {
-        string trimmed = path.TrimEnd('/');
-        return trimmed.Length == 0 ? "/" : trimmed;
+        return PathManager.TrimEnd(path);
     }
 
     private static string FirstLine(string text)

@@ -21,7 +21,7 @@ public static class LocationResolver
 
         if (location == "~" || location.StartsWith("~/", StringComparison.Ordinal))
         {
-            return UserDirs.Home + location[1..];
+            return PathManager.ToNative(UserDirs.Home + location[1..]);
         }
 
         if (TryStripScheme(location, "trash:", out string trashRest))
@@ -32,7 +32,7 @@ public static class LocationResolver
 
         if (TryStripScheme(location, "computer:", out _))
         {
-            return "/";
+            return PathManager.RootPath;
         }
 
         if (TryStripScheme(location, "network:", out _))
@@ -53,7 +53,7 @@ public static class LocationResolver
             return fileUri.LocalPath;
         }
 
-        return ResolveGvfs(location) ?? location;
+        return ResolveGvfs(location) ?? PathManager.ToNative(location);
     }
 
     private static string? ResolveGvfs(string location)

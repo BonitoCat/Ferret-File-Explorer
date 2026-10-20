@@ -48,6 +48,7 @@ my-addon/
 | `version`     | Any version string                                             |                    |
 | `author`      | Your name                                                      |                    |
 | `website`     | Link to the project                                            |                    |
+| `donate`      | Donation link, or a list of them (see [donation links](#donation-links)) |          |
 | `icon`        | Path to an icon inside the addon folder                        |                    |
 | `script`      | Default script for all actions (path inside the addon folder)  |                    |
 | `interpreter` | Default interpreter for scripts (e.g. `python3`)               | detected           |
@@ -56,6 +57,7 @@ my-addon/
 | `service`     | Script that keeps running in the background (see [services](#background-services))    |                    |
 | `settings`    | Options the user can change (see [settings](#settings))                                |                    |
 | `places`      | Sidebar entries (see [sidebar places](#sidebar-places))                                |                    |
+| `dependencies`| Programs the addon needs; Ferret offers to install them (see [dependencies](#dependencies)) |                |
 | `actions`     | List of menu entries and path bar commands (see below)         | one Addons-menu entry running `script` |
 
 **Action fields**
@@ -94,6 +96,36 @@ my-addon/
 ### Addon store
 
 Addons → Browse Addon Store lists every verified addon from [Ferret-Addons](https://github.com/BonitoCat/Ferret-Addons). To publish yours, open a pull request there that adds your addon folder as `addons/<id>/` (plain files, no zip). Store addons need an `id` and a `version`; raise `version` to ship an update. Downloads are checked against their SHA-256 hash before they are installed.
+
+### Donation links
+
+With `donate`, users can support you. Every link is shown as the icon of its site next to your addon in **Manage Addons**, and clicking it opens the page in the browser.
+
+```yaml
+donate: https://ko-fi.com/yourname
+```
+
+```yaml
+donate:
+  - https://ko-fi.com/yourname
+  - https://github.com/sponsors/yourname
+```
+
+Only links to these sites are accepted, and only in these forms:
+
+| Site            | Link |
+|-----------------|------|
+| Ko-fi           | `https://ko-fi.com/<name>` |
+| PayPal          | `https://paypal.me/<name>`, `https://www.paypal.com/paypalme/<name>` or `https://www.paypal.com/donate/?hosted_button_id=<id>` |
+| Patreon         | `https://patreon.com/<name>` or `https://patreon.com/c/<name>` |
+| GitHub Sponsors | `https://github.com/sponsors/<name>` |
+| Buy Me a Coffee | `https://buymeacoffee.com/<name>` |
+| Liberapay       | `https://liberapay.com/<name>` |
+| Open Collective | `https://opencollective.com/<name>` |
+
+- **Strict:** links must start with `https://`; `www.` is optional. Anything else after the name, like `?ref=…`, isn't allowed.
+- **Other links** are ignored and reported in **Addon Problems**. The addon itself still works. The addon store doesn't accept addons with unsupported links at all.
+- **One per site:** if you list the same site twice, only the first link is used.
 
 ### Placement in the context menu
 
@@ -229,6 +261,23 @@ actions:
 
 Ferret looks up the current language first (e.g. `de-AT`, then `de`), then English (`en`). If none of them has the key, it shows the text itself.
 
+Scripts can use the same keys in the text they show. Every `$Key` in these is translated, and the rest of the text stays as written:
+
+- `fe:status`, `fe:message`, `fe:prompt`, `fe:confirm`, `fe:notify`
+- the question of `fe:choose`, the title of `fe:form` and the labels of `fe:field`
+- `fe:statusbar` text and `fe:statusbar-tooltip`
+- `fe:progress` text, `fe:progress-title`, `fe:progress-text` and `fe:progress-status`
+- the last line a failed script writes to stderr, which Ferret shows in the status bar
+
+```bash
+echo 'fe:status $Opening'
+echo "fe:status \$Copied: $count"
+echo '$NotInstalled' >&2
+exit 1
+```
+
+Use single quotes or `\$` so the shell doesn't expand the key itself. A key is `$` followed by letters, digits and `_`. Unknown keys are shown as written. Paths, ids, choice values and replies are never translated, so `fe:choose` sends back the value you wrote.
+
 ### Running scripts
 
 **What a script gets**
@@ -276,6 +325,7 @@ Ferret looks up the current language first (e.g. `de-AT`, then `de`), then Engli
 | `FE_DATA_DIR`    | Ferret's data folder, e.g. `/home/you/.local/share/fe` (`$XDG_DATA_HOME/fe` if set) |
 | `FE_SERVICE`     | `1` for the [background service](#background-services), empty otherwise |
 | `FE_SETTING_<ID>`| The value of each [setting](#settings), e.g. `FE_SETTING_API_KEY` |
+| `FE_TEMP_DIR`    | An empty folder only this run can use. Ferret deletes it when the script exits, even after **Cancel** |
 
 ### Talking back to Ferret
 
@@ -285,7 +335,7 @@ A script can control Ferret by printing these lines to stdout. Ferret ignores al
 |----------------------|---------------------------------------------------|
 | `fe:navigate <path>` | Open a folder (relative paths start from the current folder) |
 | `fe:refresh`         | Reload the current folder                         |
-| `fe:status <text>`   | Show text in the status bar                       |
+| `fe:status <text>`   | Show text in the status bar for at least 4 seconds |
 | `fe:message <text>`  | Show a message dialog (`\n` for line breaks)      |
 | `fe:open <path>`     | Open a file with its default application          |
 | `fe:prompt <text>`   | Ask the user for text (see below)                 |
@@ -299,6 +349,17 @@ A script can control Ferret by printing these lines to stdout. Ferret ignores al
 | `fe:loading on\|off` | Show the thin loading bar above the file list    |
 | `fe:select <pattern>`| Select matching items in the current folder (see below) |
 | `fe:pick <path>`     | Pickers only: finish the picker with this path    |
+| `fe:clipboard`       | Read the clipboard text (see [clipboard](#clipboard)) |
+| `fe:copy <text>`     | Copy text to the clipboard (`\n` for line breaks) |
+| `fe:copy-files <path> \| …` | Copy files so the user can paste them (like Ctrl+C) |
+| `fe:cut-files <path> \| …`  | Cut files so the user can paste them (like Ctrl+X) |
+| `fe:copy-to <folder> \| <path> \| …` | Copy files with Ferret's progress bar and conflict dialog (see [files](#working-with-files)) |
+| `fe:move-to <folder> \| <path> \| …` | Move files the same way |
+| `fe:trash <path> \| …`      | Move files to the trash |
+| `fe:reveal <path> \| …`     | Open the folder of the files and select them |
+| `fe:terminal [folder]`      | Open the user's terminal (in the current folder by default) |
+| `fe:notify <text>`          | Show a desktop notification |
+| `fe:log [info\|warning\|error] <text>` | Write to the addon log (see [finding errors](#finding-errors)) |
 
 A line that starts with `fe:` but isn't one of these is reported in **Addon Problems**, so typos like `fe:stauts` don't go unnoticed.
 
@@ -357,7 +418,8 @@ echo "fe:field strip | bool | Remove metadata | true"
 echo "fe:field format | choice | Format | png,*webp,jpg"
 echo "fe:field target | folder | Save in"
 echo "fe:form-show"
-IFS=$'\t' read -r name quality strip format target || exit 0
+IFS= read -r reply || exit 0
+readarray -t -d $'\t' values < <(printf '%s' "$reply")
 ```
 
 | Line | Effect |
@@ -378,10 +440,56 @@ IFS=$'\t' read -r name quality strip format target || exit 0
 | `file`     | text box and a **…** button that opens a Ferret file picker | a path (`~/` is expanded) |
 | `folder`   | text box and a **…** button that opens a Ferret folder picker | a path (`~/` is expanded) |
 
-- **Answer:** when the user clicks OK, Ferret sends **one line** with all values in field order, separated by tabs. Tabs and line breaks the user typed become spaces. Read it with `IFS=$'\t' read -r a b c`.
+- **Answer:** when the user clicks OK, Ferret sends **one line** with all values in field order, separated by tabs. Tabs and line breaks the user typed become spaces. Read it with `readarray`, which keeps empty values in place:
+
+  ```bash
+  IFS= read -r reply || exit 0
+  readarray -t -d $'\t' values < <(printf '%s' "$reply")
+  name="${values[0]}" quality="${values[1]}"
+  ```
+
+  `IFS=$'\t' read -r a b c` also works, but only when no field can be empty: bash merges consecutive tabs, so an empty value would shift all values after it.
 - **Cancel:** closes stdin, like `fe:prompt`.
 - **Starting over:** `fe:form` always starts a new, empty form. `fe:field` lines without `fe:form` before them start a form without text.
 - **Mistakes:** a field with an unknown type or a `choice` field without options is skipped and reported in **Addon Problems**. `fe:form-show` without fields is reported too and answered like a cancel.
+
+### Clipboard
+
+`fe:clipboard` (or `fe:paste`) sends the clipboard text back to your script's stdin as a single line. It works on X11 and Wayland without `xclip`, `xsel` or `wl-paste`. An empty clipboard, or one without text, sends an empty line.
+
+```bash
+echo "fe:clipboard"
+IFS= read -r clipboard
+
+if [[ "$clipboard" =~ ^https://github\.com/ ]]; then
+    url="$clipboard"
+fi
+```
+
+Line breaks at the end are dropped. Line breaks inside the text arrive as `\n` and backslashes as `\\`, so single-line text without backslashes, like a URL, arrives unchanged. To get the exact text back, decode it with `printf -v clipboard '%b' "$clipboard"` in bash, or `text.replace("\\\\", "\0").replace("\\n", "\n").replace("\0", "\\")` in Python.
+
+`fe:copy <text>` puts text on the clipboard; write `\n` for line breaks. Background services get the clipboard as `event:reply <text>`.
+
+### Working with files
+
+These commands do what the user could do by hand in Ferret, so they behave the same way. Paths are separated by `|`, relative paths start from the current folder, and `~/` is the home folder.
+
+- **`fe:reveal`** goes to the folder of the first path and selects every given path in that folder. Use it at the end of a script that creates files, so the user sees the result. If the folder is already open, it refreshes it first, so new files can be selected too.
+- **`fe:copy-to`** and **`fe:move-to`** use Ferret's progress bar and its "replace / skip / rename" dialog. They wait until the transfer is done and answer on stdin with `yes`, or `no` if it failed or the user cancelled it.
+- **`fe:trash`** moves files to the trash, so the user can restore them. There is no command to delete files permanently.
+- **`fe:copy-files`** and **`fe:cut-files`** put files on Ferret's clipboard. The user can then paste them into any folder, in Ferret or in other apps.
+
+```bash
+name="$(basename "${1%.*}").pdf"
+convert "$1" "$FE_TEMP_DIR/$name"
+echo "fe:move-to $FE_CURRENT_DIR | $FE_TEMP_DIR/$name"
+IFS= read -r moved
+[ "$moved" = yes ] && echo "fe:reveal $FE_CURRENT_DIR/$name"
+```
+
+`fe:notify` uses the desktop's notification service. Without one, the text is shown in the status bar instead. Use it for long tasks the user may stop watching; for quick feedback, `fe:status` is enough.
+
+`FE_TEMP_DIR` is deleted together with its contents as soon as the script exits, so don't hand it to programs that keep running in the background.
 
 ### Progress bars
 
@@ -427,6 +535,38 @@ echo "fe:refresh"
 ```
 
 `fe:loading on` shows the thin animated bar above the file list (the one Ferret shows while a folder loads) until `fe:loading off` or until your script exits.
+
+### Dependencies
+
+List the programs your addon needs, and Ferret offers to install the missing ones when the addon is installed, like the dependencies of a `.deb` package.
+
+```yaml
+dependencies:
+  - git                      # command and package have the same name
+  - command: convert         # Ferret checks if this command exists
+    apt: imagemagick         # package per package manager
+    dnf: ImageMagick
+    pacman: imagemagick
+    zypper: ImageMagick
+  - command: rclone
+    package: rclone          # same package name everywhere
+```
+
+| Field | Description |
+|-------|-------------|
+| `command` | Program that must be on `PATH` (or an absolute path, `~/` allowed). Required |
+| `package` | Package name for every package manager that has no own entry |
+| `apt`, `dnf`, `pacman`, `zypper` | Package name for that package manager. Several packages are separated by spaces |
+
+- **Checking:** a dependency counts as installed when its `command` exists, no matter how it was installed (package, Flatpak, compiled yourself, …). Ferret never checks package names.
+- **Installing:** after an addon is installed or updated (from a folder, zip or the addon store), Ferret lists the missing programs and asks before doing anything. **Install** runs the matching package manager through `pkexec`, so the system asks for the user's password: `apt-get install -y`, `dnf install -y`, `pacman -S --needed --noconfirm` or `zypper --non-interactive install`. **Skip** leaves everything as it is. **Copy Command** copies the matching `sudo …` command for a terminal.
+- **Package manager:** Ferret uses the first one it finds of `apt`, `dnf`, `pacman` and `zypper`. Dependencies without a package for it (and systems without any of them) are shown with a note to install them manually.
+- **The addon always installs:** a declined, cancelled or failed installation doesn't stop the addon from being installed and loaded. Missing programs are shown in **Manage Addons** (with an **Install Dependencies…** button to try again) and reported once in **Addon Problems**. A failed installation is listed there too, with the package manager's output.
+- **Order:** dependencies are handled before `post_install` runs, so the hook can already use them.
+- **Uninstalling** an addon never removes its packages; other programs may need them.
+- **Mistakes:** an entry without `command`, or an entry that is neither a name nor a list of fields, gives the addon an error.
+
+Don't install packages from your own scripts with `sudo`; use `dependencies` so the user sees what is installed and can say no.
 
 ### Lifecycle hooks
 
@@ -615,6 +755,17 @@ When an addon fails, a warning icon with the number of new problems appears in t
 - hooks that ran out of time
 - services that exited with an error
 - invalid `fe:field`, `fe:place`, `fe:setting`, … lines
+- lines your script writes with `fe:log`
+
+`fe:log` helps you see what your script is doing without a terminal. The level comes first and defaults to `info`:
+
+```bash
+echo "fe:log Found ${#files[@]} images"
+echo "fe:log warning Skipped $name: no EXIF data"
+echo "fe:log error Upload failed: $response"
+```
+
+`warning` and `error` count towards the icon in the status bar like other problems. `info` is only shown in the list, so it doesn't bother users.
 
 Opening the list marks everything as seen, so the icon disappears until the next problem. The list itself keeps the last 200 entries of the current window until you click **Clear**. **Copy All** copies everything as text, which helps when you report a bug in an addon.
 

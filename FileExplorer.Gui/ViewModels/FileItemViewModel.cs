@@ -7,11 +7,12 @@ using Avalonia.Media.Imaging;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Utilities;
+using FileExplorer.Gui.Controls;
 using FileExplorer.Gui.Services;
 
 namespace FileExplorer.Gui.ViewModels;
 
-public class FileItemViewModel : ViewModelBase
+public class FileItemViewModel : ViewModelBase, INamedItem
 {
     private bool _isCut;
     private Bitmap? _thumbnail;

@@ -484,17 +484,18 @@
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <controls:StretchWrapPanel ItemWidth="128"
-                                                               ItemHeight="136"/>
+                                                               ItemHeight="136"
+                                                               NameLines="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).GridNameLines}"/>
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
 
                             <ListBox.Styles>
                                 <Style Selector="ListBoxItem">
                                     <Setter Property="CornerRadius" Value="8"/>
-                                    <Setter Property="Padding" Value="4"/>
+                                    <Setter Property="Padding" Value="4,0"/>
                                     <Setter Property="Margin" Value="4"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch"/>
                                     <Setter Property="Background" Value="Transparent"/>
                                 </Style>
 
@@ -509,12 +510,20 @@
                                 <Style Selector="ListBoxItem.hover:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
                                     <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}"/>
                                 </Style>
+
+                                <Style Selector="ListBoxItem:selected">
+                                    <Setter Property="ZIndex" Value="1"/>
+                                    <Setter Property="ClipToBounds" Value="False"/>
+                                </Style>
+
+                                <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="ClipToBounds" Value="False"/>
+                                </Style>
                             </ListBox.Styles>
 
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:FileItemViewModel">
                                     <Border Width="120"
-                                            Height="128"
                                             CornerRadius="8"
                                             Opacity="{Binding DisplayOpacity}"
                                             Classes.drop-target="{Binding IsDropTarget}">
@@ -565,16 +574,50 @@
                                             <StackPanel Grid.Row="1"
                                                         Spacing="2"
                                                         HorizontalAlignment="Center">
-                                                <TextBlock Classes="hit-zone"
-                                                           Text="{Binding Name}"
-                                                           FontSize="13"
-                                                           Foreground="White"
-                                                           TextAlignment="Center"
-                                                           HorizontalAlignment="Center"
-                                                           TextWrapping="Wrap"
-                                                           MaxLines="2"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           MaxWidth="110"/>
+                                                <Panel HorizontalAlignment="Center">
+                                                    <TextBlock Classes="hit-zone"
+                                                               Text="{Binding Name}"
+                                                               FontSize="13"
+                                                               Foreground="White"
+                                                               TextAlignment="Center"
+                                                               HorizontalAlignment="Center"
+                                                               TextWrapping="Wrap"
+                                                               MaxLines="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).GridNameLines}"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               MaxWidth="110"/>
+
+                                                    <Canvas Width="0"
+                                                            Height="0"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Top"
+                                                            IsHitTestVisible="False">
+                                                        <Canvas.IsVisible>
+                                                            <MultiBinding Converter="{x:Static controls:GridNameOverlayConverter.Instance}">
+                                                                <Binding Path="$parent[ListBoxItem].IsSelected"/>
+
+                                                                <Binding Path="$parent[ListBox].((vm:PaneViewModel)DataContext).SelectedItems.Count"/>
+
+                                                                <Binding Path="Name"/>
+
+                                                                <Binding Path="$parent[Window].((vm:MainWindowViewModel)DataContext).GridNameLines"/>
+
+                                                                <Binding Path="$parent[ListBoxItem].FontFamily"/>
+                                                            </MultiBinding>
+                                                        </Canvas.IsVisible>
+
+                                                        <Border Canvas.Left="-60"
+                                                                Background="{DynamicResource SelectionSubtleBrush}"
+                                                                Width="120"
+                                                                CornerRadius="0,0,8,8"
+                                                                Padding="5,0,5,8">
+                                                            <TextBlock Text="{Binding Name}"
+                                                                       FontSize="13"
+                                                                       Foreground="White"
+                                                                       TextAlignment="Center"
+                                                                       TextWrapping="Wrap"/>
+                                                        </Border>
+                                                    </Canvas>
+                                                </Panel>
 
                                                 <Border Classes="hit-zone"
                                                         Background="#D35400"
@@ -871,8 +914,28 @@
                               Icon="{markup:Icon Key=view-list}"
                               Click="OnSetListViewClick"/>
 
-                    <Separator/>
+                    <MenuItem Header="{markup:Translate Key=GridFileNames}"
+                              Icon="{markup:Icon Key=view-grid}">
+                        <MenuItem x:Name="GridNamesTwoLinesMenuItem"
+                                  Header="{markup:Translate Key=GridFileNamesTwoLines}"
+                                  ToggleType="Radio"
+                                  Tag="2"
+                                  Click="OnGridNameLinesClick"/>
 
+                        <MenuItem x:Name="GridNamesThreeLinesMenuItem"
+                                  Header="{markup:Translate Key=GridFileNamesThreeLines}"
+                                  ToggleType="Radio"
+                                  Tag="3"
+                                  Click="OnGridNameLinesClick"/>
+
+                        <MenuItem x:Name="GridNamesFullMenuItem"
+                                  Header="{markup:Translate Key=GridFileNamesFull}"
+                                  ToggleType="Radio"
+                                  Tag="0"
+                                  Click="OnGridNameLinesClick"/>
+                    </MenuItem>
+
+                    <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=ThemeColorsMenu}"
                               Icon="{markup:Icon Key=palette}"
