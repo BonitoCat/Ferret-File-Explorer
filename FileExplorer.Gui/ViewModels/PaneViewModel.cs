@@ -29,6 +29,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     private FileItemViewModel? _selectedItem;
     private bool _isActive;
     private bool _isLoading;
+    private bool _isExternalLoading;
     private CancellationTokenSource? _loadCts;
     private FileSystemWatcher? _watcher;
     private DispatcherTimer? _debounceTimer;
@@ -65,8 +66,28 @@ public class PaneViewModel : ViewModelBase, IDisposable
     public bool IsLoading
     {
         get => _isLoading;
-        set => SetProperty(ref _isLoading, value);
+        set
+        {
+            if (SetProperty(ref _isLoading, value))
+            {
+                OnPropertyChanged(nameof(ShowLoadingBar));
+            }
+        }
     }
+
+    public bool IsExternalLoading
+    {
+        get => _isExternalLoading;
+        set
+        {
+            if (SetProperty(ref _isExternalLoading, value))
+            {
+                OnPropertyChanged(nameof(ShowLoadingBar));
+            }
+        }
+    }
+
+    public bool ShowLoadingBar => IsLoading || IsExternalLoading;
 
     public bool IsInTrash => IsOpen && _currentPath.Contains("/.local/share/Trash");
     public bool IsVirtual => NetworkBrowseService.IsBrowseLocation(_currentPath);
@@ -99,7 +120,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     public bool IsFileSelected => IsItemSelected && !IsFolderSelected;
     public bool IsEmptySpaceSelected => !IsItemSelected;
     public bool CanBookmarkSelection => IsFolderSelected || IsEmptySpaceSelected;
-    public bool CanCopyPath => IsFolderSelected || IsEmptySpaceSelected;
+    public bool CanCopyPath => true;
     public bool CanCreateNew => IsEmptySpaceSelected || IsFolderSelected;
     public bool CanColorSelection => IsFolderSelected;
     public bool CanExtractSelection => SelectedItem is FileItemViewModel item && (item.FileType == FileType.Archive || MainWindowViewModel.IsArchiveFile(item.FullPath));

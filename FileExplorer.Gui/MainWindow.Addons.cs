@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -13,6 +15,7 @@ using FileExplorer.Core.Addons;
 using FileExplorer.Core.Models;
 using FileExplorer.Gui.Dialogs;
 using FileExplorer.Gui.Services;
+using FileExplorer.Gui.ViewModels;
 using LoggerLib;
 
 namespace FileExplorer.Gui;
@@ -21,29 +24,234 @@ public partial class MainWindow
 {
     private const string AddonItemClass = "addon-item";
 
+    private static readonly TimeSpan AddonStopGrace = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan PreCloseStopGrace = TimeSpan.FromSeconds(1);
+
+    private sealed class AddonRun
+    {
+        public Addon Addon { get; }
+        public string Source { get; }
+        public string Title { get; }
+        public Process? Process { get; set; }
+        public OperationProgressViewModel? Progress { get; set; }
+        public bool IsLoading { get; set; }
+        public bool HasExited { get; set; }
+        public bool WasStopped { get; set; }
+        public bool IsService { get; init; }
+        public Channel<string>? Input { get; set; }
+        public AddonPendingForm? PendingForm { get; set; }
+        public TaskCompletionSource<int> Exited { get; } = new();
+
+        public string AddonName => Addon.GetName(LocalizationService.Instance.LanguageCode);
+
+        public AddonRun(Addon addon, string source, string title)
+        {
+            Addon = addon;
+            Source = source;
+            Title = title;
+        }
+    }
+
     private readonly Dictionary<string, KeyGesture?> _addonGestures = new();
+    private readonly HashSet<string> _loadedAddons = new(StringComparer.Ordinal);
+    private bool _isAddonHookHost;
+    private bool _addonHooksReady;
+    private bool _preCloseHooksDone;
+
+    private AddonMode CurrentAddonMode => ViewModel.PickerMode switch
+    {
+        PickerMode.File => AddonMode.FilePicker,
+        PickerMode.Folder => AddonMode.FolderPicker,
+        PickerMode.Save => AddonMode.SavePicker,
+        _ => AddonMode.Explorer,
+    };
 
     private void InitializeAddons()
     {
         AddonService.Instance.AddonsChanged += OnAddonsChanged;
+        AddonLogService.Changed += OnAddonLogChanged;
+        InitializeAddonServices();
         RebuildAddonsMenu();
+        RefreshAddonPlaces();
+        AddonLogService.ReportLoadErrors(AddonService.Instance.Addons);
+        UpdateAddonErrorCount();
+        Closed += (_, _) => ShutdownAddons();
+
+        if (AddonHooks.Runner != null)
+        {
+            return;
+        }
+
+        _isAddonHookHost = true;
+        AddonHooks.Runner = RunAddonHookAsync;
+        AddonHooks.InstallFinished += RunPendingLoadHooks;
+        Opened += OnAddonHostOpened;
+        Closing += OnAddonHostClosing;
+    }
+
+    private void ShutdownAddons()
+    {
+        AddonLogService.Changed -= OnAddonLogChanged;
+        ShutdownAddonServices();
+        if (!_isAddonHookHost)
+        {
+            return;
+        }
+
+        AddonHooks.InstallFinished -= RunPendingLoadHooks;
+        AddonHooks.Runner = null;
     }
 
     private void OnAddonsChanged()
     {
-        Dispatcher.UIThread.Post(RebuildAddonsMenu);
+        Dispatcher.UIThread.Post(() =>
+        {
+            RebuildAddonsMenu();
+            AddonLogService.ReportLoadErrors(AddonService.Instance.Addons);
+            RemoveInactiveAddonContent();
+            RefreshAddonPlaces();
+            if (_isAddonHookHost)
+            {
+                RunPendingLoadHooks();
+            }
+        });
+    }
+
+    private void OnAddonLogChanged()
+    {
+        Dispatcher.UIThread.Post(UpdateAddonErrorCount);
+    }
+
+    private void UpdateAddonErrorCount()
+    {
+        ViewModel.AddonErrorCount = AddonLogService.UnseenCount;
+    }
+
+    private async void OnAddonErrorsClick(object? sender, RoutedEventArgs e)
+    {
+        AddonLogDialog dialog = new();
+        await dialog.ShowDialog(this);
+    }
+
+    private void OnAddonHostOpened(object? sender, EventArgs e)
+    {
+        Opened -= OnAddonHostOpened;
+        _addonHooksReady = true;
+        RunPendingLoadHooks();
+
+        foreach (Addon addon in AddonService.Instance.GetHookAddons(AddonHook.PostStart, CurrentAddonMode))
+        {
+            _ = RunAddonHookAsync(addon, AddonHook.PostStart);
+        }
+    }
+
+    private async void OnAddonHostClosing(object? sender, WindowClosingEventArgs e)
+    {
+        if (_preCloseHooksDone)
+        {
+            return;
+        }
+
+        _preCloseHooksDone = true;
+        List<Addon> addons = AddonService.Instance.GetHookAddons(AddonHook.PreClose, CurrentAddonMode);
+        List<AddonRun> services = TakeAddonServices();
+        if (addons.Count == 0 && services.Count == 0)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        await Task.WhenAll(addons
+            .Select(a => RunAddonHookAsync(a, AddonHook.PreClose))
+            .Concat(services.Select(s => StopAddonServiceAsync(s, ServiceCloseTimeout))));
+        Close();
+    }
+
+    private void RunPendingLoadHooks()
+    {
+        if (!_addonHooksReady)
+        {
+            return;
+        }
+
+        List<Addon> active = AddonService.Instance.Addons
+            .Where(a => a.IsActive && a.SupportsMode(CurrentAddonMode))
+            .ToList();
+        HashSet<string> activeKeys = active.Select(GetAddonLoadKey).ToHashSet(StringComparer.Ordinal);
+        _loadedAddons.RemoveWhere(key => !activeKeys.Contains(key));
+
+        foreach (Addon addon in active)
+        {
+            if (AddonHooks.IsInstalling(addon.Id) || !_loadedAddons.Add(GetAddonLoadKey(addon)))
+            {
+                continue;
+            }
+
+            if (addon.Hooks.ContainsKey(AddonHook.PostLoad))
+            {
+                _ = RunAddonHookAsync(addon, AddonHook.PostLoad);
+            }
+        }
+
+        SyncAddonServices(false);
+    }
+
+    private static string GetAddonLoadKey(Addon addon)
+    {
+        return $"{addon.RootPath}|{addon.Version}";
+    }
+
+    private static TimeSpan? GetHookTimeout(AddonHook hook)
+    {
+        return hook switch
+        {
+            AddonHook.PreClose => TimeSpan.FromSeconds(3),
+            AddonHook.PreUninstall => TimeSpan.FromSeconds(30),
+            AddonHook.PostInstall => TimeSpan.FromMinutes(5),
+            _ => null,
+        };
+    }
+
+    private async Task RunAddonHookAsync(Addon addon, AddonHook hook)
+    {
+        string language = LocalizationService.Instance.LanguageCode;
+        string hookName = AddonRunner.GetHookName(hook);
+        AddonLaunch launch = AddonRunner.PrepareHook(addon, hook, CreateAddonContext(), language);
+        Logger.LogI($"Running addon hook {addon.Id}/{hookName}");
+
+        AddonRun? run = StartAddonRun(addon, hookName, addon.GetName(language), launch);
+        if (run == null)
+        {
+            return;
+        }
+
+        TimeSpan? timeout = GetHookTimeout(hook);
+        if (timeout == null)
+        {
+            await run.Exited.Task;
+            return;
+        }
+
+        Task finished = await Task.WhenAny(run.Exited.Task, Task.Delay(timeout.Value));
+        if (finished == run.Exited.Task)
+        {
+            return;
+        }
+
+        AddonLogService.Add(addon, hookName, AddonLogLevel.Warning, LocalizationService.Format("AddonLogHookTimeout", (int) timeout.Value.TotalSeconds));
+        await StopAddonRunAsync(run, hook == AddonHook.PreClose ? PreCloseStopGrace : AddonStopGrace);
     }
 
     private AddonContext CreateAddonContext()
     {
-        return new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath));
+        return new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath), "", CurrentAddonMode);
     }
 
     private void RebuildAddonsMenu()
     {
         RemoveAddonItems(AddonsMenuItem.Items);
 
-        List<AddonAction> actions = AddonService.Instance.GetActions(AddonLocation.AddonsMenu);
+        List<AddonAction> actions = AddonService.Instance.GetActions(AddonLocation.AddonsMenu, CurrentAddonMode);
         if (actions.Count == 0)
         {
             return;
@@ -78,10 +286,6 @@ public partial class MainWindow
     private void InjectAddonContextItems(ContextMenu menu)
     {
         RemoveAddonItems(menu.Items);
-        if (ViewModel.IsPickerMode)
-        {
-            return;
-        }
 
         AddonContext context = CreateAddonContext();
         List<AddonAction> actions = AddonService.Instance.GetActions(AddonLocation.ContextMenu, context);
@@ -331,11 +535,6 @@ public partial class MainWindow
 
     private bool TryRunAddonShortcut(KeyEventArgs e)
     {
-        if (ViewModel.IsPickerMode)
-        {
-            return false;
-        }
-
         bool hasCommandModifier = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) != 0;
         bool isTyping = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox;
         if (isTyping && !hasCommandModifier)
@@ -366,20 +565,19 @@ public partial class MainWindow
 
     private bool TryRunAddonPathBarCommand(string keyword, string input)
     {
-        AddonAction? action = AddonService.Instance.FindPathBarAction(keyword);
+        AddonAction? action = AddonService.Instance.FindPathBarAction(keyword, CurrentAddonMode);
         if (action == null)
         {
             return false;
         }
 
-        RunAddonAction(action, new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath), input));
+        RunAddonAction(action, new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath), input, CurrentAddonMode));
         return true;
     }
 
     private async void RunAddonAction(AddonAction action, AddonContext context)
     {
         string language = LocalizationService.Instance.LanguageCode;
-        string addonName = action.Addon.GetName(language);
 
         if (action.ConfirmKey != null)
         {
@@ -399,37 +597,63 @@ public partial class MainWindow
             return;
         }
 
-        Process? process = null;
+        StartAddonRun(action.Addon, action.Id, action.GetTitle(language), launch);
+    }
+
+    private AddonRun? StartAddonRun(Addon addon, string source, string title, AddonLaunch launch, bool isService = false)
+    {
+        AddonRun run = new(addon, source, title) { IsService = isService };
         try
         {
-            process = AddonRunner.Start(
+            run.Process = AddonRunner.Start(
                 launch,
-                command => Dispatcher.UIThread.Post(() => HandleAddonCommand(addonName, command, process)),
-                (exitCode, stderr) => Dispatcher.UIThread.Post(() => OnAddonExited(action, addonName, exitCode, stderr)));
+                command => Dispatcher.UIThread.Post(() => HandleAddonCommand(run, command)),
+                (exitCode, stderr) => Dispatcher.UIThread.Post(() => OnAddonExited(run, exitCode, stderr)));
         }
         catch (Exception ex)
         {
-            Logger.LogE($"Addon action {action.Key} failed to start: {ex.Message}");
-            ViewModel.StatusText = LocalizationService.Format("AddonRunFailed", addonName, ex.Message);
+            Logger.LogE($"Addon {addon.Id} ({source}) failed to start: {ex.Message}");
+            ViewModel.StatusText = LocalizationService.Format("AddonRunFailed", run.AddonName, ex.Message);
+            AddonLogService.Add(addon, source, AddonLogLevel.Error, LocalizationService.Format("AddonLogStartFailed", ex.Message), string.Join(' ', launch.Command));
+            return null;
         }
+
+        return run;
     }
 
-    private void OnAddonExited(AddonAction action, string addonName, int exitCode, string stderr)
+    private static async Task StopAddonRunAsync(AddonRun run, TimeSpan grace)
     {
-        if (exitCode == 0)
+        run.WasStopped = true;
+        if (run.Process == null)
         {
             return;
         }
 
-        Logger.LogW($"Addon action {action.Key} exited with code {exitCode}: {stderr}");
+        await AddonRunner.StopAsync(run.Process, grace);
+    }
+
+    private void OnAddonExited(AddonRun run, int exitCode, string stderr)
+    {
+        run.HasExited = true;
+        EndAddonProgress(run);
+        SetAddonLoading(run, false);
+        run.Input?.Writer.TryComplete();
+        OnAddonServiceExited(run);
+        run.Exited.TrySetResult(exitCode);
+
+        if (exitCode == 0 || run.WasStopped)
+        {
+            return;
+        }
 
         string? lastError = stderr.Split('\n', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim();
         ViewModel.StatusText = string.IsNullOrEmpty(lastError)
-            ? LocalizationService.Format("AddonExitedWithCode", addonName, exitCode)
-            : LocalizationService.Format("AddonExitedWithError", addonName, lastError);
+            ? LocalizationService.Format("AddonExitedWithCode", run.AddonName, exitCode)
+            : LocalizationService.Format("AddonExitedWithError", run.AddonName, lastError);
+        AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Error, LocalizationService.Format("AddonLogExitCode", exitCode), stderr);
     }
 
-    private async void HandleAddonCommand(string addonName, AddonCommand command, Process? process)
+    private async void HandleAddonCommand(AddonRun run, AddonCommand command)
     {
         string argument = command.Argument.Trim();
         switch (command.Kind)
@@ -444,18 +668,235 @@ public partial class MainWindow
                 ViewModel.StatusText = command.Argument;
                 break;
             case AddonCommandKind.Message:
-                ConfirmDialog dialog = new(addonName, command.Argument);
+                ConfirmDialog dialog = new(run.AddonName, command.Argument);
                 await dialog.ShowDialog<bool?>(this);
                 break;
             case AddonCommandKind.Open:
                 OpenAddonPath(ResolveAddonPath(argument));
                 break;
             case AddonCommandKind.Prompt:
-                InputDialog input = new(addonName, command.Argument);
+                InputDialog input = new(run.AddonName, command.Argument);
                 string? answer = await input.ShowDialog<string?>(this);
-                ReplyToAddon(process, answer);
+                ReplyToRun(run, answer);
+                break;
+            case AddonCommandKind.Confirm:
+                ConfirmDialog confirm = new(run.AddonName, command.Argument, LocalizationService.Get("OK"), true, false);
+                bool confirmed = await confirm.ShowDialog<bool?>(this) == true;
+                ReplyToRun(run, confirmed ? "yes" : "no");
+                break;
+            case AddonCommandKind.Choose:
+                await ShowAddonChoiceAsync(run, command.Argument);
+                break;
+            case AddonCommandKind.Form:
+                run.PendingForm = new(argument);
+                break;
+            case AddonCommandKind.Field:
+                AddAddonFormField(run, argument);
+                break;
+            case AddonCommandKind.FormShow:
+                await ShowAddonFormAsync(run);
+                break;
+            case AddonCommandKind.StatusBar:
+                SetAddonStatusItem(run, argument);
+                break;
+            case AddonCommandKind.StatusBarTooltip:
+                SetAddonStatusTooltip(run, argument);
+                break;
+            case AddonCommandKind.Place:
+                SetAddonPlace(run, argument);
+                break;
+            case AddonCommandKind.PlaceRemove:
+                RemoveAddonPlace(run, argument);
+                break;
+            case AddonCommandKind.Setting:
+                SaveAddonSetting(run, argument);
+                break;
+            case AddonCommandKind.Progress:
+                UpdateAddonProgress(run, argument);
+                break;
+            case AddonCommandKind.ProgressMax:
+                SetAddonProgressMaximum(run, argument);
+                break;
+            case AddonCommandKind.ProgressTitle:
+                EditAddonProgress(run, p => p.Title = argument.Length > 0 ? argument : run.Title);
+                break;
+            case AddonCommandKind.ProgressText:
+                EditAddonProgress(run, p => p.Text = argument);
+                break;
+            case AddonCommandKind.ProgressStatus:
+                EditAddonProgress(run, p => p.Status = argument);
+                break;
+            case AddonCommandKind.ProgressItem:
+                EditAddonProgress(run, p => p.Item = argument);
+                break;
+            case AddonCommandKind.Loading:
+                SetAddonLoadingFromCommand(run, argument);
+                break;
+            case AddonCommandKind.Select:
+                SelectByPattern(argument);
+                break;
+            case AddonCommandKind.Pick:
+                await PickFromAddonAsync(run, argument);
+                break;
+            case AddonCommandKind.Unknown:
+                AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Warning, LocalizationService.Format("AddonLogUnknownCommand", command.Argument));
                 break;
         }
+    }
+
+    private OperationProgressViewModel? EnsureAddonProgress(AddonRun run)
+    {
+        if (run.HasExited)
+        {
+            return null;
+        }
+
+        if (run.Progress != null)
+        {
+            return run.Progress;
+        }
+
+        run.Progress = new()
+        {
+            Title = run.Title,
+            Icon = IconService.LoadFile(run.Addon.IconPath) ?? IconService.Get("extension"),
+            IsIndeterminate = true,
+            CancelAction = () => _ = StopAddonRunAsync(run, AddonStopGrace),
+        };
+        ViewModel.AddOperation(run.Progress);
+        return run.Progress;
+    }
+
+    private void EndAddonProgress(AddonRun run)
+    {
+        if (run.Progress == null)
+        {
+            return;
+        }
+
+        ViewModel.RemoveOperation(run.Progress);
+        run.Progress = null;
+    }
+
+    private void EditAddonProgress(AddonRun run, Action<OperationProgressViewModel> edit)
+    {
+        OperationProgressViewModel? progress = EnsureAddonProgress(run);
+        if (progress == null)
+        {
+            return;
+        }
+
+        edit(progress);
+    }
+
+    private void UpdateAddonProgress(AddonRun run, string argument)
+    {
+        string[] parts = argument.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string value = parts.Length > 0 ? parts[0].ToLowerInvariant() : "";
+        if (value is "done" or "end" or "hide" or "off")
+        {
+            EndAddonProgress(run);
+            return;
+        }
+
+        string[] fraction = value.TrimEnd('%').Split('/');
+        double current = 0;
+        double maximum = 0;
+        bool isBusy = value is "" or "busy" or "indeterminate";
+        bool isValid = isBusy || (fraction.Length <= 2 && TryParseAddonNumber(fraction[0], out current) && (fraction.Length == 1 || TryParseAddonNumber(fraction[1], out maximum)));
+        if (!isValid)
+        {
+            ReportInvalidAddonArgument(run, "progress", argument);
+            return;
+        }
+
+        OperationProgressViewModel? progress = EnsureAddonProgress(run);
+        if (progress == null)
+        {
+            return;
+        }
+
+        if (parts.Length > 1)
+        {
+            progress.Text = parts[1];
+        }
+
+        if (isBusy)
+        {
+            progress.IsIndeterminate = true;
+            return;
+        }
+
+        if (fraction.Length == 2)
+        {
+            progress.Maximum = maximum;
+        }
+
+        progress.Value = current;
+        progress.IsIndeterminate = false;
+    }
+
+    private void SetAddonProgressMaximum(AddonRun run, string argument)
+    {
+        if (!TryParseAddonNumber(argument, out double maximum))
+        {
+            ReportInvalidAddonArgument(run, "progress-max", argument);
+            return;
+        }
+
+        EditAddonProgress(run, p => p.Maximum = maximum);
+    }
+
+    private void SetAddonLoadingFromCommand(AddonRun run, string argument)
+    {
+        switch (argument.ToLowerInvariant())
+        {
+            case "" or "on" or "true" or "1" or "start":
+                SetAddonLoading(run, true);
+                break;
+            case "off" or "false" or "0" or "stop" or "done":
+                SetAddonLoading(run, false);
+                break;
+            default:
+                ReportInvalidAddonArgument(run, "loading", argument);
+                break;
+        }
+    }
+
+    private void SetAddonLoading(AddonRun run, bool loading)
+    {
+        if ((loading && run.HasExited) || run.IsLoading == loading)
+        {
+            return;
+        }
+
+        run.IsLoading = loading;
+        ViewModel.SetExternalLoading(loading);
+    }
+
+    private async Task PickFromAddonAsync(AddonRun run, string argument)
+    {
+        if (!ViewModel.IsPickerMode)
+        {
+            AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Warning, LocalizationService.Get("AddonLogPickUnavailable"));
+            return;
+        }
+
+        string path = ResolveAddonPath(argument);
+        if (!await ViewModel.TryCompletePickerAsync(path))
+        {
+            AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Warning, LocalizationService.Format("AddonLogPickInvalid", path));
+        }
+    }
+
+    private static bool TryParseAddonNumber(string text, out double value)
+    {
+        return double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) && value >= 0;
+    }
+
+    private static void ReportInvalidAddonArgument(AddonRun run, string command, string argument)
+    {
+        AddonLogService.Add(run.Addon, run.Source, AddonLogLevel.Warning, LocalizationService.Format("AddonLogInvalidArgument", $"{AddonCommand.Prefix}{command}", argument));
     }
 
     private static void ReplyToAddon(Process? process, string? answer)
@@ -550,5 +991,6 @@ public partial class MainWindow
     private void OnMenuReloadAddonsClick(object? sender, RoutedEventArgs e)
     {
         AddonService.Instance.Reload();
+        AddonHooks.RequestServiceRestart();
     }
 }

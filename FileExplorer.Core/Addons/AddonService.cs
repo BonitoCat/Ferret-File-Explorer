@@ -92,6 +92,13 @@ public sealed class AddonService
         }
     }
 
+    public List<AddonAction> GetActions(AddonLocation location, AddonMode mode)
+    {
+        return GetActions(location)
+            .Where(a => a.SupportsMode(mode))
+            .ToList();
+    }
+
     public List<AddonAction> GetActions(AddonLocation location, AddonContext context)
     {
         return GetActions(location)
@@ -101,8 +108,23 @@ public sealed class AddonService
 
     public AddonAction? FindPathBarAction(string keyword)
     {
-        return GetActions(AddonLocation.PathBar)
+        return FindPathBarAction(keyword, AddonMode.All);
+    }
+
+    public AddonAction? FindPathBarAction(string keyword, AddonMode mode)
+    {
+        return GetActions(AddonLocation.PathBar, mode)
             .FirstOrDefault(a => a.Keywords.Contains(keyword, StringComparer.OrdinalIgnoreCase));
+    }
+
+    public List<Addon> GetHookAddons(AddonHook hook, AddonMode mode)
+    {
+        lock (_lock)
+        {
+            return _addons
+                .Where(a => a.IsActive && a.SupportsMode(mode) && a.Hooks.ContainsKey(hook))
+                .ToList();
+        }
     }
 
     public List<AddonAction> GetShortcutActions()
@@ -228,6 +250,7 @@ public sealed class AddonService
         }
 
         Directory.Delete(addon.RootPath, true);
+        AddonSettingsStore.Remove(id);
 
         lock (_lock)
         {

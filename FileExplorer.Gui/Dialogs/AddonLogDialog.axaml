@@ -1,0 +1,116 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:services="using:FileExplorer.Gui.Services"
+        x:Class="FileExplorer.Gui.Dialogs.AddonLogDialog"
+        Title="{markup:Translate Key=AddonLogTitle}"
+        Width="720"
+        Height="480"
+        MinWidth="480"
+        MinHeight="300"
+        WindowStartupLocation="CenterOwner"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,*,Auto"
+          Margin="20">
+
+        <TextBlock Grid.Row="0"
+                   Text="{markup:Translate Key=AddonLogHint}"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="#AAAAAA"
+                   Margin="0,0,0,12"/>
+
+        <Border Grid.Row="1"
+                Background="#1E1E20"
+                BorderBrush="#333333"
+                BorderThickness="1"
+                CornerRadius="6">
+            <Panel>
+                <ListBox x:Name="EntriesList"
+                         Background="Transparent">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="services:AddonLogEntry">
+                            <Grid ColumnDefinitions="Auto,*"
+                                  Margin="0,4">
+
+                                <Image Grid.Column="0"
+                                       Source="{markup:Icon Key=warning}"
+                                       Opacity="{Binding IconOpacity}"
+                                       Width="16"
+                                       Height="16"
+                                       Margin="0,1,10,0"
+                                       VerticalAlignment="Top"/>
+
+                                <StackPanel Grid.Column="1"
+                                            Spacing="4">
+
+                                    <TextBlock Text="{Binding Header}"
+                                               FontSize="11"
+                                               Foreground="#888888"/>
+
+                                    <SelectableTextBlock Text="{Binding Message}"
+                                                         TextWrapping="Wrap"
+                                                         FontSize="13"/>
+
+                                    <Border IsVisible="{Binding HasDetail}"
+                                            Background="#151517"
+                                            BorderBrush="#2C2C30"
+                                            BorderThickness="1"
+                                            CornerRadius="4"
+                                            Padding="8,6">
+                                        <SelectableTextBlock Text="{Binding Detail}"
+                                                             TextWrapping="Wrap"
+                                                             FontFamily="monospace"
+                                                             FontSize="12"
+                                                             Foreground="#D08080"/>
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <TextBlock x:Name="EmptyText"
+                           Text="{markup:Translate Key=AddonLogEmpty}"
+                           Foreground="#888888"
+                           FontSize="13"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"/>
+            </Panel>
+        </Border>
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10"
+                    Margin="0,16,0,0">
+
+            <Button x:Name="CopyButton"
+                    Content="{markup:Translate Key=CopyAll}"
+                    Click="OnCopyClick"
+                    Background="#333333"
+                    MinWidth="80"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button x:Name="ClearButton"
+                    Content="{markup:Translate Key=ClearAll}"
+                    Click="OnClearClick"
+                    Background="#333333"
+                    MinWidth="80"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button Content="{markup:Translate Key=Close}"
+                    Click="OnCloseClick"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="White"
+                    MinWidth="80"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

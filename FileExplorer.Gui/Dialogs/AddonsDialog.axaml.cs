@@ -64,6 +64,19 @@ public partial class AddonsDialog : Window
         MoveUpButton.IsEnabled = index > 0;
         MoveDownButton.IsEnabled = index >= 0 && index < items.Count - 1;
         UninstallButton.IsEnabled = selected != null;
+        SettingsButton.IsEnabled = selected != null && AddonService.Instance.Find(selected.Id)?.Settings.Count > 0;
+    }
+
+    private async void OnSettingsClick(object? sender, RoutedEventArgs e)
+    {
+        AddonItemViewModel? selected = SelectedAddon;
+        Addon? addon = selected == null ? null : AddonService.Instance.Find(selected.Id);
+        if (addon == null || addon.Settings.Count == 0)
+        {
+            return;
+        }
+
+        await AddonSettingsEditor.EditAsync(this, addon);
     }
 
     private void OnSelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -112,6 +125,12 @@ public partial class AddonsDialog : Window
             return;
         }
 
+        Addon? addon = AddonService.Instance.Find(selected.Id);
+        if (addon != null)
+        {
+            await AddonHooks.RunAsync(addon, AddonHook.PreUninstall);
+        }
+
         try
         {
             AddonService.Instance.Uninstall(selected.Id);
@@ -158,6 +177,7 @@ public partial class AddonsDialog : Window
     {
         string? selectedId = SelectedAddon?.Id;
         AddonService.Instance.Reload();
+        AddonHooks.RequestServiceRestart();
         LoadAddons(selectedId);
     }
 

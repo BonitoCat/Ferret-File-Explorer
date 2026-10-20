@@ -12,6 +12,7 @@ public sealed class AddonAction
     public string? After { get; }
     public string? Before { get; }
     public AddonTarget Targets { get; }
+    public AddonMode Modes { get; }
     public IReadOnlyList<string> Extensions { get; }
     public bool Multiple { get; }
     public string? ScriptPath { get; }
@@ -28,7 +29,7 @@ public sealed class AddonAction
 
     public string Key => $"{Addon.Id}/{Id}";
 
-    internal AddonAction(Addon addon, AddonActionManifest manifest, AddonLocation location, AddonTarget targets, bool separatorBefore, bool separatorAfter, int position)
+    internal AddonAction(Addon addon, AddonActionManifest manifest, AddonLocation location, AddonTarget targets, AddonMode modes, bool separatorBefore, bool separatorAfter, int position)
     {
         Addon = addon;
         Id = string.IsNullOrWhiteSpace(manifest.Id) ? position.ToString() : manifest.Id.Trim();
@@ -38,6 +39,7 @@ public sealed class AddonAction
         After = NormalizeAnchor(manifest.After);
         Before = NormalizeAnchor(manifest.Before);
         Targets = targets;
+        Modes = modes;
         Extensions = (manifest.Extensions ?? new())
             .Select(NormalizeExtension)
             .Where(e => e.Length > 0)
@@ -65,8 +67,18 @@ public sealed class AddonAction
         return Addon.Translate(TitleKey, languageCode);
     }
 
+    public bool SupportsMode(AddonMode mode)
+    {
+        return (Modes & mode) != 0;
+    }
+
     public bool Matches(AddonContext context)
     {
+        if (!SupportsMode(context.Mode))
+        {
+            return false;
+        }
+
         if (Location != AddonLocation.ContextMenu)
         {
             return true;

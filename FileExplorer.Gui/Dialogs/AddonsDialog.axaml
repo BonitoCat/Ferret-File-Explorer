@@ -4,10 +4,10 @@
         xmlns:vm="using:FileExplorer.Gui.ViewModels"
         x:Class="FileExplorer.Gui.Dialogs.AddonsDialog"
         Title="{markup:Translate Key=Addons}"
-        Width="680"
-        Height="480"
-        MinWidth="520"
-        MinHeight="340"
+        Width="720"
+        Height="540"
+        MinWidth="560"
+        MinHeight="520"
         WindowStartupLocation="CenterOwner"
         Background="#242426"
         Foreground="#E0E0E0">
@@ -107,7 +107,7 @@
             </Border>
 
             <StackPanel Grid.Column="1"
-                        Width="200"
+                        Width="230"
                         Spacing="8"
                         Margin="12,0,0,0">
 
@@ -120,6 +120,11 @@
                         Classes="side"
                         Content="{markup:Translate Key=MoveDown}"
                         Click="OnMoveDownClick"/>
+
+                <Button x:Name="SettingsButton"
+                        Classes="side"
+                        Content="{markup:Translate Key=AddonSettings}"
+                        Click="OnSettingsClick"/>
 
                 <Button x:Name="UninstallButton"
                         Classes="side"

@@ -11,7 +11,32 @@ public sealed class AddonManifest
     public string? Icon { get; set; }
     public string? Script { get; set; }
     public string? Interpreter { get; set; }
+    public List<string>? Modes { get; set; }
+    public Dictionary<string, string>? Hooks { get; set; }
+    public string? Service { get; set; }
+    public List<AddonSettingManifest>? Settings { get; set; }
+    public List<AddonPlaceManifest>? Places { get; set; }
     public List<AddonActionManifest> Actions { get; set; } = new();
+}
+
+public sealed class AddonSettingManifest
+{
+    public string? Id { get; set; }
+    public string? Title { get; set; }
+    public string? Description { get; set; }
+    public string? Type { get; set; }
+    public string? Default { get; set; }
+    public List<string>? Choices { get; set; }
+    public double? Min { get; set; }
+    public double? Max { get; set; }
+}
+
+public sealed class AddonPlaceManifest
+{
+    public string? Name { get; set; }
+    public string? Path { get; set; }
+    public string? Section { get; set; }
+    public string? Icon { get; set; }
 }
 
 public sealed class AddonActionManifest
@@ -35,4 +60,5 @@ public sealed class AddonActionManifest
     public string? Icon { get; set; }
     public string? Confirm { get; set; }
     public string? Separator { get; set; }
+    public List<string>? Modes { get; set; }
 }

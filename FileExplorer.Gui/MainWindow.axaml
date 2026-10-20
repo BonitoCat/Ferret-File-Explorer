@@ -114,6 +114,46 @@
             <Setter Property="Background" Value="{DynamicResource SelectionSubtleBrush}"/>
         </Style>
 
+        <Style Selector="Button.operation-tab">
+            <Setter Property="Background" Value="#2B2B30"/>
+            <Setter Property="BorderBrush" Value="#38383E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="10,3"/>
+        </Style>
+
+        <Style Selector="Button.operation-tab.selected">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.operation-tab.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.addon-errors">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.addon-status">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.addon-status.clickable">
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style Selector="Button.addon-status:not(.clickable):pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
         <Style Selector="Border.col-resize">
             <Setter Property="Width" Value="8"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -347,7 +387,7 @@
                                           Icon="{markup:Icon Key=link}"
                                           Tag="paste-link"
                                           Click="OnMenuPasteAsSymlinkClick"
-                                          InputGesture="Ctrl+Shift+V"/>
+                                          InputGesture="Ctrl+Alt+V"/>
 
                                 <MenuItem Header="{markup:Translate Key=Duplicate}"
                                           Icon="{markup:Icon Key=duplicate}"
@@ -424,7 +464,7 @@
                         <ProgressBar Height="2"
                                      VerticalAlignment="Top"
                                      IsIndeterminate="True"
-                                     IsVisible="{Binding IsLoading}"
+                                     IsVisible="{Binding ShowLoadingBar}"
                                      Background="Transparent"
                                      Foreground="{DynamicResource AccentBrush}"
                                      ZIndex="100"/>
@@ -459,6 +499,10 @@
                                 </Style>
 
                                 <Style Selector="ListBoxItem:pointerover:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+
+                                <Style Selector="ListBoxItem:pressed:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
                                     <Setter Property="Background" Value="Transparent"/>
                                 </Style>
 
@@ -567,6 +611,14 @@
                                     <Setter Property="CornerRadius" Value="6"/>
                                     <Setter Property="Padding" Value="8,5"/>
                                     <Setter Property="Margin" Value="4,1"/>
+                                </Style>
+
+                                <Style Selector="ListBoxItem:pressed:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+
+                                <Style Selector="ListBoxItem:pressed:pointerover:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}"/>
                                 </Style>
                             </ListBox.Styles>
 
@@ -769,7 +821,7 @@
                               Header="{markup:Translate Key=PasteAsSymlink}"
                               Icon="{markup:Icon Key=link}"
                               Click="OnMenuPasteAsSymlinkClick"
-                              InputGesture="Ctrl+Shift+V"/>
+                              InputGesture="Ctrl+Alt+V"/>
 
                     <MenuItem Header="{markup:Translate Key=Duplicate}"
                               Icon="{markup:Icon Key=duplicate}"
@@ -893,6 +945,10 @@
                     <MenuItem Header="{markup:Translate Key=ReloadAddons}"
                               Icon="{markup:Icon Key=refresh}"
                               Click="OnMenuReloadAddonsClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=AddonProblems}"
+                              Icon="{markup:Icon Key=warning}"
+                              Click="OnAddonErrorsClick"/>
                 </MenuItem>
 
                 <!-- Help Menu -->
@@ -1404,95 +1460,176 @@
                 BorderThickness="0,1,0,1"
                 Padding="16,10"
                 IsVisible="{Binding IsOperationInProgress}">
-            <Grid ColumnDefinitions="Auto,*,Auto"
-                  RowDefinitions="Auto,Auto,Auto">
+            <StackPanel Spacing="10">
 
-                <!-- Icon -->
-                <Panel Grid.Row="0"
-                       Grid.RowSpan="3"
-                       Grid.Column="0"
-                       Width="36"
-                       Height="36"
-                       Margin="0,0,14,0"
-                       VerticalAlignment="Center">
-                    <Image Source="{Binding OperationIcon}"
-                           Width="26"
-                           Height="26"/>
-                </Panel>
+                <Grid ColumnDefinitions="*,Auto"
+                      IsVisible="{Binding HasMultipleOperations}">
 
-                <!-- Top Row: Title and Speed/ETA -->
-                <Grid Grid.Row="0"
-                      Grid.Column="1"
-                      ColumnDefinitions="*,Auto"
-                      Margin="0,0,0,6">
-                    <TextBlock Grid.Column="0"
-                               Text="{Binding OperationTitle}"
-                               FontWeight="SemiBold"
-                               FontSize="13"
-                               Foreground="#FFFFFF"
-                               TextTrimming="CharacterEllipsis"/>
+                    <ScrollViewer Grid.Column="0"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Operations}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="6"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
 
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding OperationSpeedAndEta}"
-                               FontSize="12"
-                               Foreground="{DynamicResource AccentLightBrush}"
-                               FontWeight="Medium"
-                               Margin="12,0,0,0"/>
-                </Grid>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OperationProgressViewModel">
+                                    <Button Classes="operation-tab"
+                                            Classes.selected="{Binding IsSelected}"
+                                            Tag="{Binding}"
+                                            Click="OnOperationTabClick">
+                                        <StackPanel Orientation="Horizontal"
+                                                    Spacing="6">
 
-                <!-- Middle Row: Progress Bar -->
-                <ProgressBar Grid.Row="1"
-                             Grid.Column="1"
-                             Minimum="0"
-                             Maximum="100"
-                             Value="{Binding OperationPercent}"
-                             Height="6"
-                             CornerRadius="3"
-                             Background="#38383E"
-                             Foreground="{DynamicResource AccentBrush}"
-                             Margin="0,0,0,6"/>
+                                            <Image Source="{Binding Icon}"
+                                                   Width="12"
+                                                   Height="12"
+                                                   VerticalAlignment="Center"/>
 
-                <!-- Bottom Row: Count / Size and Current File -->
-                <Grid Grid.Row="2"
-                      Grid.Column="1"
-                      ColumnDefinitions="Auto,*,Auto">
-                    <TextBlock Grid.Column="0"
-                               Text="{Binding OperationItemsProgress}"
-                               FontSize="12"
-                               Foreground="#CCCCCC"/>
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontSize="11"
+                                                       MaxWidth="180"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"/>
 
-                    <TextBlock Grid.Column="2"
-                               Text="{Binding OperationCurrentFileName}"
-                               FontSize="12"
-                               Foreground="#88888E"
-                               TextTrimming="CharacterEllipsis"
-                               MaxWidth="300"/>
-                </Grid>
+                                            <TextBlock Text="{Binding PercentText}"
+                                                       FontSize="11"
+                                                       Foreground="#88888E"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
 
-                <!-- Cancel Button -->
-                <Button Grid.Row="0"
-                        Grid.RowSpan="3"
-                        Grid.Column="2"
-                        Click="OnCancelOperationClick"
-                        Background="Transparent"
-                        BorderBrush="#44444A"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="10,6"
-                        Margin="16,0,0,0"
-                        VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal"
-                                Spacing="6">
-                        <Image Source="{markup:Icon Key=close}"
-                               Width="12"
-                               Height="12"/>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                Margin="12,0,0,0"
+                                VerticalAlignment="Center">
 
-                        <TextBlock Text="{markup:Translate Key=Cancel}"
-                                   FontSize="12"
-                                   Foreground="#EEEEEE"/>
+                        <Button Classes="crumb-scroll"
+                                Click="OnPreviousOperationClick"
+                                ToolTip.Tip="{markup:Translate Key=PreviousOperation}">
+                            <Image Source="{markup:Icon Key=arrow-left}"
+                                   Width="12"
+                                   Height="12"/>
+                        </Button>
+
+                        <TextBlock Text="{Binding OperationPosition}"
+                                   FontSize="11"
+                                   Foreground="#88888E"
+                                   VerticalAlignment="Center"/>
+
+                        <Button Classes="crumb-scroll"
+                                Click="OnNextOperationClick"
+                                ToolTip.Tip="{markup:Translate Key=NextOperation}">
+                            <Image Source="{markup:Icon Key=arrow-right}"
+                                   Width="12"
+                                   Height="12"/>
+                        </Button>
                     </StackPanel>
-                </Button>
-            </Grid>
+                </Grid>
+
+                <Grid DataContext="{Binding SelectedOperation}"
+                      x:DataType="vm:OperationProgressViewModel"
+                      ColumnDefinitions="Auto,*,Auto"
+                      RowDefinitions="Auto,Auto,Auto">
+
+                    <!-- Icon -->
+                    <Panel Grid.Row="0"
+                           Grid.RowSpan="3"
+                           Grid.Column="0"
+                           Width="36"
+                           Height="36"
+                           Margin="0,0,14,0"
+                           VerticalAlignment="Center">
+                        <Image Source="{Binding Icon}"
+                               Width="26"
+                               Height="26"/>
+                    </Panel>
+
+                    <!-- Top Row: Title and Status -->
+                    <Grid Grid.Row="0"
+                          Grid.Column="1"
+                          ColumnDefinitions="*,Auto"
+                          Margin="0,0,0,6">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Title}"
+                                   FontWeight="SemiBold"
+                                   FontSize="13"
+                                   Foreground="#FFFFFF"
+                                   TextTrimming="CharacterEllipsis"/>
+
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Status}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource AccentLightBrush}"
+                                   FontWeight="Medium"
+                                   Margin="12,0,0,0"/>
+                    </Grid>
+
+                    <!-- Middle Row: Progress Bar -->
+                    <ProgressBar Grid.Row="1"
+                                 Grid.Column="1"
+                                 Minimum="0"
+                                 Maximum="{Binding Maximum}"
+                                 Value="{Binding Value}"
+                                 IsIndeterminate="{Binding IsIndeterminate}"
+                                 Height="6"
+                                 CornerRadius="3"
+                                 Background="#38383E"
+                                 Foreground="{DynamicResource AccentBrush}"
+                                 Margin="0,0,0,6"/>
+
+                    <!-- Bottom Row: Text and Current Item -->
+                    <Grid Grid.Row="2"
+                          Grid.Column="1"
+                          ColumnDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Text}"
+                                   FontSize="12"
+                                   Foreground="#CCCCCC"/>
+
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding Item}"
+                                   FontSize="12"
+                                   Foreground="#88888E"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="300"/>
+                    </Grid>
+
+                    <!-- Cancel Button -->
+                    <Button Grid.Row="0"
+                            Grid.RowSpan="3"
+                            Grid.Column="2"
+                            Click="OnCancelOperationClick"
+                            IsVisible="{Binding CanCancel}"
+                            Background="Transparent"
+                            BorderBrush="#44444A"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10,6"
+                            Margin="16,0,0,0"
+                            VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="6">
+                            <Image Source="{markup:Icon Key=close}"
+                                   Width="12"
+                                   Height="12"/>
+
+                            <TextBlock Text="{markup:Translate Key=Cancel}"
+                                       FontSize="12"
+                                       Foreground="#EEEEEE"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </StackPanel>
         </Border>
 
         <!-- Picker Action Bar -->
@@ -1502,16 +1639,35 @@
                 BorderBrush="#2C2C2C"
                 BorderThickness="0,1,0,0"
                 Padding="16,10">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
 
-                <TextBlock Grid.Column="0"
+                <Button Grid.Column="0"
+                        Classes="addon-errors"
+                        Click="OnAddonErrorsClick"
+                        IsVisible="{Binding HasAddonErrors}"
+                        ToolTip.Tip="{markup:Translate Key=AddonErrorsTooltip}"
+                        Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="4">
+                        <Image Source="{markup:Icon Key=warning}"
+                               Width="14"
+                               Height="14"/>
+
+                        <TextBlock Text="{Binding AddonErrorCount}"
+                                   FontSize="12"
+                                   Foreground="#E0A040"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <TextBlock Grid.Column="1"
                            Text="{Binding PickerTargetLabel}"
                            VerticalAlignment="Center"
                            FontSize="13"
                            Foreground="#AAAAAA"
                            Margin="0,0,12,0"/>
 
-                <TextBox Grid.Column="1"
+                <TextBox Grid.Column="2"
                          x:Name="PickerNameTextBox"
                          Text="{Binding PickerSelectedName, Mode=TwoWay}"
                          KeyDown="OnPickerTextBoxKeyDown"
@@ -1520,7 +1676,7 @@
                          CornerRadius="6"
                          Margin="0,0,16,0"/>
 
-                <ComboBox Grid.Column="2"
+                <ComboBox Grid.Column="3"
                           ItemsSource="{Binding PickerFilters}"
                           SelectedItem="{Binding SelectedPickerFilter, Mode=TwoWay}"
                           IsVisible="{Binding HasPickerFilters}"
@@ -1537,7 +1693,7 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
 
-                <Button Grid.Column="3"
+                <Button Grid.Column="4"
                         Content="{markup:Translate Key=Cancel}"
                         Click="OnPickerCancelClick"
                         Background="#333333"
@@ -1546,7 +1702,7 @@
                         Margin="0,0,8,0"
                         CornerRadius="6"/>
 
-                <Button Grid.Column="4"
+                <Button Grid.Column="5"
                         Content="{Binding PickerActionButtonText}"
                         Click="OnPickerConfirmClick"
                         Background="{DynamicResource AccentBrush}"
@@ -1564,12 +1720,68 @@
                 BorderBrush="#2A2A2A"
                 BorderThickness="0,1,0,0"
                 Padding="12,4">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBlock Grid.Column="0"
                            Text="{Binding StatusText}"
                            Foreground="#888888"
                            FontSize="12"
                            VerticalAlignment="Center"/>
+
+                <ItemsControl Grid.Column="1"
+                              ItemsSource="{Binding AddonStatusItems}"
+                              VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="2"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AddonStatusItemViewModel">
+                            <Button Classes="addon-status"
+                                    Classes.clickable="{Binding IsClickable}"
+                                    Tag="{Binding}"
+                                    Click="OnAddonStatusItemClick"
+                                    ToolTip.Tip="{Binding Tooltip}"
+                                    ToolTip.ServiceEnabled="{Binding HasTooltip}">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="5">
+                                    <Image Source="{Binding Icon}"
+                                           IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                           Width="12"
+                                           Height="12"
+                                           VerticalAlignment="Center"/>
+
+                                    <TextBlock Text="{Binding Text}"
+                                               FontSize="12"
+                                               Foreground="#AAAAAA"
+                                               MaxWidth="260"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button Grid.Column="2"
+                        Classes="addon-errors"
+                        Click="OnAddonErrorsClick"
+                        IsVisible="{Binding HasAddonErrors}"
+                        ToolTip.Tip="{markup:Translate Key=AddonErrorsTooltip}">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="4">
+                        <Image Source="{markup:Icon Key=warning}"
+                               Width="14"
+                               Height="14"/>
+
+                        <TextBlock Text="{Binding AddonErrorCount}"
+                                   FontSize="12"
+                                   Foreground="#E0A040"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
     </Grid>

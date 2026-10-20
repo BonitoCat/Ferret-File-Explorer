@@ -42,6 +42,7 @@ public partial class MainWindow : Window
 
     private PlaceItem? _draggedPlace;
     private PlaceCategory? _draggedSection;
+    private PlaceItem? _pressedSectionHeader;
     private Point _sidebarDragStart;
     private bool _isSidebarDragging;
 
@@ -651,9 +652,14 @@ public partial class MainWindow : Window
 
     private bool TryRunPathBarCommand(string text)
     {
-        if (text.Length == 0 || ViewModel.IsPickerMode)
+        if (text.Length == 0)
         {
             return false;
+        }
+
+        if (ViewModel.IsPickerMode)
+        {
+            return TryRunPickerPathBarCommand(text);
         }
 
         string dir = ViewModel.CommandDirectory;
@@ -688,7 +694,15 @@ public partial class MainWindow : Window
         return MainWindowViewModel.IsProgramAvailable(keyword, dir) && ViewModel.RunShellCommand(dir, text);
     }
 
-    private void OnPathLostFocus(object? sender, RoutedEventArgs e)
+    private bool TryRunPickerPathBarCommand(string text)
+    {
+        int space = text.IndexOf(' ');
+        string keyword = space < 0 ? text : text[..space];
+        string input = space < 0 ? "" : text[(space + 1)..].Trim();
+        return TryRunAddonPathBarCommand(keyword, input);
+    }
+
+        private void OnPathLostFocus(object? sender, RoutedEventArgs e)
     {
         string path = ResolvePathBarLocation(PathTextBox.Text);
         if (PaneViewModel.IsNavigable(path) && path != ViewModel.CurrentPath)
@@ -773,6 +787,7 @@ public partial class MainWindow : Window
         }
 
         SyncPaneSelection(pane);
+        QueueAddonSelectionEvent();
     }
 
     private void OnPaneGotFocus(object? sender, FocusChangedEventArgs e)
@@ -957,6 +972,7 @@ public partial class MainWindow : Window
 
         if (place.IsHeader)
         {
+            _pressedSectionHeader = place;
             _draggedSection = place.Category;
             _sidebarDragStart = e.GetPosition(SidebarListBox);
             _isSidebarDragging = false;
@@ -968,6 +984,11 @@ public partial class MainWindow : Window
         if (SidebarListBox.SelectedItem == place)
         {
             _ = NavigateToPlaceItemAsync(place);
+        }
+
+        if (place.Category == PlaceCategory.Addons)
+        {
+            return;
         }
 
         _draggedPlace = place;
@@ -1023,7 +1044,11 @@ public partial class MainWindow : Window
         PlaceItem? target = ViewModel.Places.FirstOrDefault(p => p.ShowDropLineAbove || p.ShowDropLineBelow);
         if (_draggedSection != null)
         {
-            if (!_isSidebarDragging)
+            if (!_isSidebarDragging && _pressedSectionHeader is { Category: PlaceCategory.Addons } addonHeader)
+            {
+                ViewModel.ToggleAddonSectionCollapse(addonHeader.SectionKey);
+            }
+            else if (!_isSidebarDragging)
             {
                 ViewModel.ToggleCategoryCollapse(_draggedSection.Value);
             }
@@ -1042,6 +1067,7 @@ public partial class MainWindow : Window
 
         _draggedPlace = null;
         _draggedSection = null;
+        _pressedSectionHeader = null;
         _isSidebarDragging = false;
         e.Pointer.Capture(null);
     }
@@ -1172,7 +1198,7 @@ public partial class MainWindow : Window
 
         switch (selected.Category)
         {
-            case PlaceCategory.Places:
+            case PlaceCategory.Places or PlaceCategory.Addons:
                 SidebarOpenMenuItem.IsVisible = true;
                 SidebarConnectMenuItem.IsVisible = false;
                 SidebarDismountMenuItem.IsVisible = false;
@@ -1738,6 +1764,24 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool TryOpenFocusedFileItem(KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || e.KeyModifiers.HasFlag(KeyModifiers.Alt) || e.Source is not ListBoxItem item)
+        {
+            return false;
+        }
+
+        if (ItemsControl.ItemsControlFromItemContainer(item) is not ListBox list || !list.Classes.Contains("file-list"))
+        {
+            return false;
+        }
+
+        FileItemViewModel? selected = ViewModel.ActivePane.SelectedItem ?? GetSelectedItems().FirstOrDefault();
+        ViewModel.OpenEntry(selected);
+        FocusActiveListBox();
+        return true;
+    }
+
     private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
     {
         if (TryListViewArrowNavigation(e))
@@ -1753,6 +1797,12 @@ public partial class MainWindow : Window
         }
 
         if (TryRunAddonShortcut(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (TryOpenFocusedFileItem(e))
         {
             e.Handled = true;
             return;
@@ -2076,13 +2126,9 @@ public partial class MainWindow : Window
             {
                 activeList.Focus();
                 _clickedAlreadySelectedItem = null;
-                if (switchedPane)
-                {
-                    e.Handled = true;
-                    return;
-                }
+                e.Handled = switchedPane;
 
-                if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+                if (!switchedPane && !e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Shift))
                 {
                     activeList.Selection.Clear();
                     ViewModel.ActivePane.SelectedItem = null;
@@ -2167,6 +2213,14 @@ public partial class MainWindow : Window
         }
 
         UpdateGridHover(activeList, e);
+
+        if (_potentialFileDrag && !e.GetCurrentPoint(activeList).Properties.IsLeftButtonPressed)
+        {
+            _potentialFileDrag = false;
+            _draggedFile = null;
+            _fileDragPressEvent = null;
+            _clickedAlreadySelectedItem = null;
+        }
 
         if (_potentialFileDrag && _draggedFile != null && !ViewModel.ActivePane.IsVirtual)
         {
@@ -2486,6 +2540,26 @@ public partial class MainWindow : Window
     private void OnCancelOperationClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.CancelOperation();
+    }
+
+    private void OnOperationTabClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: OperationProgressViewModel operation })
+        {
+            return;
+        }
+
+        ViewModel.SelectOperation(operation);
+    }
+
+    private void OnPreviousOperationClick(object? sender, RoutedEventArgs e)
+    {
+        ViewModel.CycleOperation(-1);
+    }
+
+    private void OnNextOperationClick(object? sender, RoutedEventArgs e)
+    {
+        ViewModel.CycleOperation(1);
     }
 
     private static List<string> ExtractDroppedPaths(IDataTransfer data)
@@ -2866,13 +2940,19 @@ public partial class MainWindow : Window
     private void OnFileDoubleTapped(object? sender, TappedEventArgs e)
     {
         PaneViewModel? pane = GetPane(sender);
-        if (pane == null)
+        ListBoxItem? container = FindVisualParent<ListBoxItem>(e.Source as Visual);
+        if (pane == null || sender is not ListBox list || container?.DataContext is not FileItemViewModel item)
+        {
+            return;
+        }
+
+        if (!IsOnItemHitZone(list, container, e.GetPosition(list)))
         {
             return;
         }
 
         ViewModel.ActivePane = pane;
-        ViewModel.OpenEntry(pane.SelectedItem);
+        ViewModel.OpenEntry(item);
         FocusActiveListBox();
     }
 
@@ -3088,7 +3168,7 @@ public partial class MainWindow : Window
                 return;
             }
 
-            if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+            if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Alt))
             {
                 OnMenuPasteAsSymlinkClick(sender, e);
                 e.Handled = true;
@@ -3378,16 +3458,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        List<string> folders = GetSelectedItems()
-            .Where(i => i.IsDirectory)
+        List<string> paths = GetSelectedItems()
             .Select(i => i.FullPath)
             .ToList();
-        if (folders.Count == 0)
+        if (paths.Count == 0)
         {
-            folders.Add(ViewModel.CurrentPath);
+            paths.Add(ViewModel.CurrentPath);
         }
 
-        await Clipboard.SetTextAsync(string.Join('\n', folders));
+        await Clipboard.SetTextAsync(string.Join('\n', paths));
         ViewModel.StatusText = LocalizationService.Get("PathCopied");
     }
 

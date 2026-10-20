@@ -51,7 +51,18 @@ public static class AddonInstaller
                 }
             }
 
-            return service.Install(sourcePath, overwrite);
+            Addon? addon = null;
+            AddonHooks.BeginInstall(id);
+            try
+            {
+                addon = service.Install(sourcePath, overwrite);
+            }
+            finally
+            {
+                await AddonHooks.FinishInstallAsync(id, addon);
+            }
+
+            return addon;
         }
         catch (AddonInstallException ex)
         {

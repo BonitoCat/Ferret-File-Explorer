@@ -11,6 +11,7 @@ public enum PlaceKind
     Bookmarks,
     Devices,
     Network,
+    Addons,
 }
 
 public sealed class PlaceInfo

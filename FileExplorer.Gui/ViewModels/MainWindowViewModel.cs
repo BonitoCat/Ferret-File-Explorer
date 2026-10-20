@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -53,16 +54,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public Func<TransferConflict, Task<ConflictResolution>>? ConflictResolver { get; set; }
     private bool _isPathEditing;
     private PaneViewModel _activePane;
-    private CancellationTokenSource? _operationCts;
-
-    private bool _isOperationInProgress;
-    private string _operationTitle = "";
-    private double _operationPercent;
-    private string _operationItemsProgress = "";
-    private string _operationSpeedAndEta = "";
-    private string _operationCurrentFileName = "";
-    private string _operationIconSvg = "";
-    private IImage? _operationIcon;
+    private OperationProgressViewModel? _selectedOperation;
+    private int _externalLoadingCount;
+    private int _addonErrorCount;
 
 
     public bool IsGridView
@@ -113,52 +107,108 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _colModifiedWidth, value);
     }
 
-    public bool IsOperationInProgress
+    public ObservableCollection<OperationProgressViewModel> Operations { get; } = new();
+
+    public ObservableCollection<AddonStatusItemViewModel> AddonStatusItems { get; } = new();
+
+    public OperationProgressViewModel? SelectedOperation
     {
-        get => _isOperationInProgress;
-        set => SetProperty(ref _isOperationInProgress, value);
+        get => _selectedOperation;
+        set
+        {
+            if (!SetProperty(ref _selectedOperation, value))
+            {
+                return;
+            }
+
+            foreach (OperationProgressViewModel operation in Operations)
+            {
+                operation.IsSelected = operation == value;
+            }
+        }
     }
 
-    public string OperationTitle
+    public bool IsOperationInProgress => Operations.Count > 0;
+
+    public bool HasMultipleOperations => Operations.Count > 1;
+
+    public string OperationPosition => SelectedOperation == null ? "" : $"{Operations.IndexOf(SelectedOperation) + 1} / {Operations.Count}";
+
+    public int AddonErrorCount
     {
-        get => _operationTitle;
-        set => SetProperty(ref _operationTitle, value);
+        get => _addonErrorCount;
+        set
+        {
+            if (SetProperty(ref _addonErrorCount, value))
+            {
+                OnPropertyChanged(nameof(HasAddonErrors));
+            }
+        }
     }
 
-    public double OperationPercent
+    public bool HasAddonErrors => AddonErrorCount > 0;
+
+    public void AddOperation(OperationProgressViewModel operation)
     {
-        get => _operationPercent;
-        set => SetProperty(ref _operationPercent, value);
+        Operations.Add(operation);
+        SelectedOperation = operation;
+        NotifyOperationsChanged();
     }
 
-    public string OperationItemsProgress
+    public void RemoveOperation(OperationProgressViewModel operation)
     {
-        get => _operationItemsProgress;
-        set => SetProperty(ref _operationItemsProgress, value);
+        int index = Operations.IndexOf(operation);
+        if (index < 0)
+        {
+            return;
+        }
+
+        Operations.RemoveAt(index);
+        if (SelectedOperation == operation)
+        {
+            SelectedOperation = Operations.Count == 0 ? null : Operations[Math.Min(index, Operations.Count - 1)];
+        }
+
+        NotifyOperationsChanged();
     }
 
-    public string OperationSpeedAndEta
+    public void CycleOperation(int offset)
     {
-        get => _operationSpeedAndEta;
-        set => SetProperty(ref _operationSpeedAndEta, value);
+        if (Operations.Count == 0)
+        {
+            return;
+        }
+
+        int index = SelectedOperation == null ? 0 : Operations.IndexOf(SelectedOperation);
+        SelectedOperation = Operations[((index + offset) % Operations.Count + Operations.Count) % Operations.Count];
+        OnPropertyChanged(nameof(OperationPosition));
     }
 
-    public string OperationCurrentFileName
+    public void SelectOperation(OperationProgressViewModel operation)
     {
-        get => _operationCurrentFileName;
-        set => SetProperty(ref _operationCurrentFileName, value);
+        if (!Operations.Contains(operation))
+        {
+            return;
+        }
+
+        SelectedOperation = operation;
+        OnPropertyChanged(nameof(OperationPosition));
     }
 
-    public string OperationIconSvg
+    public void SetExternalLoading(bool loading)
     {
-        get => _operationIconSvg;
-        set => SetProperty(ref _operationIconSvg, value);
+        _externalLoadingCount = Math.Max(0, _externalLoadingCount + (loading ? 1 : -1));
+        foreach (PaneViewModel pane in Panes)
+        {
+            pane.IsExternalLoading = _externalLoadingCount > 0;
+        }
     }
 
-    public IImage? OperationIcon
+    private void NotifyOperationsChanged()
     {
-        get => _operationIcon;
-        set => SetProperty(ref _operationIcon, value);
+        OnPropertyChanged(nameof(IsOperationInProgress));
+        OnPropertyChanged(nameof(HasMultipleOperations));
+        OnPropertyChanged(nameof(OperationPosition));
     }
 
     public PaneViewModel Pane1 { get; }
@@ -584,7 +634,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private readonly HashSet<PlaceCategory> _collapsedCategories = new();
-    private static readonly PlaceCategory[] DefaultSectionOrder = [PlaceCategory.Places, PlaceCategory.Bookmarks, PlaceCategory.Devices, PlaceCategory.Network];
+    private static readonly PlaceCategory[] DefaultSectionOrder = [PlaceCategory.Places, PlaceCategory.Bookmarks, PlaceCategory.Devices, PlaceCategory.Network, PlaceCategory.Addons];
+    private readonly HashSet<string> _collapsedAddonSections = new(StringComparer.Ordinal);
     private readonly SidebarOrderService _sidebarOrder = new();
     private List<PlaceCategory> _sectionOrder = new(DefaultSectionOrder);
 
@@ -628,16 +679,86 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Logger.LogI($"Moved sidebar section {source} {(insertAbove ? "above" : "below")} {target}");
     }
 
+    public void SetAddonPlaces(IReadOnlyList<AddonPlaceEntry> entries)
+    {
+        List<PlaceItem> items = new();
+        int index = 0;
+        foreach (IGrouping<string, AddonPlaceEntry> section in entries.GroupBy(e => e.SectionKey))
+        {
+            bool isCollapsed = _collapsedAddonSections.Contains(section.Key);
+            items.Add(new PlaceItem
+            {
+                Name = section.First().Section,
+                Path = "",
+                IsHeader = true,
+                Category = PlaceCategory.Addons,
+                SectionKey = section.Key,
+                SortIndex = index++,
+                IsCollapsed = isCollapsed,
+            });
+
+            foreach (AddonPlaceEntry entry in section)
+            {
+                items.Add(new PlaceItem
+                {
+                    Name = entry.Name,
+                    Path = entry.Path,
+                    Icon = entry.Icon,
+                    Category = PlaceCategory.Addons,
+                    SectionKey = section.Key,
+                    SortIndex = index++,
+                    IsVisible = !isCollapsed,
+                });
+            }
+        }
+
+        SyncPlaces(Places
+            .Where(p => p.Category != PlaceCategory.Addons)
+            .Concat(items)
+            .ToList());
+    }
+
+    public void ToggleAddonSectionCollapse(string sectionKey)
+    {
+        if (!_collapsedAddonSections.Remove(sectionKey))
+        {
+            _collapsedAddonSections.Add(sectionKey);
+        }
+
+        bool isCollapsed = _collapsedAddonSections.Contains(sectionKey);
+        foreach (PlaceItem item in Places.Where(p => p.Category == PlaceCategory.Addons && p.SectionKey == sectionKey))
+        {
+            if (item.IsHeader)
+            {
+                item.IsCollapsed = isCollapsed;
+            }
+            else
+            {
+                item.IsVisible = !isCollapsed;
+            }
+        }
+    }
+
+    private int GetPlaceSortIndex(PlaceItem place)
+    {
+        if (place.Category == PlaceCategory.Addons)
+        {
+            return place.SortIndex;
+        }
+
+        return place.IsHeader ? -1 : _sidebarOrder.GetItemIndex((PlaceKind) place.Category, GetPlaceKey(place));
+    }
+
     private void SyncPlaces(List<PlaceItem> target)
     {
-        foreach (IGrouping<PlaceCategory, PlaceItem> group in target.Where(p => !p.IsHeader).GroupBy(p => p.Category))
+        foreach (IGrouping<PlaceCategory, PlaceItem> group in target.Where(p => !p.IsHeader && p.Category != PlaceCategory.Addons).GroupBy(p => p.Category))
         {
             _sidebarOrder.AppendMissing((PlaceKind) group.Key, group.Select(GetPlaceKey));
         }
 
         List<PlaceItem> resolved = target
             .OrderBy(p => _sectionOrder.IndexOf(p.Category))
-            .ThenBy(p => p.IsHeader ? -1 : _sidebarOrder.GetItemIndex((PlaceKind) p.Category, GetPlaceKey(p)))
+            .ThenBy(GetPlaceSortIndex)
             .Select(t => Places.FirstOrDefault(p => IsSamePlace(p, t)) ?? t)
             .ToList();
 
@@ -666,6 +787,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private static bool IsSamePlace(PlaceItem a, PlaceItem b)
     {
         return a.Category == b.Category
+            && a.SectionKey == b.SectionKey
             && a.IsHeader == b.IsHeader
             && a.Path == b.Path
             && a.Name == b.Name
@@ -1163,7 +1285,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             Dispatcher.UIThread.Post(() =>
             {
                 SyncPlaces(Places
-                    .Where(p => p.Category == PlaceCategory.Places)
+                    .Where(p => p.Category is PlaceCategory.Places or PlaceCategory.Addons)
                     .Concat(extraPlaces)
                     .ToList());
                 UpdateActiveBreadcrumbs();
@@ -1572,7 +1694,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void CancelOperation()
     {
-        _operationCts?.Cancel();
+        SelectedOperation?.Cancel();
     }
 
     public void TransferItemsTo(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
@@ -1622,9 +1744,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        _operationCts?.Cancel();
-        _operationCts = new();
-        CancellationToken token = _operationCts.Token;
+        using CancellationTokenSource cts = new();
+        CancellationToken token = cts.Token;
 
         string destName = Path.GetFileName(destinationDirectory.TrimEnd('/'));
         if (string.IsNullOrEmpty(destName))
@@ -1633,23 +1754,25 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         string operation = isCopy ? "Copy" : "Move";
-        OperationTitle = LocalizationService.Format(pathList.Count == 1 ? $"{operation}TitleOne" : $"{operation}TitleMany", pathList.Count, destName);
-        OperationItemsProgress = LocalizationService.Format($"{operation}Progress", 0, pathList.Count);
-        OperationSpeedAndEta = LocalizationService.Get("Calculating");
-        OperationPercent = 0;
-        OperationCurrentFileName = "";
-        OperationIcon = IconService.Get(isCopy ? "copy" : "cut");
-        IsOperationInProgress = true;
+        OperationProgressViewModel progressView = new()
+        {
+            Title = LocalizationService.Format(pathList.Count == 1 ? $"{operation}TitleOne" : $"{operation}TitleMany", pathList.Count, destName),
+            Text = LocalizationService.Format($"{operation}Progress", 0, pathList.Count),
+            Status = LocalizationService.Get("Calculating"),
+            Icon = IconService.Get(isCopy ? "copy" : "cut"),
+            CancelAction = () => cts.Cancel(),
+        };
+        AddOperation(progressView);
 
         Progress<FileTransferProgress> progress = new(p =>
         {
-            OperationPercent = p.Percent;
+            progressView.Value = p.Percent;
             string sizeText = p.TotalBytes > 0
                 ? LocalizationService.Format("TransferSizeProgress", FileUtils.FormatSize(p.TransferredBytes), FileUtils.FormatSize(p.TotalBytes))
                 : "";
-            OperationItemsProgress = LocalizationService.Format($"{operation}Progress", p.TransferredItems, p.TotalItems) + sizeText;
-            OperationSpeedAndEta = $"{FileUtils.FormatSpeed(p.BytesPerSecond)} — {FormatEta(p.EstimatedRemaining)}";
-            OperationCurrentFileName = p.CurrentItemName;
+            progressView.Text = LocalizationService.Format($"{operation}Progress", p.TransferredItems, p.TotalItems) + sizeText;
+            progressView.Status = $"{FileUtils.FormatSpeed(p.BytesPerSecond)} — {FormatEta(p.EstimatedRemaining)}";
+            progressView.Item = p.CurrentItemName;
         });
 
         try
@@ -1657,8 +1780,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             ClipboardMode mode = isCopy ? ClipboardMode.Copy : ClipboardMode.Cut;
             await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, progress, token), token);
             List<string> targets = pathList.Select(p => Path.Combine(destinationDirectory, Path.GetFileName(p.TrimEnd('/')))).ToList();
-            OperationSpeedAndEta = LocalizationService.Get("FinishingTransfer");
-            OperationCurrentFileName = "";
+            progressView.Status = LocalizationService.Get("FinishingTransfer");
+            progressView.Item = "";
             await WaitForTargetsAsync(targets, token);
             StatusText = LocalizationService.Get($"{operation}Completed");
             TransferCompleted?.Invoke(destinationDirectory, targets);
@@ -1673,7 +1796,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
         finally
         {
-            IsOperationInProgress = false;
+            progressView.CancelAction = null;
+            RemoveOperation(progressView);
             Refresh();
         }
     }
@@ -1985,8 +2109,64 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private static Regex GlobToRegex(string glob)
     {
-        string pattern = "^" + Regex.Escape(glob).Replace("\\*", ".*").Replace("\\?", ".") + "$";
-        return new(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        StringBuilder pattern = new("^");
+        for (int i = 0; i < glob.Length; i++)
+        {
+            char c = glob[i];
+            if (c == '*')
+            {
+                pattern.Append(".*");
+                continue;
+            }
+
+            if (c == '?')
+            {
+                pattern.Append('.');
+                continue;
+            }
+
+            int close = c == '[' ? glob.IndexOf(']', i + 1) : -1;
+            if (close <= i + 1)
+            {
+                pattern.Append(Regex.Escape(c.ToString()));
+                continue;
+            }
+
+            string set = glob[(i + 1)..close].Replace("\\", "\\\\").Replace("[", "\\[");
+            if (set.StartsWith('!'))
+            {
+                set = "^" + set[1..];
+            }
+
+            pattern.Append('[').Append(set).Append(']');
+            i = close;
+        }
+
+        pattern.Append('$');
+        return new(pattern.ToString(), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    public async Task<bool> TryCompletePickerAsync(string path)
+    {
+        bool isValid = PickerMode switch
+        {
+            PickerMode.File => File.Exists(path),
+            PickerMode.Folder => Directory.Exists(path),
+            PickerMode.Save => !Directory.Exists(path) && Directory.Exists(Path.GetDirectoryName(path)),
+            _ => false,
+        };
+        if (!isValid)
+        {
+            return false;
+        }
+
+        if (PickerMode == PickerMode.Save && File.Exists(path) && OverwriteConfirmer != null && !await OverwriteConfirmer(path))
+        {
+            return true;
+        }
+
+        PickerCompleted?.Invoke(FilePickerResult.Selected(path));
+        return true;
     }
 
     private async Task ConfirmSaveAsync()
@@ -3177,6 +3357,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Pane1.Dispose();
         Pane2.Dispose();
-        _operationCts?.Dispose();
+        foreach (OperationProgressViewModel operation in Operations.ToList())
+        {
+            operation.Cancel();
+        }
     }
 }

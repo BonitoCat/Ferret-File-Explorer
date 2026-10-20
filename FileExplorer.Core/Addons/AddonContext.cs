@@ -16,17 +16,40 @@ public enum AddonTarget
     Background = 4,
 }
 
+[Flags]
+public enum AddonMode
+{
+    None = 0,
+    Explorer = 1,
+    FilePicker = 2,
+    FolderPicker = 4,
+    SavePicker = 8,
+    Picker = FilePicker | FolderPicker | SavePicker,
+    All = Explorer | Picker,
+}
+
+public enum AddonHook
+{
+    PostInstall,
+    PreUninstall,
+    PostLoad,
+    PostStart,
+    PreClose,
+}
+
 public sealed class AddonContext
 {
     public string CurrentDirectory { get; }
     public IReadOnlyList<string> SelectedPaths { get; }
     public string Input { get; }
+    public AddonMode Mode { get; }
 
-    public AddonContext(string currentDirectory, IEnumerable<string> selectedPaths, string input = "")
+    public AddonContext(string currentDirectory, IEnumerable<string> selectedPaths, string input = "", AddonMode mode = AddonMode.Explorer)
     {
         CurrentDirectory = currentDirectory;
         SelectedPaths = selectedPaths.ToList();
         Input = input;
+        Mode = mode;
     }
 
     public AddonTarget Target
