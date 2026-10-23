@@ -8,6 +8,7 @@ public static class AppInfo
     public const string Name = "Ferret File Explorer";
     public const string RepositoryUrl = "https://github.com/BonitoCat/Ferret-File-Explorer";
     public const string IssuesUrl = RepositoryUrl + "/issues";
+    public const string DonationUrl = "https://ko-fi.com/bonitocat";
 
     public static string Version { get; } = ReadVersion();
 

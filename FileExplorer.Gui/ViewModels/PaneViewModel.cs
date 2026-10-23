@@ -22,6 +22,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     private readonly FileSystemService _fileService;
     private readonly NetworkBrowseService _networkBrowser = new();
     private readonly Func<bool> _showHiddenFiles;
+    private const int MaxMoveSortCount = 3000;
 
     private NavigationState? _navigation;
     private string _currentPath = "";
@@ -47,6 +48,8 @@ public class PaneViewModel : ViewModelBase, IDisposable
     }
 
     public Func<string, bool>? FileFilter { get; set; }
+
+    public FileItemComparer SortComparer { get; private set; } = FileItemComparer.Default;
 
     public BulkObservableCollection<FileItemViewModel> Items { get; } = new();
     public ObservableCollection<FileItemViewModel> SelectedItems { get; } = new();
@@ -97,7 +100,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     public static bool IsNavigable(string? path)
     {
-        return NetworkBrowseService.IsBrowseLocation(path) || Directory.Exists(path);
+        return NetworkBrowseService.IsBrowseLocation(path) || PathManager.IsRemote(path) || Directory.Exists(path);
     }
 
     public FileItemViewModel? SelectedItem
@@ -226,7 +229,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
         }
 
         string? parent = Path.GetDirectoryName(_currentPath);
-        if (string.IsNullOrEmpty(parent) || !Directory.Exists(parent))
+        if (string.IsNullOrEmpty(parent) || !IsNavigable(parent))
         {
             return;
         }
@@ -340,6 +343,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
             List<FileItemViewModel> batch = new();
             Stopwatch stopwatch = Stopwatch.StartNew();
+            string? error = null;
             int batchThreshold = 25;
 
             try
@@ -388,9 +392,9 @@ public class PaneViewModel : ViewModelBase, IDisposable
                     PostBatch(batch, token);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                return;
+                error = ex is OperationCanceledException ? null : ex.Message;
             }
             finally
             {
@@ -403,6 +407,11 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
                     IsLoading = false;
                     ContentChanged?.Invoke(this);
+
+                    if (!string.IsNullOrEmpty(error) && PathManager.IsRemote(path))
+                    {
+                        LoadFailed?.Invoke(this, error);
+                    }
                 }, DispatcherPriority.Background);
             }
         }, token);
@@ -490,9 +499,69 @@ public class PaneViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            Items.AddRange(batch);
+            AddSorted(batch);
             ContentChanged?.Invoke(this);
         }, DispatcherPriority.Background);
+    }
+
+    private void AddSorted(List<FileItemViewModel> batch)
+    {
+        FileItemComparer comparer = SortComparer;
+        if (!comparer.IsDefault)
+        {
+            batch.Sort(comparer);
+        }
+
+        if (Items.Count == 0 || comparer.Compare(Items[^1], batch[0]) <= 0)
+        {
+            Items.AddRange(batch);
+            return;
+        }
+
+        foreach (FileItemViewModel item in batch)
+        {
+            Items.Insert(FindInsertIndex(item, comparer), item);
+        }
+    }
+
+    private int FindInsertIndex(FileItemViewModel item, FileItemComparer comparer)
+    {
+        int low = 0;
+        int high = Items.Count;
+        while (low < high)
+        {
+            int mid = (low + high) / 2;
+            if (comparer.Compare(Items[mid], item) <= 0)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid;
+            }
+        }
+
+        return low;
+    }
+
+    public void ApplySort(FileItemComparer comparer)
+    {
+        SortComparer = comparer;
+        if (Items.Count < 2 || IsVirtual)
+        {
+            return;
+        }
+
+        List<FileItemViewModel> sorted = Items.Order(comparer).ToList();
+        if (sorted.Count > MaxMoveSortCount)
+        {
+            Items.ReplaceAll(sorted);
+            ContentChanged?.Invoke(this);
+            return;
+        }
+
+        SyncFolderItems(Items, sorted);
+        ContentChanged?.Invoke(this);
     }
 
     private void RefreshSilent()
@@ -524,7 +593,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
             {
             }
 
-            NameComparer comparer = new();
+            FileItemComparer comparer = SortComparer;
             List<FileItemViewModel> allItems = new();
             try
             {
@@ -554,7 +623,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            allItems.Sort((a, b) => a.IsDirectory != b.IsDirectory ? (a.IsDirectory ? -1 : 1) : comparer.Compare(a.Name, b.Name));
+            List<FileItemViewModel> sortedItems = allItems.Order(comparer).ToList();
 
             Dispatcher.UIThread.Post(() =>
             {
@@ -563,7 +632,12 @@ public class PaneViewModel : ViewModelBase, IDisposable
                     return;
                 }
 
-                SyncFolderItems(Items, allItems);
+                if (SortComparer != comparer)
+                {
+                    sortedItems.Sort(SortComparer);
+                }
+
+                SyncFolderItems(Items, sortedItems);
 
                 HashSet<FileItemViewModel> remaining = new(Items);
                 for (int i = SelectedItems.Count - 1; i >= 0; i--)
@@ -658,6 +732,13 @@ public class PaneViewModel : ViewModelBase, IDisposable
             }
 
             _watcher.EnableRaisingEvents = false;
+            if (PathManager.IsRemote(path))
+            {
+                FileSystemWatcher watcher = _watcher;
+                Task.Run(() => AttachWatcher(watcher, path));
+                return;
+            }
+
             if (Directory.Exists(path))
             {
                 _watcher.Path = path;
@@ -669,6 +750,27 @@ public class PaneViewModel : ViewModelBase, IDisposable
             if (_watcher != null)
             {
                 _watcher.EnableRaisingEvents = false;
+            }
+        }
+    }
+
+    private void AttachWatcher(FileSystemWatcher watcher, string path)
+    {
+        lock (watcher)
+        {
+            try
+            {
+                if (_currentPath != path || !Directory.Exists(path))
+                {
+                    return;
+                }
+
+                watcher.Path = path;
+                watcher.EnableRaisingEvents = _currentPath == path;
+            }
+            catch
+            {
+                watcher.EnableRaisingEvents = false;
             }
         }
     }

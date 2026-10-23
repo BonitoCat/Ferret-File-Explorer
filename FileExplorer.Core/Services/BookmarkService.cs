@@ -52,7 +52,36 @@ public class BookmarkService
             return Array.Empty<string>();
         }
 
-        return Directory.EnumerateDirectories(BookmarkDir);
+        return Directory.EnumerateFileSystemEntries(BookmarkDir).Where(IsBookmarkEntry);
+    }
+
+    public static string ResolveTarget(string bookmark)
+    {
+        try
+        {
+            FileInfo link = new(bookmark);
+            if (link.LinkTarget == null)
+            {
+                return bookmark;
+            }
+
+            string target = Path.GetFullPath(link.LinkTarget, Path.GetDirectoryName(bookmark) ?? PathManager.RootPath);
+            if (PathManager.IsRemote(target))
+            {
+                return target;
+            }
+
+            return link.ResolveLinkTarget(true)?.FullName ?? target;
+        }
+        catch
+        {
+            return bookmark;
+        }
+    }
+
+    private static bool IsBookmarkEntry(string entry)
+    {
+        return PathManager.IsRemote(ResolveTarget(entry)) || Directory.Exists(entry);
     }
 
     public static string GetDisplayName(string targetPath)

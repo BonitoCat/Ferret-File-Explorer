@@ -24,8 +24,7 @@ public class IconExtension : MarkupExtension
     {
         if (string.IsNullOrEmpty(Key)) return AvaloniaProperty.UnsetValue;
 
-        IImage? icon = IconService.Get(Key);
-        if (icon == null) return AvaloniaProperty.UnsetValue;
+        IImage icon = IconService.GetLazy(Key);
 
         if (serviceProvider.GetService(typeof(IProvideValueTarget)) is IProvideValueTarget { TargetProperty: AvaloniaProperty { PropertyType: var type } } && type == typeof(object))
         {

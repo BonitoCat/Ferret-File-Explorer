@@ -36,32 +36,32 @@ settings:
     max: 20000
 
 actions:
-  - id: convert
-    title: $Convert
+  - id: image
+    title: $AddonName
+    icon: icon.svg
     location: context-menu
     after: compress
     targets: [file]
+    extensions: [.png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, .tiff, .avif, .heic, .svg, .ico]
+
+  - id: convert
+    title: $Convert
+    parent: image
     extensions: [.png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, .tiff, .avif, .heic]
 
   - id: resize
     title: $Resize
-    location: context-menu
-    after: image-tools/convert
-    targets: [file]
+    parent: image
     extensions: [.png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, .tiff, .avif, .heic]
 
   - id: strip
     title: $Strip
-    location: context-menu
-    after: image-tools/resize
-    targets: [file]
+    parent: image
     extensions: [.png, .jpg, .jpeg, .webp, .tif, .tiff, .avif, .heic]
     confirm: $StripConfirm
 
   - id: info
     title: $Info
-    location: context-menu
-    after: image-tools/strip
-    targets: [file]
+    parent: image
     multiple: false
-    extensions: [.png, .jpg, .jpeg, .webp, .gif, .bmp, .tif, .tiff, .avif, .heic, .svg, .ico]
+    separator: before

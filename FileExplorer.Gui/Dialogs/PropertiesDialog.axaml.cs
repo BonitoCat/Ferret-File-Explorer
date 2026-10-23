@@ -38,6 +38,7 @@ public partial class PropertiesDialog : Window
     private int _mode = -1;
     private bool _updatingUi;
     private bool _canEditPermissions;
+    private bool _isElevatedRenamePending;
     private UnixStat? _stat;
     private string? _mimeType;
     private string? _defaultApp;
@@ -844,7 +845,7 @@ public partial class PropertiesDialog : Window
     private void TryRename()
     {
         string newName = NameBox.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(newName) || newName == _originalName)
+        if (_isElevatedRenamePending || string.IsNullOrEmpty(newName) || newName == _originalName)
         {
             return;
         }
@@ -878,9 +879,58 @@ public partial class PropertiesDialog : Window
             _originalName = newName;
             RenameErrorText.IsVisible = false;
         }
+        catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
+        {
+            _ = RenameElevatedAsync(target, newName);
+        }
         catch (Exception ex)
         {
             ShowRenameError(LocalizationService.Format("RenameFailed", ex.Message));
+        }
+    }
+
+    private async Task RenameElevatedAsync(string target, string newName)
+    {
+        _isElevatedRenamePending = true;
+        try
+        {
+            ConfirmDialog confirm = new(
+                LocalizationService.Get("ElevationTitle"),
+                LocalizationService.Format("ElevateRename", $"“{_originalName}”"),
+                LocalizationService.Get("ContinueAsAdmin"),
+                true,
+                false);
+            if (await confirm.ShowDialog<bool?>(this) != true)
+            {
+                NameBox.Text = _originalName;
+                return;
+            }
+
+            ElevatedResult result = await ElevatedFileService.RunAsync(new ElevatedScript().Rename(_path, target));
+            if (result.Status == ElevatedStatus.Failed)
+            {
+                ShowRenameError(LocalizationService.Format("RenameFailed", result.Error));
+                return;
+            }
+
+            if (!result.IsSuccess)
+            {
+                NameBox.Text = _originalName;
+                return;
+            }
+
+            if (_isDirectory)
+            {
+                FolderColorService.Move(_path, target);
+            }
+
+            _path = target;
+            _originalName = newName;
+            RenameErrorText.IsVisible = false;
+        }
+        finally
+        {
+            _isElevatedRenamePending = false;
         }
     }
 

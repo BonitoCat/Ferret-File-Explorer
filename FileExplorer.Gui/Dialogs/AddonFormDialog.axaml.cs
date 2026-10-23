@@ -11,6 +11,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using FileExplorer.Core.Addons;
 using FileExplorer.Core.Models;
+using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Services;
 using static Avalonia.Interactivity.RoutingStrategies;
 
@@ -21,14 +22,29 @@ public partial class AddonFormDialog : Window
     private const int MaxRadioChoices = 6;
 
     private readonly List<(AddonField Field, Func<string> Read)> _readers = new();
+    private readonly Dictionary<string, Action<string>> _writers = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _knownValues = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TextBox> _textBoxes = new(StringComparer.Ordinal);
+    private (string Id, IReadOnlyList<string> Range)? _initialSelection;
     private readonly List<AddonField> _fields = new();
     private Control? _firstInput;
+    private bool _isWriting;
+
+    public event Action<string>? ValueChanged;
 
     public AddonFormDialog()
     {
         InitializeComponent();
 
-        Opened += (_, _) => (_firstInput ?? ConfirmButton).Focus();
+        Opened += (_, _) =>
+        {
+            if (_initialSelection is { } selection && TrySelectText(selection.Id, selection.Range))
+            {
+                return;
+            }
+
+            (_firstInput ?? ConfirmButton).Focus();
+        };
 
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -62,16 +78,128 @@ public partial class AddonFormDialog : Window
         set => ConfirmButton.Content = value;
     }
 
+    public void SelectOnOpen(string id, IReadOnlyList<string> range)
+    {
+        _initialSelection = (id, range);
+    }
+
+    public static bool IsValidSelection(IReadOnlyList<string> range)
+    {
+        return TryGetSelection(range, "", out _, out _);
+    }
+
+    public bool TrySelectText(string id, IReadOnlyList<string> range)
+    {
+        if (!_textBoxes.TryGetValue(id, out TextBox? textBox) || !TryGetSelection(range, textBox.Text ?? "", out int start, out int end))
+        {
+            return false;
+        }
+
+        textBox.Focus();
+        textBox.CaretIndex = end;
+        textBox.SelectionStart = start;
+        textBox.SelectionEnd = end;
+        return true;
+    }
+
+    private static bool TryGetSelection(IReadOnlyList<string> range, string text, out int start, out int end)
+    {
+        start = 0;
+        end = text.Length;
+        string first = range.Count > 0 ? range[0].ToLowerInvariant() : "all";
+        if (first is "" or "all")
+        {
+            return range.Count <= 1;
+        }
+
+        if (first == "name")
+        {
+            end = FileUtils.GetNameLength(text);
+            return range.Count == 1;
+        }
+
+        if (range.Count > 2 || !int.TryParse(first, NumberStyles.None, CultureInfo.InvariantCulture, out start))
+        {
+            return false;
+        }
+
+        end = start;
+        if (range.Count == 2 && !int.TryParse(range[1], NumberStyles.None, CultureInfo.InvariantCulture, out end))
+        {
+            return false;
+        }
+
+        start = Math.Min(start, text.Length);
+        end = Math.Clamp(end, start, text.Length);
+        return true;
+    }
+
+    public Dictionary<string, string> GetValues()
+    {
+        Dictionary<string, string> values = new();
+        foreach ((AddonField field, Func<string> read) in _readers)
+        {
+            values[field.Id] = field.Normalize(read());
+        }
+
+        return values;
+    }
+
+    public bool TrySetValue(string id, string value)
+    {
+        AddonField? field = _fields.FirstOrDefault(f => f.Id == id);
+        if (field == null || !_writers.TryGetValue(id, out Action<string>? write))
+        {
+            return false;
+        }
+
+        string normalized = field.Normalize(value);
+        _isWriting = true;
+        try
+        {
+            write(normalized);
+        }
+        finally
+        {
+            _isWriting = false;
+        }
+
+        _knownValues[id] = ReadValue(field) ?? normalized;
+        return true;
+    }
+
+    private void NotifyChanged(AddonField field)
+    {
+        string? value = ReadValue(field);
+        if (_isWriting || value == null || _knownValues.GetValueOrDefault(field.Id) == value)
+        {
+            return;
+        }
+
+        _knownValues[field.Id] = value;
+        ValueChanged?.Invoke(field.Id);
+    }
+
+    private string? ReadValue(AddonField field)
+    {
+        Func<string>? read = _readers.FirstOrDefault(r => r.Field == field).Read;
+        return read == null ? null : field.Normalize(read());
+    }
+
     private void BuildFields(IReadOnlyDictionary<string, string>? values)
     {
         FieldsPanel.Children.Clear();
         _readers.Clear();
+        _writers.Clear();
+        _knownValues.Clear();
+        _textBoxes.Clear();
         _firstInput = null;
 
         foreach (AddonField field in _fields)
         {
             string value = values != null && values.TryGetValue(field.Id, out string? stored) ? field.Normalize(stored) : field.Default;
             FieldsPanel.Children.Add(CreateField(field, value));
+            _knownValues[field.Id] = ReadValue(field) ?? value;
         }
     }
 
@@ -88,6 +216,8 @@ public partial class AddonFormDialog : Window
             };
             container.Children.Add(checkBox);
             _readers.Add((field, () => checkBox.IsChecked == true ? "true" : "false"));
+            _writers[field.Id] = text => checkBox.IsChecked = text == "true";
+            checkBox.IsCheckedChanged += (_, _) => NotifyChanged(field);
             _firstInput ??= checkBox;
         }
         else
@@ -134,23 +264,46 @@ public partial class AddonFormDialog : Window
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
                 _readers.Add((field, () => number.Value?.ToString(CultureInfo.InvariantCulture) ?? ""));
+                _writers[field.Id] = text => number.Value = decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal written) ? written : null;
+                number.ValueChanged += (_, _) => NotifyChanged(field);
                 _firstInput ??= number;
                 return number;
 
             case AddonFieldType.Choice when field.Choices.Count <= MaxRadioChoices:
                 StackPanel radios = new() { Spacing = 2 };
                 string group = $"{field.Id}-{Guid.NewGuid():N}";
+                string selected = value;
                 foreach (string choice in field.Choices)
                 {
-                    radios.Children.Add(new RadioButton
+                    RadioButton radio = new()
                     {
                         Content = choice,
                         GroupName = group,
                         IsChecked = choice == value,
-                    });
+                    };
+                    radio.IsCheckedChanged += (_, _) =>
+                    {
+                        if (radio.IsChecked != true)
+                        {
+                            return;
+                        }
+
+                        selected = choice;
+                        NotifyChanged(field);
+                    };
+                    radios.Children.Add(radio);
                 }
 
-                _readers.Add((field, () => radios.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true)?.Content as string ?? ""));
+                radios.KeyDown += OnRadioGroupKeyDown;
+                _readers.Add((field, () => selected));
+                _writers[field.Id] = text =>
+                {
+                    selected = text;
+                    foreach (RadioButton radio in radios.Children.OfType<RadioButton>())
+                    {
+                        radio.IsChecked = radio.Content as string == text;
+                    }
+                };
                 _firstInput ??= radios.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true) ?? radios.Children.OfType<RadioButton>().FirstOrDefault();
                 return radios;
 
@@ -162,6 +315,8 @@ public partial class AddonFormDialog : Window
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
                 _readers.Add((field, () => combo.SelectedItem as string ?? ""));
+                _writers[field.Id] = text => combo.SelectedItem = text;
+                combo.SelectionChanged += (_, _) => NotifyChanged(field);
                 _firstInput ??= combo;
                 return combo;
 
@@ -175,6 +330,9 @@ public partial class AddonFormDialog : Window
                     PasswordChar = field.Type == AddonFieldType.Password ? '•' : default,
                 };
                 _readers.Add((field, () => text.Text ?? ""));
+                _writers[field.Id] = written => SetTextKeepingCaret(text, written);
+                _textBoxes[field.Id] = text;
+                text.TextChanged += (_, _) => NotifyChanged(field);
                 _firstInput ??= text;
                 return text;
         }
@@ -208,8 +366,42 @@ public partial class AddonFormDialog : Window
         grid.Children.Add(text);
         grid.Children.Add(browse);
         _readers.Add((field, () => text.Text ?? ""));
+        _writers[field.Id] = written => SetTextKeepingCaret(text, written);
+        _textBoxes[field.Id] = text;
+        text.TextChanged += (_, _) => NotifyChanged(field);
         _firstInput ??= text;
         return grid;
+    }
+
+    private static void OnRadioGroupKeyDown(object? sender, KeyEventArgs e)
+    {
+        int step = e.Key switch
+        {
+            Key.Up or Key.Left => -1,
+            Key.Down or Key.Right => 1,
+            _ => 0,
+        };
+        if (step == 0 || sender is not StackPanel panel || e.Source is not RadioButton current)
+        {
+            return;
+        }
+
+        List<RadioButton> radios = panel.Children.OfType<RadioButton>().ToList();
+        int index = Math.Clamp(radios.IndexOf(current) + step, 0, radios.Count - 1);
+        radios[index].Focus(NavigationMethod.Directional);
+        e.Handled = true;
+    }
+
+    private static void SetTextKeepingCaret(TextBox textBox, string text)
+    {
+        if (textBox.Text == text)
+        {
+            return;
+        }
+
+        int caret = textBox.CaretIndex;
+        textBox.Text = text;
+        textBox.CaretIndex = Math.Min(caret, text.Length);
     }
 
     private async Task<string?> PickPathAsync(AddonField field, string current)
@@ -235,13 +427,7 @@ public partial class AddonFormDialog : Window
 
     private void OnConfirmClick(object? sender, RoutedEventArgs e)
     {
-        Dictionary<string, string> values = new();
-        foreach ((AddonField field, Func<string> read) in _readers)
-        {
-            values[field.Id] = field.Normalize(read());
-        }
-
-        Close(values);
+        Close(GetValues());
     }
 
     private void OnCancelClick(object? sender, RoutedEventArgs e)

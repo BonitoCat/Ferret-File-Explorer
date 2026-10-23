@@ -23,22 +23,29 @@ public class FileItemViewModel : ViewModelBase, INamedItem
     public required string FullPath { get; init; }
     public required bool IsDirectory { get; init; }
     public bool IsSymlink { get; init; }
+    public bool IsBrokenLink { get; init; }
     public required string SizeString { get; init; }
     public required string TypeString { get; init; }
     public required string ModifiedString { get; init; }
+    public long FileSize { get; init; }
+    public DateTime ModifiedTime { get; init; }
     public required bool IsHidden { get; init; }
     public required bool IsAccessDenied { get; init; }
     public FileType FileType { get; init; }
     public string? MimeType { get; init; }
     public IImage? Icon
     {
-        get => _icon ?? Thumbnail ?? IconService.GetForEntry(IsDirectory, FileType, FullPath);
+        get
+        {
+            IImage? icon = _icon ?? Thumbnail ?? IconService.GetForEntry(IsDirectory, FileType, FullPath);
+            return DisplayOpacity < 1 ? IconService.GetRasterized(icon) : icon;
+        }
         init => _icon = value;
     }
     public string IconSvg { get; init; } = "";
     public string IconColor { get; init; } = "";
 
-    public double DisplayOpacity => IsCut ? 0.5 : 1.0;
+    public double DisplayOpacity => IsCut || IsBrokenLink ? 0.5 : 1.0;
     public bool HasThumbnail => Thumbnail != null;
 
     public bool IsCut
@@ -49,6 +56,7 @@ public class FileItemViewModel : ViewModelBase, INamedItem
             if (SetProperty(ref _isCut, value))
             {
                 OnPropertyChanged(nameof(DisplayOpacity));
+                OnPropertyChanged(nameof(Icon));
             }
         }
     }
@@ -87,26 +95,31 @@ public class FileItemViewModel : ViewModelBase, INamedItem
     public static FileItemViewModel FromEntry(IFileSystemEntry entry, CancellationToken token)
     {
         bool isDir = entry is FolderEntry;
-        bool isAccessDenied = CheckRequiresElevatedAccess(entry, isDir) && !Environment.IsPrivilegedProcess && Environment.UserName != "root";
+        bool isBrokenLink = entry is FolderEntry { IsBrokenLink: true } or FileEntry { IsBrokenLink: true };
+        bool isAccessDenied = !isBrokenLink && CheckRequiresElevatedAccess(entry, isDir) && !Environment.IsPrivilegedProcess && Environment.UserName != "root";
 
         string sizeStr = "";
+        long fileSize = 0;
         string typeStr = LocalizationService.Get(isDir ? "FolderType" : "FileType");
         FileType fileType = FileType.Unknown;
 
         if (entry is FileEntry file)
         {
-            sizeStr = FormatFileSize(file.FileSize);
+            sizeStr = isBrokenLink ? "" : FormatFileSize(file.FileSize);
+            fileSize = file.FileSize;
             typeStr = LocalizationService.Get($"FileType{file.FileType}");
             fileType = file.FileType;
         }
 
         string modifiedStr = "";
+        DateTime modifiedTime = default;
         try
         {
             DateTime lastWrite = entry.LastWriteTime != default
                 ? entry.LastWriteTime
-                : (isDir ? Directory.GetLastWriteTime(entry.FullPath) : File.GetLastWriteTime(entry.FullPath));
+                : (isDir && !isBrokenLink ? Directory.GetLastWriteTime(entry.FullPath) : File.GetLastWriteTime(entry.FullPath));
             modifiedStr = lastWrite.ToString("yyyy-MM-dd HH:mm");
+            modifiedTime = lastWrite;
         }
         catch
         {
@@ -120,16 +133,19 @@ public class FileItemViewModel : ViewModelBase, INamedItem
             FullPath = entry.FullPath,
             IsDirectory = isDir,
             IsSymlink = entry.IsSymlink,
+            IsBrokenLink = isBrokenLink,
             FileType = fileType,
             SizeString = sizeStr,
             TypeString = typeStr,
             ModifiedString = modifiedStr,
+            FileSize = fileSize,
+            ModifiedTime = modifiedTime,
             IsHidden = entry.IsHidden,
             IsAccessDenied = isAccessDenied,
             MimeType = isDir ? null : FileTypeIconService.GetMimeType(entry.FullPath),
         };
 
-        if (!isDir && entry is FileEntry && (fileType == FileType.Image || ThumbnailService.CanThumbnail(item.MimeType)))
+        if (!isDir && !isBrokenLink && entry is FileEntry && (fileType == FileType.Image || ThumbnailService.CanThumbnail(item.MimeType)))
         {
             ThumbnailService.Request(item, entry.LastWriteTime, token);
         }

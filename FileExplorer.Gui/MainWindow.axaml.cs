@@ -77,6 +77,7 @@ public partial class MainWindow : Window
 
     private const string GridFilesListName = "GridFilesListBox";
     private static readonly string[] TerminalKeywords = ["cmd", "terminal", "term"];
+    private static readonly string[] NavigationKeybinds = ["Back", "Forward", "Up"];
     private const double GridLabelHitWidth = 76;
     private const string ListFilesListName = "ListFilesListBox";
     private readonly List<ListBox> _fileListBoxes = new();
@@ -130,8 +131,10 @@ public partial class MainWindow : Window
         ViewModel.NetworkServerLoginRequested += OnNetworkServerLoginRequested;
         ViewModel.AccessDenied += OnAccessDenied;
         ViewModel.DirectoryAccessDenied += OnDirectoryAccessDenied;
+        ViewModel.BrokenLinkOpened += OnBrokenLinkOpened;
         ViewModel.TransferCompleted += OnTransferCompleted;
         ViewModel.ConflictResolver = ResolveConflictAsync;
+        ViewModel.ElevationConfirm = ConfirmElevationAsync;
         ThemeService.ColorsChanged += RefreshAllIcons;
         FileTypeIconService.Changed += RefreshAllIcons;
         InitializeAddons();
@@ -517,6 +520,49 @@ public partial class MainWindow : Window
         SystemPickerMenuItem.IsChecked = SystemPickerService.IsEnabled;
         ToolTip.SetTip(SystemPickerMenuItem, SystemPickerService.IsInstalled ? null : LocalizationService.Get("SystemPickerNotInstalled"));
         UpdateGridNameLinesMenu();
+        UpdateSortMenu();
+    }
+
+    private void OnSortHeaderTapped(object? sender, TappedEventArgs e)
+    {
+        if (sender is not Control { Tag: string tag } || !Enum.TryParse(tag, out SortColumn column))
+        {
+            return;
+        }
+
+        ViewModel.ToggleSort(column);
+    }
+
+    private void OnSortColumnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string tag } || !Enum.TryParse(tag, out SortColumn column))
+        {
+            return;
+        }
+
+        ViewModel.SetSort(column, ViewModel.SortDescending);
+        UpdateSortMenu();
+    }
+
+    private void OnSortDirectionClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem { Tag: string tag } || !bool.TryParse(tag, out bool descending))
+        {
+            return;
+        }
+
+        ViewModel.SetSort(ViewModel.SortColumn, descending);
+        UpdateSortMenu();
+    }
+
+    private void UpdateSortMenu()
+    {
+        SortByNameMenuItem.IsChecked = ViewModel.IsSortedByName;
+        SortBySizeMenuItem.IsChecked = ViewModel.IsSortedBySize;
+        SortByTypeMenuItem.IsChecked = ViewModel.IsSortedByType;
+        SortByModifiedMenuItem.IsChecked = ViewModel.IsSortedByModified;
+        SortAscendingMenuItem.IsChecked = !ViewModel.SortDescending;
+        SortDescendingMenuItem.IsChecked = ViewModel.SortDescending;
     }
 
     private void OnGridNameLinesClick(object? sender, RoutedEventArgs e)
@@ -914,6 +960,12 @@ public partial class MainWindow : Window
         }
 
         string placePath = selected.Path;
+        if (PathManager.IsRemote(placePath) && !await Task.Run(() => GvfsPath.IsMounted(placePath)))
+        {
+            await ConnectToRemotePathAsync(placePath, selected.Name);
+            return;
+        }
+
         if (await Task.Run(() => PaneViewModel.IsNavigable(placePath)))
         {
             ViewModel.NavigateTo(selected.Path);
@@ -1363,42 +1415,95 @@ public partial class MainWindow : Window
         string? password = await Task.Run(() => vm.GetNetworkPassword(uri));
         if (string.IsNullOrEmpty(password) && !NetworkService.ParseUri(uri).Anonymous)
         {
-            InputDialog pwdDialog = new(LocalizationService.Get("AuthenticationRequired"), LocalizationService.Format("EnterPasswordFor", item.Name), "", true);
-            password = await pwdDialog.ShowDialog<string?>(this);
+            password = await PromptNetworkPasswordAsync(uri, item.Name);
             if (password == null)
             {
                 return;
             }
-
-            string newPassword = password;
-            await Task.Run(() => vm.SetNetworkPassword(uri, newPassword));
         }
 
-        PaneViewModel pane = ViewModel.ActivePane;
-        pane.IsLoading = true;
-        ViewModel.StatusText = LocalizationService.Get("Connecting");
+        await MountAndOpenAsync(uri, password, null);
+    }
+
+    private async Task ConnectToRemotePathAsync(string path, string name)
+    {
+        MainWindowViewModel vm = ViewModel;
+        string? uri = await Task.Run(() => vm.FindSavedNetworkUri(path) ?? GvfsPath.ToUri(GvfsPath.TryGetMountRoot(path, out string root) ? root : path));
+        if (uri == null || !MainWindowViewModel.IsMountableUri(uri))
+        {
+            ViewModel.StatusText = LocalizationService.Format("ConnectionFailedWithError", path);
+            return;
+        }
+
+        string? password = await Task.Run(() => vm.GetNetworkPassword(uri));
+        if (await MountAndOpenAsync(uri, password, path, !string.IsNullOrEmpty(password)))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(password))
+        {
+            return;
+        }
+
+        password = await PromptNetworkPasswordAsync(uri, name);
+        if (password == null)
+        {
+            ViewModel.StatusText = "";
+            return;
+        }
+
+        await MountAndOpenAsync(uri, password, path);
+    }
+
+    private async Task<string?> PromptNetworkPasswordAsync(string uri, string name)
+    {
+        InputDialog pwdDialog = new(LocalizationService.Get("AuthenticationRequired"), LocalizationService.Format("EnterPasswordFor", name), "", true);
+        string? password = await pwdDialog.ShowDialog<string?>(this);
+        if (password == null)
+        {
+            return null;
+        }
+
+        MainWindowViewModel vm = ViewModel;
+        await Task.Run(() => vm.SetNetworkPassword(uri, password));
+        return password;
+    }
+
+    private async Task<bool> MountAndOpenAsync(string uri, string? password, string? targetPath, bool reportFailure = true)
+    {
+        MainWindowViewModel vm = ViewModel;
+        vm.SetExternalLoading(true);
+        vm.StatusText = LocalizationService.Get("Connecting");
 
         try
         {
             (bool success, string mountPath, string error) = await Task.Run(() => vm.MountNetworkBookmarkAsync(uri, password));
-            bool mountExists = success && !string.IsNullOrEmpty(mountPath) && await Task.Run(() => Directory.Exists(mountPath));
+            string openPath = targetPath ?? mountPath;
+            bool exists = success && !string.IsNullOrEmpty(openPath) && await Task.Run(() => Directory.Exists(openPath));
 
-            if (mountExists)
+            if (exists)
             {
-                ViewModel.LoadPlaces();
-                ViewModel.NavigateTo(mountPath);
+                vm.LoadPlaces();
+                vm.NavigateTo(openPath);
+                FocusActiveListBox();
+                return true;
             }
-            else
+
+            if (!reportFailure)
             {
-                ViewModel.StatusText = LocalizationService.Format("ConnectionFailedWithError", error);
-                string msg = string.IsNullOrWhiteSpace(error) ? LocalizationService.Get("ConnectionFailedOrTimedOut") : error;
-                ConfirmDialog errDialog = new(LocalizationService.Get("ConnectionFailed"), msg);
-                await errDialog.ShowDialog(this);
+                return false;
             }
+
+            vm.StatusText = LocalizationService.Format("ConnectionFailedWithError", error);
+            string msg = string.IsNullOrWhiteSpace(error) ? LocalizationService.Get("ConnectionFailedOrTimedOut") : error;
+            ConfirmDialog errDialog = new(LocalizationService.Get("ConnectionFailed"), msg);
+            await errDialog.ShowDialog(this);
+            return false;
         }
         finally
         {
-            pane.IsLoading = false;
+            vm.SetExternalLoading(false);
         }
     }
 
@@ -1840,34 +1945,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        if (TryRunNavigationKeybind(e))
         {
-            if (e.Key == Key.Left)
-            {
-                TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
-                FocusActiveListBox();
-                ViewModel.GoBack();
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key == Key.Right)
-            {
-                TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
-                FocusActiveListBox();
-                ViewModel.GoForward();
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key == Key.Up)
-            {
-                TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
-                FocusActiveListBox();
-                ViewModel.GoUp();
-                e.Handled = true;
-                return;
-            }
+            e.Handled = true;
+            return;
         }
 
         if (e.Key == Key.Back && _typeAheadBuffer.Length > 0 && (DateTime.UtcNow - _typeAheadLastKeyTime).TotalMilliseconds <= 1000)
@@ -2454,7 +2535,7 @@ public partial class MainWindow : Window
         }
 
         ListBoxItem? hoverFile = FindVisualParent<ListBoxItem>(hit);
-        if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory && IsOverItemDropZone(hit))
+        if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory && !targetFolder.IsBrokenLink && IsOverItemDropZone(hit))
         {
             if (IsInvalidDropDestination(targetFolder.FullPath))
             {
@@ -2532,7 +2613,7 @@ public partial class MainWindow : Window
                 else
                 {
                     ListBoxItem? hoverFile = FindVisualParent<ListBoxItem>(hit);
-                    if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory && IsOverItemDropZone(hit) && !IsInvalidDropDestination(targetFolder.FullPath, paths))
+                    if (hoverFile?.DataContext is FileItemViewModel targetFolder && targetFolder.IsDirectory && !targetFolder.IsBrokenLink && IsOverItemDropZone(hit) && !IsInvalidDropDestination(targetFolder.FullPath, paths))
                     {
                         targetDir = targetFolder.FullPath;
                     }
@@ -2716,6 +2797,11 @@ public partial class MainWindow : Window
 
     private static bool IsOnItemHitZone(ListBox list, ListBoxItem container, Point point)
     {
+        if (IsGridList(list) && container.IsSelected && container.TranslatePoint(new(0, 0), list) is { } origin && new Rect(origin, container.Bounds.Size).Contains(point))
+        {
+            return true;
+        }
+
         return GetItemHitZones(list, container, list).Any(zone => zone.Contains(point));
     }
 
@@ -2771,9 +2857,10 @@ public partial class MainWindow : Window
         }
 
         bool canPaste = MainWindowViewModel.HasPasteContent();
+        bool hasPasteHandlers = HasAddonPasteHandlers();
         foreach (MenuItem item in menu.Items.OfType<MenuItem>().Where(m => m.Tag is "paste" or "paste-link"))
         {
-            item.IsEnabled = canPaste;
+            item.IsEnabled = canPaste || (item.Tag is "paste" && hasPasteHandlers);
         }
 
         MenuItem? colorMenu = menu.Items
@@ -2929,6 +3016,17 @@ public partial class MainWindow : Window
         await dialog.ShowDialog<bool?>(this);
     }
 
+    private async Task<bool> ConfirmElevationAsync(string message)
+    {
+        ConfirmDialog dialog = new(
+            LocalizationService.Get("ElevationTitle"),
+            message,
+            LocalizationService.Get("ContinueAsAdmin"),
+            true,
+            false);
+        return await dialog.ShowDialog<bool?>(this) == true;
+    }
+
     private async void OnDirectoryAccessDenied(string path)
     {
         ConfirmDialog dialog = new(
@@ -2946,6 +3044,28 @@ public partial class MainWindow : Window
         }
 
         ViewModel.OpenAsRoot(path);
+    }
+
+    private async void OnBrokenLinkOpened(string path)
+    {
+        string target = path;
+        try
+        {
+            string? linkTarget = new FileInfo(path).LinkTarget;
+            if (linkTarget != null)
+            {
+                target = Path.GetFullPath(linkTarget, Path.GetDirectoryName(path) ?? PathManager.RootPath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+
+        ConfirmDialog dialog = new(
+            LocalizationService.Get("BrokenLinkTitle"),
+            LocalizationService.Format("BrokenLinkMessage", Path.GetFileName(path), target));
+        dialog.ShowAsInfo();
+        await dialog.ShowDialog<bool?>(this);
     }
 
     private async void OnScriptOpenRequested(string path)
@@ -3015,7 +3135,7 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private async void OnWindowKeyDown(object? sender, KeyEventArgs e)
+    private void OnWindowKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
@@ -3084,37 +3204,70 @@ public partial class MainWindow : Window
             }
         }
 
-        if (!e.KeyModifiers.HasFlag(KeyModifiers.Control) && e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+        if (TryRunKeybind(e))
         {
-            if (e.Key == Key.Left)
-            {
-                ViewModel.GoBack();
-                FocusActiveListBox();
-                e.Handled = true;
-                return;
-            }
+            e.Handled = true;
+        }
+    }
 
-            if (e.Key == Key.Right)
-            {
-                ViewModel.GoForward();
-                FocusActiveListBox();
-                e.Handled = true;
-                return;
-            }
-
-            if (e.Key == Key.Up)
-            {
-                ViewModel.GoUp();
-                FocusActiveListBox();
-                e.Handled = true;
-                return;
-            }
+    private bool TryRunNavigationKeybind(KeyEventArgs e)
+    {
+        string? id = FindKeybind(e, NavigationKeybinds);
+        if (id == null)
+        {
+            return false;
         }
 
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        TopLevel.GetTopLevel(this)?.FocusManager?.Focus(null);
+        FocusActiveListBox();
+        return RunKeybind(id);
+    }
+
+    private bool TryRunKeybind(KeyEventArgs e)
+    {
+        string? id = FindKeybind(e, KeybindService.Definitions.Select(definition => definition.Id));
+        return id != null && RunKeybind(id);
+    }
+
+    private string? FindKeybind(KeyEventArgs e, IEnumerable<string> ids)
+    {
+        if (KeybindService.IsModifierKey(e.Key))
         {
-            if (e.Key == Key.W)
-            {
+            return null;
+        }
+
+        bool hasCommandModifier = (e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Alt | KeyModifiers.Meta)) != 0;
+        bool isFunctionKey = e.Key is >= Key.F1 and <= Key.F24;
+        bool isTyping = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox;
+        if (isTyping && !hasCommandModifier && !isFunctionKey)
+        {
+            return null;
+        }
+
+        return ids.FirstOrDefault(id => KeybindService.Instance.Matches(id, e));
+    }
+
+    private bool RunKeybind(string id)
+    {
+        RoutedEventArgs args = new();
+        switch (id)
+        {
+            case "Back":
+                ViewModel.GoBack();
+                FocusActiveListBox();
+                return true;
+
+            case "Forward":
+                ViewModel.GoForward();
+                FocusActiveListBox();
+                return true;
+
+            case "Up":
+                ViewModel.GoUp();
+                FocusActiveListBox();
+                return true;
+
+            case "CloseTab":
                 if (ViewModel.IsDualPane)
                 {
                     ViewModel.CloseActivePane();
@@ -3125,148 +3278,100 @@ public partial class MainWindow : Window
                     Close();
                 }
 
-                e.Handled = true;
-                return;
-            }
+                return true;
 
-            if (e.Key == Key.F)
-            {
+            case "Quit":
+                Close();
+                return true;
+
+            case "Search":
                 SearchTextBox.Focus();
                 SearchTextBox.SelectAll();
-                e.Handled = true;
-                return;
-            }
+                return true;
 
-            if (e.Key == Key.K)
-            {
-                OnMenuConnectToServerClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "ConnectToServer":
+                OnMenuConnectToServerClick(this, args);
+                return true;
 
-            if (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && e.Key == Key.N)
-            {
-                OnNewFolderClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "NewFolder":
+                OnNewFolderClick(this, args);
+                return true;
 
-            if (e.KeyModifiers.HasFlag(KeyModifiers.Alt) && e.Key == Key.N)
-            {
-                OnNewFileClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "NewFile":
+                OnNewFileClick(this, args);
+                return true;
 
-            if (e.Key == Key.N)
-            {
-                OnMenuNewWindowClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "NewWindow":
+                OnMenuNewWindowClick(this, args);
+                return true;
 
-            if (e.Key == Key.L)
-            {
-                OnTogglePathEditingClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "Location":
+                OnTogglePathEditingClick(this, args);
+                return true;
 
-            if (e.Key == Key.H)
-            {
-                OnToggleHiddenClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "ToggleHidden":
+                OnToggleHiddenClick(this, args);
+                return true;
 
-            if (e.Key == Key.A)
-            {
-                OnSelectAllClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "SelectAll":
+                OnSelectAllClick(this, args);
+                return true;
 
-            if (e.Key == Key.C)
-            {
+            case "Copy":
                 ViewModel.CopySelected(GetSelectedItems());
-                e.Handled = true;
-                return;
-            }
+                return true;
 
-            if (e.Key == Key.X)
-            {
+            case "Cut":
                 ViewModel.CutSelected(GetSelectedItems());
-                e.Handled = true;
-                return;
-            }
+                return true;
 
-            if (e.Key == Key.V && e.KeyModifiers.HasFlag(KeyModifiers.Alt))
-            {
-                OnMenuPasteAsSymlinkClick(sender, e);
-                e.Handled = true;
-                return;
-            }
+            case "Paste":
+                _ = PasteAsync();
+                return true;
 
-            if (e.Key == Key.V)
-            {
-                ViewModel.Paste();
-                e.Handled = true;
-                return;
-            }
+            case "PasteSymlink":
+                OnMenuPasteAsSymlinkClick(this, args);
+                return true;
 
-            if (e.Key == Key.D)
-            {
+            case "Duplicate":
                 ViewModel.DuplicateSelected(GetSelectedItems());
-                e.Handled = true;
-                return;
-            }
-        }
+                return true;
 
-        if (e.Key == Key.F3)
-        {
-            OnToggleDualPaneClick(sender, e);
-            e.Handled = true;
-            return;
-        }
+            case "DualPane":
+                OnToggleDualPaneClick(this, args);
+                return true;
 
-        if (e.Key == Key.F6)
-        {
-            SwitchActivePane();
-            e.Handled = true;
-            return;
-        }
+            case "SwitchPane":
+                SwitchActivePane();
+                return true;
 
-        if (e.Key == Key.F5)
-        {
-            OnRefreshClick(sender, e);
-            e.Handled = true;
-            return;
-        }
+            case "Refresh":
+                OnRefreshClick(this, args);
+                return true;
 
-        if (e.Key == Key.F2)
-        {
-            FileItemViewModel? selected = ViewModel.ActivePane.SelectedItem;
-            if (selected != null)
-            {
-                OnMenuRenameClick(sender, e);
-                e.Handled = true;
-                return;
-            }
-        }
+            case "Rename":
+                if (ViewModel.ActivePane.SelectedItem == null)
+                {
+                    return false;
+                }
 
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Alt) && e.Key == Key.Enter)
-        {
-            OnMenuPropertiesClick(sender, e);
-            e.Handled = true;
-            return;
-        }
+                OnMenuRenameClick(this, args);
+                return true;
 
-        if (e.Key == Key.Delete)
-        {
-            bool permanent = e.KeyModifiers.HasFlag(KeyModifiers.Shift);
-            await ConfirmAndDeleteAsync(GetSelectedItems(), permanent);
-            e.Handled = true;
-            return;
+            case "Properties":
+                OnMenuPropertiesClick(this, args);
+                return true;
+
+            case "Trash":
+                _ = ConfirmAndDeleteAsync(GetSelectedItems(), false);
+                return true;
+
+            case "DeletePermanent":
+                _ = ConfirmAndDeleteAsync(GetSelectedItems(), true);
+                return true;
+
+            default:
+                return false;
         }
     }
 
@@ -3366,7 +3471,7 @@ public partial class MainWindow : Window
         string? result = await dialog.ShowDialog<string?>(this);
         if (!string.IsNullOrWhiteSpace(result))
         {
-            SelectWhenLoaded(ViewModel.CreateFolder(result));
+            SelectWhenLoaded(await ViewModel.CreateFolderAsync(result));
         }
         else
         {
@@ -3383,7 +3488,7 @@ public partial class MainWindow : Window
         string? result = await dialog.ShowDialog<string?>(this);
         if (!string.IsNullOrWhiteSpace(result))
         {
-            SelectWhenLoaded(ViewModel.CreateFile(result));
+            SelectWhenLoaded(await ViewModel.CreateFileAsync(result));
         }
         else
         {
@@ -3532,13 +3637,13 @@ public partial class MainWindow : Window
 
     private void OnMenuPasteClick(object? sender, RoutedEventArgs e)
     {
-        ViewModel.Paste();
+        _ = PasteAsync();
     }
 
     private void OnEditMenuOpened(object? sender, RoutedEventArgs e)
     {
         bool canPaste = MainWindowViewModel.HasPasteContent();
-        EditPasteMenuItem.IsEnabled = canPaste;
+        EditPasteMenuItem.IsEnabled = canPaste || HasAddonPasteHandlers();
         EditPasteSymlinkMenuItem.IsEnabled = canPaste;
     }
 
@@ -3705,8 +3810,8 @@ public partial class MainWindow : Window
 
     private async void OnMenuShortcutsClick(object? sender, RoutedEventArgs e)
     {
-        InputDialog dialog = new(LocalizationService.Get("Shortcuts"), LocalizationService.Get("ShortcutsText"), "");
-        await dialog.ShowDialog<string?>(this);
+        KeybindsDialog dialog = new();
+        await dialog.ShowDialog(this);
     }
 
     private async void OnMenuAboutClick(object? sender, RoutedEventArgs e)

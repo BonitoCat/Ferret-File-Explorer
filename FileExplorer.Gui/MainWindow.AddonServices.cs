@@ -22,6 +22,7 @@ public sealed class AddonPendingForm
 {
     public string Title { get; }
     public List<AddonField> Fields { get; } = new();
+    public (string Id, IReadOnlyList<string> Range)? Selection { get; set; }
 
     public AddonPendingForm(string title)
     {
@@ -345,26 +346,112 @@ public partial class MainWindow
         run.PendingForm.Fields.Add(new(parts[0], label, "", type, value, choices));
     }
 
-    private async Task ShowAddonFormAsync(AddonRun run)
+    private async Task ShowAddonFormAsync(AddonRun run, string argument)
     {
         AddonPendingForm? form = run.PendingForm;
         run.PendingForm = null;
         if (form == null || form.Fields.Count == 0)
         {
-            ReportInvalidAddonArgument(run, "form-show", "");
+            ReportInvalidAddonArgument(run, "form-show", argument);
             ReplyToRun(run, null);
             return;
         }
 
+        bool isLive = argument.Equals("live", StringComparison.OrdinalIgnoreCase);
+        if (!isLive && argument.Length > 0)
+        {
+            ReportInvalidAddonArgument(run, "form-show", argument);
+        }
+
         AddonFormDialog dialog = new(run.AddonName, form.Title, form.Fields);
-        Dictionary<string, string>? values = await dialog.ShowDialog<Dictionary<string, string>?>(this);
+        if (form.Selection is { } selection)
+        {
+            dialog.SelectOnOpen(selection.Id, selection.Range);
+        }
+
+        if (isLive)
+        {
+            dialog.ValueChanged += id => SendAddonFormChange(run, form, dialog, id);
+        }
+
+        Dictionary<string, string>? values;
+        run.ActiveForm = dialog;
+        try
+        {
+            values = await dialog.ShowDialog<Dictionary<string, string>?>(this);
+        }
+        finally
+        {
+            run.ActiveForm = null;
+        }
+
         if (values == null)
         {
             ReplyToRun(run, null);
             return;
         }
 
-        ReplyToRun(run, string.Join('\t', form.Fields.Select(f => values.GetValueOrDefault(f.Id, "").Replace('\t', ' '))));
+        string line = FormatAddonFormValues(form, values);
+        ReplyToRun(run, isLive && !run.IsService ? $"submit\t{line}" : line);
+    }
+
+    private static string FormatAddonFormValues(AddonPendingForm form, IReadOnlyDictionary<string, string> values)
+    {
+        return string.Join('\t', form.Fields.Select(f => values.GetValueOrDefault(f.Id, "").Replace('\t', ' ')));
+    }
+
+    private void SendAddonFormChange(AddonRun run, AddonPendingForm form, AddonFormDialog dialog, string id)
+    {
+        string line = $"{id}\t{FormatAddonFormValues(form, dialog.GetValues())}";
+        if (run.IsService)
+        {
+            SendAddonEvent(run, $"event:change {SanitizeAddonReply(line)}");
+            return;
+        }
+
+        ReplyToAddon(run.Process, $"change\t{line}");
+    }
+
+    private static void SelectAddonFormField(AddonRun run, string argument)
+    {
+        List<string> parts = SplitAddonArguments(argument);
+        string id = parts[0];
+        List<string> range = parts.Skip(1).ToList();
+        if (id.Length == 0 || !AddonFormDialog.IsValidSelection(range))
+        {
+            ReportInvalidAddonArgument(run, "field-select", argument);
+            return;
+        }
+
+        if (run.ActiveForm != null)
+        {
+            if (!run.ActiveForm.TrySelectText(id, range))
+            {
+                ReportInvalidAddonArgument(run, "field-select", argument);
+            }
+
+            return;
+        }
+
+        AddonField? field = run.PendingForm?.Fields.FirstOrDefault(f => f.Id == id);
+        if (field == null || field.Type is not (AddonFieldType.Text or AddonFieldType.Password or AddonFieldType.File or AddonFieldType.Folder))
+        {
+            ReportInvalidAddonArgument(run, "field-select", argument);
+            return;
+        }
+
+        run.PendingForm!.Selection = (id, range);
+    }
+
+    private static void SetAddonFormField(AddonRun run, string argument)
+    {
+        int separator = argument.IndexOf('|');
+        string id = separator < 0 ? argument : argument[..separator].Trim();
+        string value = separator < 0 ? "" : argument[(separator + 1)..].Trim();
+        if (run.ActiveForm == null || id.Length == 0 || !run.ActiveForm.TrySetValue(id, value))
+        {
+            ReportInvalidAddonArgument(run, "field-set", argument);
+        }
     }
 
     private void SetAddonStatusItem(AddonRun run, string argument)

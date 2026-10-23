@@ -134,7 +134,7 @@ public sealed class AddonService
             return _addons
                 .Where(a => a.IsActive)
                 .SelectMany(a => a.Actions)
-                .Where(a => a.Shortcut != null)
+                .Where(a => a.Shortcut != null && !a.IsGroup && a.Location != AddonLocation.Paste)
                 .ToList();
         }
     }

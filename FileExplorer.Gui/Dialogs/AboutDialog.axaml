@@ -21,6 +21,26 @@
             <Setter Property="HorizontalContentAlignment"
                     Value="Center"/>
         </Style>
+
+        <Style Selector="Button.donate">
+            <Setter Property="Background"
+                    Value="#FF6433"/>
+            <Setter Property="Foreground"
+                    Value="White"/>
+            <Setter Property="CornerRadius"
+                    Value="6"/>
+            <Setter Property="Padding"
+                    Value="12,6"/>
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+        </Style>
+
+        <Style Selector="Button.donate:pointerover /template/ ContentPresenter">
+            <Setter Property="Background"
+                    Value="#FF7A50"/>
+            <Setter Property="Foreground"
+                    Value="White"/>
+        </Style>
     </Window.Styles>
 
     <StackPanel Margin="24"
@@ -67,6 +87,23 @@
                    FontSize="11"
                    Foreground="#888888"
                    HorizontalAlignment="Center"/>
+
+        <Button Classes="donate"
+                HorizontalAlignment="Center"
+                Click="OnDonateClick">
+            <StackPanel Orientation="Horizontal"
+                        Spacing="8">
+
+                <Image x:Name="DonateIcon"
+                       Width="20"
+                       Height="20"
+                       VerticalAlignment="Center"/>
+
+                <TextBlock Text="{markup:Translate Key=AboutDonate}"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Button>
 
         <Grid ColumnDefinitions="Auto,Auto,*,Auto">
 

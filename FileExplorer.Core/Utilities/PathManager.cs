@@ -128,6 +128,16 @@ public static class PathManager
         return !AreEqual(container, path) && IsSameOrAncestor(container, path);
     }
 
+    public static bool IsRemote(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !OperatingSystem.IsLinux())
+        {
+            return false;
+        }
+
+        return path.StartsWith("/run/user/", StringComparison.Ordinal) && path.Contains("/gvfs/", StringComparison.Ordinal);
+    }
+
     public static string WithTrailingSeparator(string path)
     {
         return path.EndsWith(Separator) || (IsWindows && path.EndsWith('/')) ? path : path + Separator;

@@ -5,6 +5,17 @@ public enum AddonLocation
     ContextMenu,
     AddonsMenu,
     PathBar,
+    Paste,
+}
+
+[Flags]
+public enum AddonClipboardContent
+{
+    None = 0,
+    Files = 1,
+    Image = 2,
+    Text = 4,
+    Any = Files | Image | Text,
 }
 
 [Flags]

@@ -1,0 +1,220 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        xmlns:vm="using:FileExplorer.Gui.ViewModels"
+        x:Class="FileExplorer.Gui.Dialogs.KeybindsDialog"
+        Title="{markup:Translate Key=Shortcuts}"
+        Width="620"
+        Height="660"
+        MinWidth="480"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner"
+        Background="#242426"
+        Foreground="#E0E0E0"
+        Focusable="True">
+
+    <Window.Styles>
+        <Style Selector="TabItem">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="MinHeight" Value="34"/>
+            <Setter Property="Padding" Value="12,4"/>
+        </Style>
+
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#777777"/>
+            <Setter Property="Margin" Value="2,0,0,0"/>
+        </Style>
+
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#1C1C1E"/>
+            <Setter Property="BorderBrush" Value="#333333"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12,6"/>
+        </Style>
+
+        <Style Selector="Button.gesture">
+            <Setter Property="MinWidth" Value="150"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontFamily" Value="monospace"/>
+            <Setter Property="Background" Value="#2B2B30"/>
+            <Setter Property="BorderBrush" Value="#3A3A40"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="5"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.gesture.capturing">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.gesture.capturing:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.gesture.unset">
+            <Setter Property="Foreground" Value="#777777"/>
+        </Style>
+
+        <Style Selector="Button.icon">
+            <Setter Property="Width" Value="26"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Padding" Value="5"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="CornerRadius" Value="5"/>
+        </Style>
+
+        <Style Selector="TextBlock.hint">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="#8A8A8A"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </Window.Styles>
+
+    <Window.DataTemplates>
+        <DataTemplate x:DataType="vm:KeybindGroupViewModel">
+            <StackPanel Spacing="6"
+                        Margin="0,0,0,14">
+                <TextBlock Classes="section"
+                           Text="{Binding Title}"/>
+
+                <Border Classes="card">
+                    <ItemsControl ItemsSource="{Binding Rows}"/>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <DataTemplate x:DataType="vm:KeybindRowViewModel">
+            <Grid ColumnDefinitions="*,Auto,32,28"
+                  MinHeight="36">
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Title}"
+                           FontSize="13"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"/>
+
+                <Button Grid.Column="1"
+                        Classes="gesture"
+                        Classes.capturing="{Binding IsCapturing}"
+                        Classes.unset="{Binding !HasGesture}"
+                        Content="{Binding GestureText}"
+                        Click="OnGestureClick"/>
+
+                <Button Grid.Column="2"
+                        Classes="icon"
+                        Margin="6,0,0,0"
+                        ToolTip.Tip="{markup:Translate Key=KeybindClear}"
+                        IsVisible="{Binding HasGesture}"
+                        Click="OnClearClick">
+                    <Image Source="{markup:Icon Key=close}"/>
+                </Button>
+
+                <Button Grid.Column="3"
+                        Classes="icon"
+                        Margin="2,0,0,0"
+                        ToolTip.Tip="{markup:Translate Key=KeybindReset}"
+                        IsVisible="{Binding IsCustomized}"
+                        Click="OnResetRowClick">
+                    <Image Source="{markup:Icon Key=refresh}"/>
+                </Button>
+            </Grid>
+        </DataTemplate>
+    </Window.DataTemplates>
+
+    <Grid RowDefinitions="Auto,*,Auto,Auto"
+          Margin="20,14,20,20">
+
+        <TextBlock Grid.Row="0"
+                   Classes="hint"
+                   Text="{markup:Translate Key=KeybindHint}"/>
+
+        <TabControl Grid.Row="1"
+                    Padding="0,10,0,0"
+                    Margin="0,6,0,0">
+
+            <TabItem Header="{markup:Translate Key=KeybindTabApp}">
+                <ScrollViewer>
+                    <ItemsControl x:Name="AppGroups"
+                                  Margin="0,0,12,0"/>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="{markup:Translate Key=Addons}">
+                <Panel>
+                    <ScrollViewer>
+                        <ItemsControl x:Name="AddonGroups"
+                                      Margin="0,0,12,0"/>
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="NoAddonsText"
+                               Classes="hint"
+                               Text="{markup:Translate Key=KeybindNoAddons}"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               TextAlignment="Center"/>
+                </Panel>
+            </TabItem>
+
+            <TabItem Header="{markup:Translate Key=KeybindTabOther}">
+                <ScrollViewer>
+                    <StackPanel Spacing="6"
+                                Margin="0,0,12,0">
+                        <TextBlock Classes="section"
+                                   Text="{markup:Translate Key=KeybindFixedTitle}"/>
+
+                        <Border Classes="card"
+                                Padding="14,10">
+                            <SelectableTextBlock Text="{markup:Translate Key=ShortcutsFixedText}"
+                                                 FontSize="13"
+                                                 LineHeight="22"
+                                                 TextWrapping="Wrap"/>
+                        </Border>
+
+                        <TextBlock Classes="section"
+                                   Margin="2,8,0,0"
+                                   Text="{markup:Translate Key=KeybindPathBarTitle}"/>
+
+                        <Border Classes="card"
+                                Padding="14,10">
+                            <SelectableTextBlock Text="{markup:Translate Key=ShortcutsPathBarText}"
+                                                 FontSize="13"
+                                                 LineHeight="22"
+                                                 TextWrapping="Wrap"/>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock Grid.Row="2"
+                   x:Name="StatusText"
+                   Classes="hint"
+                   Foreground="#E0B060"
+                   Margin="0,10,0,0"
+                   IsVisible="False"/>
+
+        <Grid Grid.Row="3"
+              ColumnDefinitions="Auto,*,Auto"
+              Margin="0,14,0,0">
+
+            <Button Grid.Column="0"
+                    Content="{markup:Translate Key=ResetToDefaults}"
+                    Click="OnResetAllClick"
+                    Background="#333333"
+                    Padding="14,6"/>
+
+            <Button Grid.Column="2"
+                    Content="{markup:Translate Key=Close}"
+                    Click="OnCloseClick"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="White"
+                    MinWidth="90"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"/>
+        </Grid>
+    </Grid>
+</Window>

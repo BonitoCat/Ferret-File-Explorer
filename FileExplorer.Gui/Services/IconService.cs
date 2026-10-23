@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Security.Principal;
 using System.Text;
 using Avalonia.Media;
@@ -17,6 +18,7 @@ namespace FileExplorer.Gui.Services;
 public static class IconService
 {
     private static readonly ConcurrentDictionary<string, IImage> _cache = new();
+    private static readonly ConditionalWeakTable<IImage, RasterizedIcon> _rasterized = new();
     private static readonly string _userIconsDir = Path.Combine(AppPaths.DataDir, "icons");
 
     public static IImage? Get(string iconName)
@@ -43,6 +45,21 @@ public static class IconService
         }
 
         return loaded;
+    }
+
+    public static IImage? GetRasterized(IImage? image)
+    {
+        if (image == null || image is Bitmap)
+        {
+            return image;
+        }
+
+        return _rasterized.GetValue(image, inner => new RasterizedIcon(inner));
+    }
+
+    public static IImage GetLazy(string iconName)
+    {
+        return _cache.TryGetValue(iconName, out IImage? cached) ? cached : new LazyIcon(iconName);
     }
 
     public static IImage? GetForFile(FileType type)

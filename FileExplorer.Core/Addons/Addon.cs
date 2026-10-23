@@ -455,6 +455,8 @@ public sealed class Addon
             manifests.Add(new() { Location = "addons-menu" });
         }
 
+        HashSet<string> groupIds = FindGroupIds(manifests);
+
         for (int i = 0; i < manifests.Count; i++)
         {
             AddonActionManifest manifest = manifests[i];
@@ -482,26 +484,45 @@ public sealed class Addon
                 continue;
             }
 
+            if (!TryParseClipboard(manifest.Clipboard, out AddonClipboardContent clipboard, out string? invalidClipboard))
+            {
+                SetError("AddonErrorUnknownClipboard", invalidClipboard);
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(manifest.After) && !string.IsNullOrWhiteSpace(manifest.Before))
             {
                 SetError("AddonErrorBothAnchors", manifest.Id ?? i.ToString());
                 continue;
             }
 
-            AddonAction action = new(this, manifest, location, targets, modes, separatorBefore, separatorAfter, i);
+            AddonAction action = new(this, manifest, location, targets, modes, clipboard, separatorBefore, separatorAfter, i);
+            action.IsGroup = groupIds.Contains(action.Id.ToLowerInvariant());
+            if (action.IsGroup && location == AddonLocation.PathBar)
+            {
+                SetError("AddonErrorGroupInPathBar", action.Id);
+                continue;
+            }
+
+            if (location == AddonLocation.Paste && (action.IsGroup || action.Parent != null))
+            {
+                SetError("AddonErrorPasteInMenu", action.Id);
+                continue;
+            }
+
             if (location == AddonLocation.PathBar && action.Keywords.Count == 0)
             {
                 SetError("AddonErrorNoKeywords", action.Id);
                 continue;
             }
 
-            if (action.Command == null && action.ScriptPath == null)
+            if (!action.IsGroup && action.Command == null && action.ScriptPath == null)
             {
                 SetError("AddonErrorNoScript", action.Id);
                 continue;
             }
 
-            if (action.ScriptPath != null && !File.Exists(action.ScriptPath))
+            if (!action.IsGroup && action.ScriptPath != null && !File.Exists(action.ScriptPath))
             {
                 SetError("AddonErrorScriptMissing", Path.GetRelativePath(RootPath, action.ScriptPath));
                 continue;
@@ -515,6 +536,99 @@ public sealed class Addon
 
             _actions.Add(action);
         }
+
+        ResolveParents();
+    }
+
+    private HashSet<string> FindGroupIds(List<AddonActionManifest> manifests)
+    {
+        HashSet<string> ids = manifests
+            .Where(m => !string.IsNullOrWhiteSpace(m.Id))
+            .Select(m => m.Id!.Trim().ToLowerInvariant())
+            .ToHashSet();
+        HashSet<string> groups = new();
+        foreach (AddonActionManifest manifest in manifests)
+        {
+            string? parent = GetOwnParentId(manifest.Parent?.Trim().ToLowerInvariant());
+            if (parent != null && ids.Contains(parent))
+            {
+                groups.Add(parent);
+            }
+        }
+
+        return groups;
+    }
+
+    private string? GetOwnParentId(string? parent)
+    {
+        if (string.IsNullOrEmpty(parent))
+        {
+            return null;
+        }
+
+        string prefix = Id.ToLowerInvariant() + "/";
+        if (parent.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return parent[prefix.Length..];
+        }
+
+        return parent.Contains('/') ? null : parent;
+    }
+
+    private void ResolveParents()
+    {
+        foreach (AddonAction action in _actions.Where(a => a.Parent != null))
+        {
+            string? ownId = GetOwnParentId(action.Parent);
+            if (ownId == null)
+            {
+                continue;
+            }
+
+            AddonAction? group = _actions.FirstOrDefault(a => a.IsGroup && string.Equals(a.Id, ownId, StringComparison.OrdinalIgnoreCase));
+            if (group != null)
+            {
+                action.Parent = group.Key.ToLowerInvariant();
+                action.Location = group.Location;
+                continue;
+            }
+
+            if (AddonAction.BuiltInParents.Contains(ownId))
+            {
+                action.Parent = ownId;
+                action.Location = AddonLocation.ContextMenu;
+                continue;
+            }
+
+            SetError("AddonErrorUnknownParent", action.Parent);
+            return;
+        }
+
+        AddonAction? looped = _actions.FirstOrDefault(HasParentLoop);
+        if (looped != null)
+        {
+            SetError("AddonErrorParentLoop", looped.Id);
+        }
+    }
+
+    private bool HasParentLoop(AddonAction action)
+    {
+        AddonAction? current = action;
+        for (int depth = 0; depth <= _actions.Count; depth++)
+        {
+            current = _actions.FirstOrDefault(a => string.Equals(a.Key, current.Parent, StringComparison.OrdinalIgnoreCase));
+            if (current == null)
+            {
+                return false;
+            }
+
+            if (current == action)
+            {
+                return true;
+            }
+        }
+
+        return true;
     }
 
     private static bool TryParseLocation(string? value, out AddonLocation location)
@@ -530,6 +644,9 @@ public sealed class Addon
                 return true;
             case "pathbar" or "path" or "locationbar":
                 location = AddonLocation.PathBar;
+                return true;
+            case "paste":
+                location = AddonLocation.Paste;
                 return true;
             default:
                 location = AddonLocation.ContextMenu;
@@ -563,6 +680,38 @@ public sealed class Addon
             }
 
             targets |= target;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseClipboard(List<string>? values, out AddonClipboardContent content, out string? invalid)
+    {
+        invalid = null;
+        if (values == null || values.Count == 0)
+        {
+            content = AddonClipboardContent.Any;
+            return true;
+        }
+
+        content = AddonClipboardContent.None;
+        foreach (string value in values)
+        {
+            AddonClipboardContent kind = Normalize(value) switch
+            {
+                "files" or "file" => AddonClipboardContent.Files,
+                "image" or "images" or "bitmap" => AddonClipboardContent.Image,
+                "text" => AddonClipboardContent.Text,
+                "any" or "all" => AddonClipboardContent.Any,
+                _ => AddonClipboardContent.None,
+            };
+            if (kind == AddonClipboardContent.None)
+            {
+                invalid = value;
+                return false;
+            }
+
+            content |= kind;
         }
 
         return true;

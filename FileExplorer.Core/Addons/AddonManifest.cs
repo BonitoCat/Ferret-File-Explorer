@@ -49,6 +49,7 @@ public sealed class AddonActionManifest
     public int? Index { get; set; }
     public string? After { get; set; }
     public string? Before { get; set; }
+    public string? Parent { get; set; }
     public List<string>? Targets { get; set; }
     public List<string>? Extensions { get; set; }
     public bool Multiple { get; set; } = true;
@@ -63,4 +64,5 @@ public sealed class AddonActionManifest
     public string? Confirm { get; set; }
     public string? Separator { get; set; }
     public List<string>? Modes { get; set; }
+    public List<string>? Clipboard { get; set; }
 }

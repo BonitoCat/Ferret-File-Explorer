@@ -3,16 +3,21 @@ namespace FileExplorer.Core.Addons;
 public sealed class AddonAction
 {
     public static readonly IReadOnlyList<string> DefaultArgs = ["{paths}"];
+    public static readonly IReadOnlySet<string> BuiltInParents = new HashSet<string>(["new"]);
 
     public Addon Addon { get; }
     public string Id { get; }
     public string TitleKey { get; }
-    public AddonLocation Location { get; }
+    public AddonLocation Location { get; internal set; }
     public int? Index { get; }
     public string? After { get; }
     public string? Before { get; }
+    public string? Parent { get; internal set; }
+    public bool IsGroup { get; internal set; }
+    public bool HasFilters { get; }
     public AddonTarget Targets { get; }
     public AddonMode Modes { get; }
+    public AddonClipboardContent Clipboard { get; }
     public IReadOnlyList<string> Extensions { get; }
     public bool Multiple { get; }
     public string? ScriptPath { get; }
@@ -29,7 +34,7 @@ public sealed class AddonAction
 
     public string Key => $"{Addon.Id}/{Id}";
 
-    internal AddonAction(Addon addon, AddonActionManifest manifest, AddonLocation location, AddonTarget targets, AddonMode modes, bool separatorBefore, bool separatorAfter, int position)
+    internal AddonAction(Addon addon, AddonActionManifest manifest, AddonLocation location, AddonTarget targets, AddonMode modes, AddonClipboardContent clipboard, bool separatorBefore, bool separatorAfter, int position)
     {
         Addon = addon;
         Id = string.IsNullOrWhiteSpace(manifest.Id) ? position.ToString() : manifest.Id.Trim();
@@ -38,8 +43,11 @@ public sealed class AddonAction
         Index = manifest.Index is >= 0 ? manifest.Index : null;
         After = NormalizeAnchor(manifest.After);
         Before = NormalizeAnchor(manifest.Before);
+        Parent = NormalizeAnchor(manifest.Parent);
+        HasFilters = manifest.Targets != null || manifest.Extensions != null || !manifest.Multiple;
         Targets = targets;
         Modes = modes;
+        Clipboard = clipboard;
         Extensions = (manifest.Extensions ?? new())
             .Select(NormalizeExtension)
             .Where(e => e.Length > 0)
@@ -72,6 +80,31 @@ public sealed class AddonAction
         return (Modes & mode) != 0;
     }
 
+    public bool AcceptsClipboard(AddonClipboardContent content)
+    {
+        return (Clipboard & content) != 0;
+    }
+
+    public bool AcceptsPaste(AddonClipboardContent content, IReadOnlyList<string> files)
+    {
+        if ((Clipboard & content & ~AddonClipboardContent.Files) != 0)
+        {
+            return true;
+        }
+
+        if (!content.HasFlag(AddonClipboardContent.Files) || !Clipboard.HasFlag(AddonClipboardContent.Files))
+        {
+            return false;
+        }
+
+        if (!Multiple && files.Count > 1)
+        {
+            return false;
+        }
+
+        return Extensions.Count == 0 || files.All(MatchesExtension);
+    }
+
     public bool Matches(AddonContext context)
     {
         if (!SupportsMode(context.Mode))
@@ -79,7 +112,7 @@ public sealed class AddonAction
             return false;
         }
 
-        if (Location != AddonLocation.ContextMenu)
+        if (Location != AddonLocation.ContextMenu || (IsGroup && !HasFilters))
         {
             return true;
         }
@@ -109,11 +142,11 @@ public sealed class AddonAction
             return false;
         }
 
-        if (Extensions.Count == 0)
-        {
-            return true;
-        }
+        return Extensions.Count == 0 || MatchesExtension(path);
+    }
 
+    private bool MatchesExtension(string path)
+    {
         string name = Path.GetFileName(path);
         return Extensions.Any(e => e == "*" || name.EndsWith(e, StringComparison.OrdinalIgnoreCase));
     }

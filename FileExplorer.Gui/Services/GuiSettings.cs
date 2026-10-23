@@ -23,6 +23,18 @@ public static class GuiSettings
         set => SetString("grid_name_lines", value.ToString());
     }
 
+    public static string? SortColumn
+    {
+        get => GetString("sort_column");
+        set => SetString("sort_column", value);
+    }
+
+    public static bool SortDescending
+    {
+        get => GetBool("sort_descending", false);
+        set => SetBool("sort_descending", value);
+    }
+
     public static string? PrimaryColor
     {
         get => GetString("primary_color");

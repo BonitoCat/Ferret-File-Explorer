@@ -154,6 +154,15 @@
             <Setter Property="Background" Value="Transparent"/>
         </Style>
 
+        <Style Selector="Border.sort-header">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style Selector="Border.sort-header:pointerover TextBlock">
+            <Setter Property="Foreground" Value="#CCCCCC"/>
+        </Style>
+
         <Style Selector="Border.col-resize">
             <Setter Property="Width" Value="8"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -247,12 +256,27 @@
                         <Grid ColumnDefinitions="Auto,Auto,Auto,*">
                             <Panel Grid.Column="0"
                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
-                                <TextBlock Text="{markup:Translate Key=Name}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,8,0"/>
+                                <Border Classes="sort-header"
+                                        Tag="Name"
+                                        Margin="0,0,8,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=Name}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedByName}"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border Tag="Name"
                                         Classes="col-resize"
@@ -264,13 +288,27 @@
 
                             <Panel Grid.Column="1"
                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}">
-                                <TextBlock Text="{markup:Translate Key=Size}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           TextAlignment="Right"
-                                           Margin="0,0,16,0"
-                                           VerticalAlignment="Center"/>
+                                <Border Classes="sort-header"
+                                        Tag="Size"
+                                        Margin="0,0,16,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right"
+                                                Spacing="4">
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedBySize}"/>
+
+                                        <TextBlock Text="{markup:Translate Key=Size}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border Tag="Size"
                                         Classes="col-resize"
@@ -282,12 +320,27 @@
 
                             <Panel Grid.Column="2"
                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}">
-                                <TextBlock Text="{markup:Translate Key=Type}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           Margin="8,0,0,0"
-                                           VerticalAlignment="Center"/>
+                                <Border Classes="sort-header"
+                                        Tag="Type"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=Type}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedByType}"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border Tag="Type"
                                         Classes="col-resize"
@@ -298,12 +351,27 @@
                             </Panel>
 
                             <Panel Grid.Column="3">
-                                <TextBlock Text="{markup:Translate Key=Modified}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           Margin="8,0,0,0"
-                                           VerticalAlignment="Center"/>
+                                <Border Classes="sort-header"
+                                        Tag="Modified"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=Modified}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedByModified}"/>
+                                    </StackPanel>
+                                </Border>
                             </Panel>
                         </Grid>
                     </Border>
@@ -320,14 +388,16 @@
                                           Tag="new"
                                           IsVisible="{Binding CanCreateNew}">
                                     <MenuItem Header="{markup:Translate Key=NewFolder}"
+                                              Tag="new-folder"
                                               Icon="{markup:Icon Key=folder-new}"
                                               Click="OnNewFolderClick"
-                                              InputGesture="Ctrl+Shift+N"/>
+                                              InputGesture="{markup:Keybind Id=NewFolder}"/>
 
                                     <MenuItem Header="{markup:Translate Key=NewFile}"
+                                              Tag="new-file"
                                               Icon="{markup:Icon Key=file-new}"
                                               Click="OnNewFileClick"
-                                              InputGesture="Ctrl+Alt+N"/>
+                                              InputGesture="{markup:Keybind Id=NewFile}"/>
                                 </MenuItem>
 
                                 <Separator IsVisible="{Binding CanCreateNew}"/>
@@ -367,40 +437,40 @@
                                           Icon="{markup:Icon Key=content-cut}"
                                           Tag="cut"
                                           Click="OnMenuCutClick"
-                                          InputGesture="Ctrl+X"
+                                          InputGesture="{markup:Keybind Id=Cut}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Copy}"
                                           Icon="{markup:Icon Key=content-copy}"
                                           Tag="copy"
                                           Click="OnMenuCopyClick"
-                                          InputGesture="Ctrl+C"
+                                          InputGesture="{markup:Keybind Id=Copy}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Paste}"
                                           Icon="{markup:Icon Key=content-paste}"
                                           Tag="paste"
                                           Click="OnMenuPasteClick"
-                                          InputGesture="Ctrl+V"/>
+                                          InputGesture="{markup:Keybind Id=Paste}"/>
 
                                 <MenuItem Header="{markup:Translate Key=PasteAsSymlink}"
                                           Icon="{markup:Icon Key=link}"
                                           Tag="paste-link"
                                           Click="OnMenuPasteAsSymlinkClick"
-                                          InputGesture="Ctrl+Alt+V"/>
+                                          InputGesture="{markup:Keybind Id=PasteSymlink}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Duplicate}"
                                           Icon="{markup:Icon Key=duplicate}"
                                           Tag="duplicate"
                                           Click="OnMenuDuplicateClick"
-                                          InputGesture="Ctrl+D"
+                                          InputGesture="{markup:Keybind Id=Duplicate}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Rename}"
                                           Icon="{markup:Icon Key=edit}"
                                           Tag="rename"
                                           Click="OnMenuRenameClick"
-                                          InputGesture="F2"
+                                          InputGesture="{markup:Keybind Id=Rename}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Compress}"
@@ -421,14 +491,14 @@
                                           Icon="{markup:Icon Key=trash}"
                                           Tag="trash"
                                           Click="OnMenuTrashClick"
-                                          InputGesture="Delete"
+                                          InputGesture="{markup:Keybind Id=Trash}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=DeletePermanent}"
                                           Icon="{markup:Icon Key=delete-forever}"
                                           Tag="delete-permanent"
                                           Click="OnMenuDeletePermanentClick"
-                                          InputGesture="Shift+Delete"
+                                          InputGesture="{markup:Keybind Id=DeletePermanent}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <Separator IsVisible="{Binding CanBookmarkSelection}"/>
@@ -457,7 +527,7 @@
                                           Icon="{markup:Icon Key=info}"
                                           Tag="properties"
                                           Click="OnMenuPropertiesClick"
-                                          InputGesture="Alt+Enter"/>
+                                          InputGesture="{markup:Keybind Id=Properties}"/>
                             </ContextMenu>
                         </Panel.ContextMenu>
 
@@ -803,7 +873,7 @@
                     <MenuItem Header="{markup:Translate Key=NewWindow}"
                               Icon="{markup:Icon Key=window}"
                               Click="OnMenuNewWindowClick"
-                              InputGesture="Ctrl+N"/>
+                              InputGesture="{markup:Keybind Id=NewWindow}"/>
 
                     <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
                               Icon="{markup:Icon Key=shield}"
@@ -812,33 +882,33 @@
                     <MenuItem Header="{markup:Translate Key=ConnectToServer}"
                               Icon="{markup:Icon Key=network}"
                               Click="OnMenuConnectToServerClick"
-                              InputGesture="Ctrl+K"/>
+                              InputGesture="{markup:Keybind Id=ConnectToServer}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=NewFolder}"
                               Icon="{markup:Icon Key=folder-new}"
                               Click="OnNewFolderClick"
-                              InputGesture="Ctrl+Shift+N"/>
+                              InputGesture="{markup:Keybind Id=NewFolder}"/>
                               
                     <MenuItem Header="{markup:Translate Key=NewFile}"
                               Icon="{markup:Icon Key=file-new}"
                               Click="OnNewFileClick"
-                              InputGesture="Ctrl+Alt+N"/>
+                              InputGesture="{markup:Keybind Id=NewFile}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=Properties}"
                               Icon="{markup:Icon Key=info}"
                               Click="OnMenuPropertiesClick"
-                              InputGesture="Alt+Enter"/>
+                              InputGesture="{markup:Keybind Id=Properties}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=Close}"
                               Icon="{markup:Icon Key=close}"
                               Click="OnMenuCloseClick"
-                              InputGesture="Ctrl+Q"/>
+                              InputGesture="{markup:Keybind Id=Quit}"/>
                 </MenuItem>
 
                 <!-- Edit Menu -->
@@ -847,41 +917,41 @@
                     <MenuItem Header="{markup:Translate Key=Cut}"
                               Icon="{markup:Icon Key=content-cut}"
                               Click="OnMenuCutClick"
-                              InputGesture="Ctrl+X"/>
+                              InputGesture="{markup:Keybind Id=Cut}"/>
 
                     <MenuItem Header="{markup:Translate Key=Copy}"
                               Icon="{markup:Icon Key=content-copy}"
                               Click="OnMenuCopyClick"
-                              InputGesture="Ctrl+C"/>
+                              InputGesture="{markup:Keybind Id=Copy}"/>
 
                     <MenuItem x:Name="EditPasteMenuItem"
                               Header="{markup:Translate Key=Paste}"
                               Icon="{markup:Icon Key=content-paste}"
                               Click="OnMenuPasteClick"
-                              InputGesture="Ctrl+V"/>
+                              InputGesture="{markup:Keybind Id=Paste}"/>
 
                     <MenuItem x:Name="EditPasteSymlinkMenuItem"
                               Header="{markup:Translate Key=PasteAsSymlink}"
                               Icon="{markup:Icon Key=link}"
                               Click="OnMenuPasteAsSymlinkClick"
-                              InputGesture="Ctrl+Alt+V"/>
+                              InputGesture="{markup:Keybind Id=PasteSymlink}"/>
 
                     <MenuItem Header="{markup:Translate Key=Duplicate}"
                               Icon="{markup:Icon Key=duplicate}"
                               Click="OnMenuDuplicateClick"
-                              InputGesture="Ctrl+D"/>
+                              InputGesture="{markup:Keybind Id=Duplicate}"/>
 
                     <MenuItem Header="{markup:Translate Key=Rename}"
                               Icon="{markup:Icon Key=edit}"
                               Click="OnMenuRenameClick"
-                              InputGesture="F2"/>
+                              InputGesture="{markup:Keybind Id=Rename}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=SelectAll}"
                               Icon="{markup:Icon Key=select-all}"
                               Click="OnSelectAllClick"
-                              InputGesture="Ctrl+A"/>
+                              InputGesture="{markup:Keybind Id=SelectAll}"/>
                 </MenuItem>
 
                 <!-- View Menu -->
@@ -890,19 +960,19 @@
                     <MenuItem Header="{markup:Translate Key=Reload}"
                               Icon="{markup:Icon Key=refresh}"
                               Click="OnRefreshClick"
-                              InputGesture="F5"/>
+                              InputGesture="{markup:Keybind Id=Refresh}"/>
 
                     <MenuItem Header="{markup:Translate Key=ShowHidden}"
                               Icon="{markup:Icon Key=eye}"
                               Click="OnToggleHiddenClick"
-                              InputGesture="Ctrl+H"/>
+                              InputGesture="{markup:Keybind Id=ToggleHidden}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=DualPane}"
                               Icon="{markup:Icon Key=split-pane}"
                               Click="OnToggleDualPaneClick"
-                              InputGesture="F3"/>
+                              InputGesture="{markup:Keybind Id=DualPane}"/>
 
                     <Separator/>
 
@@ -913,6 +983,53 @@
                     <MenuItem Header="{markup:Translate Key=ListView}"
                               Icon="{markup:Icon Key=view-list}"
                               Click="OnSetListViewClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=SortBy}"
+                              Icon="{markup:Icon Key=sort}">
+                        <MenuItem x:Name="SortByNameMenuItem"
+                                  Header="{markup:Translate Key=Name}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Name"
+                                  Click="OnSortColumnClick"/>
+
+                        <MenuItem x:Name="SortBySizeMenuItem"
+                                  Header="{markup:Translate Key=Size}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Size"
+                                  Click="OnSortColumnClick"/>
+
+                        <MenuItem x:Name="SortByTypeMenuItem"
+                                  Header="{markup:Translate Key=Type}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Type"
+                                  Click="OnSortColumnClick"/>
+
+                        <MenuItem x:Name="SortByModifiedMenuItem"
+                                  Header="{markup:Translate Key=Modified}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Modified"
+                                  Click="OnSortColumnClick"/>
+
+                        <Separator/>
+
+                        <MenuItem x:Name="SortAscendingMenuItem"
+                                  Header="{markup:Translate Key=SortAscending}"
+                                  ToggleType="Radio"
+                                  GroupName="SortDirection"
+                                  Tag="false"
+                                  Click="OnSortDirectionClick"/>
+
+                        <MenuItem x:Name="SortDescendingMenuItem"
+                                  Header="{markup:Translate Key=SortDescending}"
+                                  ToggleType="Radio"
+                                  GroupName="SortDirection"
+                                  Tag="true"
+                                  Click="OnSortDirectionClick"/>
+                    </MenuItem>
 
                     <MenuItem Header="{markup:Translate Key=GridFileNames}"
                               Icon="{markup:Icon Key=view-grid}">
@@ -952,17 +1069,17 @@
                     <MenuItem Header="{markup:Translate Key=Back}"
                               Icon="{markup:Icon Key=arrow-left}"
                               Click="OnBackClick"
-                              InputGesture="Alt+Left"/>
+                              InputGesture="{markup:Keybind Id=Back}"/>
 
                     <MenuItem Header="{markup:Translate Key=Forward}"
                               Icon="{markup:Icon Key=arrow-right}"
                               Click="OnForwardClick"
-                              InputGesture="Alt+Right"/>
+                              InputGesture="{markup:Keybind Id=Forward}"/>
 
                     <MenuItem Header="{markup:Translate Key=Up}"
                               Icon="{markup:Icon Key=arrow-up}"
                               Click="OnUpClick"
-                              InputGesture="Alt+Up"/>
+                              InputGesture="{markup:Keybind Id=Up}"/>
 
                     <Separator/>
 
@@ -977,7 +1094,7 @@
                     <MenuItem Header="{markup:Translate Key=Location}"
                               Icon="{markup:Icon Key=location}"
                               Click="OnTogglePathEditingClick"
-                              InputGesture="Ctrl+L"/>
+                              InputGesture="{markup:Keybind Id=Location}"/>
                 </MenuItem>
 
                 <!-- Addons Menu -->

@@ -1,4 +1,5 @@
 using FileExplorer.Core.Services;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.States;
 
@@ -19,21 +20,8 @@ public class NavigationState
     public void NavigateTo(string path)
     {
         path = Normalize(path);
+        path = ResolveLink(path);
 
-        try
-        {
-            DirectoryInfo dir = new(path);
-            if (dir.Exists && dir.LinkTarget != null)
-            {
-                FileSystemInfo? target = dir.ResolveLinkTarget(true);
-                if (target != null)
-                {
-                    path = target.FullName;
-                }
-            }
-        }
-        catch { }
-        
         if (CurrentPath == path) return;
         
         if (_historyIndex < _history.Count - 1)
@@ -44,6 +32,32 @@ public class NavigationState
         _history.Add(path);
         _historyIndex++;
         CurrentPath = path;
+    }
+
+    private static string ResolveLink(string path)
+    {
+        if (PathManager.IsRemote(path))
+        {
+            return path;
+        }
+
+        try
+        {
+            DirectoryInfo dir = new(path);
+            if (dir.Exists && dir.LinkTarget != null)
+            {
+                FileSystemInfo? target = dir.ResolveLinkTarget(true);
+                if (target != null)
+                {
+                    return target.FullName;
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return path;
     }
 
     public void NavigateUp()

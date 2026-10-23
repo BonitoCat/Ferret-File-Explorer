@@ -82,25 +82,14 @@ public class PlacesService
         List<PlaceInfo> places = new();
         foreach (string bookmark in _bookmarkService.GetBookmarks())
         {
-            string resolved = bookmark;
-            try
-            {
-                FileSystemInfo? target = new DirectoryInfo(bookmark).ResolveLinkTarget(true);
-                if (target != null)
-                {
-                    resolved = target.FullName;
-                }
-            }
-            catch
-            {
-            }
-
+            string resolved = BookmarkService.ResolveTarget(bookmark);
             places.Add(new()
             {
                 Kind = PlaceKind.Bookmarks,
                 Name = PathManager.IsRoot(resolved) ? "File System" : BookmarkService.GetDisplayName(resolved),
                 Path = resolved,
                 IsBookmark = true,
+                IsMounted = !PathManager.IsRemote(resolved) || GvfsPath.IsMounted(resolved),
             });
         }
 

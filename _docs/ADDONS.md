@@ -66,7 +66,7 @@ my-addon/
 |---------------|-----------------------------------------------------------------------------|-----------------|
 | `id`          | Unique id within the addon                                                  | position number |
 | `title`       | Menu text                                                                   | addon name      |
-| `location`    | `context-menu`, `addons-menu` or `path-bar`                                 | `context-menu`  |
+| `location`    | `context-menu`, `addons-menu`, `path-bar` or `paste` (see [paste handlers](#paste-handlers)) | `context-menu`  |
 | `keywords`    | Words that run it from the path bar (`path-bar` only)                       | action `id`     |
 | `targets`     | When to show it: `file`, `folder`, `background`                             | `[file, folder]`|
 | `extensions`  | Only show it for these file types, e.g. `[.png, .jpg]`                      | all files       |
@@ -83,7 +83,9 @@ my-addon/
 | `before`      | Place it before this menu entry                                             |                 |
 | `index`       | Fixed position in the context menu (see placement)                          | end             |
 | `separator`   | `before`, `after`, `both` or `none`                                         | `none`          |
+| `parent`      | Put it into a submenu (see [submenus](#submenus))                           | none            |
 | `modes`       | Where this action is offered (see [modes](#where-addons-run))               | addon `modes`   |
+| `clipboard`   | Paste handlers only: run only when the clipboard has `files`, `image` or `text`; `extensions` and `multiple` then filter the copied files | any content     |
 
 **Targets**
 
@@ -148,6 +150,51 @@ folder-color  share  properties
 - **Without placement:** entries with neither `after`/`before` nor `index` go into their own group above **Properties**.
 - **Counting with `index`:** `index` counts every visible entry, including separators, starting at 0.
 - **Index conflicts:** when two addons want the same spot, the one higher up in **Manage Addons** wins and the other moves down.
+
+### Submenus
+
+With `parent`, an action goes into a submenu instead of the menu itself. The parent is either another action of your addon, which then becomes a submenu, or the built-in **New** submenu:
+
+```yaml
+actions:
+  - id: new-note
+    title: Markdown file…
+    parent: new
+    after: new-file
+    targets: [background, folder]
+
+  - id: markdown
+    title: Markdown
+    icon: icon.svg
+    after: open-with
+    targets: [file]
+    extensions: [.md]
+
+  - id: export
+    title: Export
+    parent: markdown
+
+  - id: export-html
+    title: HTML
+    parent: export
+
+  - id: stats
+    title: Statistics
+    parent: markdown
+    multiple: false
+    separator: before
+```
+
+This gives **Markdown › Export › HTML** and **Markdown › Statistics** in the context menu of `.md` files.
+
+- **Groups:** an action that is the `parent` of another action becomes a submenu. Its `script`, `command` and `args` are ignored, so it doesn't need one. Groups can be nested.
+- **Location:** a group's `location`, `after`, `before`, `index` and `separator` place the submenu itself. Its children always end up in the same menu as the group, so they don't need a `location`. Groups can't be used in the path bar.
+- **Visibility:** each child still uses its own `targets`, `extensions`, `multiple` and `modes`. A group's own filters are checked first, and a group is hidden when none of its children would be shown. In the example, selecting two files only shows **Markdown › Export**, because **Statistics** has `multiple: false`.
+- **Order inside a submenu:** entries appear in the order of `addon.yaml`. `index` and `separator` work inside the submenu, and `after`/`before` can name an entry listed earlier in the same submenu as `<addon-id>/<action-id>`.
+- **New submenu:** `parent: new` adds the entry to the built-in **New** submenu of the context menu. Its built-in entries are called `new-folder` and `new-file`, so you can use them with `after`/`before`.
+- **Own ids first:** if one of your actions is called `new`, `parent: new` means that action. Better give your groups other ids.
+- **Other addons:** `parent: <addon-id>/<action-id>` puts your entry into another addon's submenu. If that addon isn't installed or enabled, your entry is shown in the menu itself instead.
+- **Errors:** an unknown `parent`, a group in the path bar and parents that lead back to the same action are reported in **Addon Problems**.
 
 ### Where addons run
 
@@ -350,6 +397,13 @@ A script can control Ferret by printing these lines to stdout. Ferret ignores al
 | `fe:select <pattern>`| Select matching items in the current folder (see below) |
 | `fe:pick <path>`     | Pickers only: finish the picker with this path    |
 | `fe:clipboard`       | Read the clipboard text (see [clipboard](#clipboard)) |
+| `fe:clipboard-types` | What the clipboard holds: `files`, `image`, `text` |
+| `fe:clipboard-files` | The copied or cut files on the clipboard |
+| `fe:clipboard-text <file>` | Save the exact clipboard text to a file |
+| `fe:clipboard-image <file>` | Save the clipboard image to a PNG file |
+| `fe:pass`            | Paste handlers only: let Ferret paste normally (see [paste handlers](#paste-handlers)) |
+| `fe:field-set <id> \| <value>` | Change a field of the open form (see [live forms](#live-forms)) |
+| `fe:field-select <id> \| …` | Focus a text field and select text in it (see [selecting text](#selecting-text)) |
 | `fe:copy <text>`     | Copy text to the clipboard (`\n` for line breaks) |
 | `fe:copy-files <path> \| …` | Copy files so the user can paste them (like Ctrl+C) |
 | `fe:cut-files <path> \| …`  | Cut files so the user can paste them (like Ctrl+X) |
@@ -453,6 +507,60 @@ readarray -t -d $'\t' values < <(printf '%s' "$reply")
 - **Starting over:** `fe:form` always starts a new, empty form. `fe:field` lines without `fe:form` before them start a form without text.
 - **Mistakes:** a field with an unknown type or a `choice` field without options is skipped and reported in **Addon Problems**. `fe:form-show` without fields is reported too and answered like a cancel.
 
+#### Selecting text
+
+`fe:field-select` puts the cursor into a text field (`text`, `password`, `file` or `folder`) and selects part of its text. Send it after the `fe:field` line and before `fe:form-show`, and the form opens that way. Without it, the form opens with the cursor in the first field.
+
+| Line | Effect |
+|------|--------|
+| `fe:field-select <id>` or `fe:field-select <id> \| all` | Select the whole text |
+| `fe:field-select <id> \| name` | Select the name without its extension, like Ferret's **New File** dialog (`photo` in `photo.png`) |
+| `fe:field-select <id> \| <pos>` | No selection, cursor before character `<pos>` (`0` is the start) |
+| `fe:field-select <id> \| <start> \| <end>` | Select from character `<start>` up to, but not including, `<end>`; the cursor goes to `<end>` |
+
+```bash
+echo "fe:field name | text | File name | photo.png"
+echo "fe:field-select name | name"
+echo "fe:form-show"
+```
+
+- **Positions** count characters and are cut to the length of the text, so `fe:field-select name | 0 | 9999` selects everything after the start.
+- **Live forms:** while a [live form](#live-forms) is open, `fe:field-select` moves the cursor right away, e.g. after `fe:field-set`. It takes the focus away from the field the user is in, so use it sparingly.
+- **Mistakes:** an unknown field, a field that isn't a text field, or positions that aren't numbers are reported in **Addon Problems**.
+
+#### Live forms
+
+`fe:form-show live` keeps your script in the loop while the form is open, so one field can change another. Every time the user changes a field, by mouse or keyboard, Ferret sends a line, and `fe:field-set <id> | <value>` changes a field from your script:
+
+| Line from Ferret | When |
+|------------------|------|
+| `change<TAB><id><TAB><values…>` | the field `<id>` was changed; `<values…>` are all current values in field order, like the answer of a normal form |
+| `submit<TAB><values…>` | the user clicked OK; the form is closed |
+
+Cancel closes stdin, like a normal form. Background services get `event:change <id><TAB><values…>` for changes and the usual `event:reply <values…>` / `event:cancel` at the end.
+
+```bash
+echo "fe:field name | text | File name | photo.png"
+echo "fe:field format | choice | Format | *png,jpg,webp"
+echo "fe:form-show live"
+while IFS= read -r line; do
+    readarray -t -d $'\t' values < <(printf '%s' "$line")
+    case "${values[0]}" in
+        change)
+            [ "${values[1]}" = format ] && echo "fe:field-set name | ${values[2]%.*}.${values[3]}"
+            ;;
+        submit)
+            name="${values[1]}" format="${values[2]}"
+            break
+            ;;
+    esac
+done
+[ -n "$name" ] || exit 0
+```
+
+- **Text fields** send a change for every typed character. Changes made with `fe:field-set` don't send a `change` back, so scripts can't end up in a loop. Avoid setting the field the user is typing in; their next key would fight with your value.
+- **`fe:field-set`** uses the same values as field defaults (`true`/`false`, numbers with a dot, the text of a choice). It only works while a form of the same script is open; otherwise it is reported in **Addon Problems**.
+
 ### Clipboard
 
 `fe:clipboard` (or `fe:paste`) sends the clipboard text back to your script's stdin as a single line. It works on X11 and Wayland without `xclip`, `xsel` or `wl-paste`. An empty clipboard, or one without text, sends an empty line.
@@ -469,6 +577,52 @@ fi
 Line breaks at the end are dropped. Line breaks inside the text arrive as `\n` and backslashes as `\\`, so single-line text without backslashes, like a URL, arrives unchanged. To get the exact text back, decode it with `printf -v clipboard '%b' "$clipboard"` in bash, or `text.replace("\\\\", "\0").replace("\\n", "\n").replace("\0", "\\")` in Python.
 
 `fe:copy <text>` puts text on the clipboard; write `\n` for line breaks. Background services get the clipboard as `event:reply <text>`.
+
+**Typed access.** These commands use Ferret's own clipboard, so they work on X11 and Wayland without extra programs. Each one answers with one line on stdin (`event:reply` for services):
+
+| Line | Answer |
+|------|--------|
+| `fe:clipboard-types` | What the clipboard holds, in this order and separated by spaces: `files`, `image`, `text`, e.g. `files text`. Empty if it holds nothing useful |
+| `fe:clipboard-files` | `copy` or `cut`, then every path, all separated by tabs, e.g. `cut<TAB>/home/you/a.txt<TAB>/home/you/b.txt`. Empty if no files were copied |
+| `fe:clipboard-text <file>` | Writes the clipboard text to `<file>` exactly as it is (UTF-8, line breaks at the end included) and answers `yes`, or `no` if there is no text |
+| `fe:clipboard-image <file>` | Writes the clipboard image to `<file>` as PNG and answers `yes`, or `no` if there is no image |
+
+```bash
+echo "fe:clipboard-files"
+IFS= read -r reply
+readarray -t -d $'\t' parts < <(printf '%s' "$reply")
+mode="${parts[0]}" paths=("${parts[@]:1}")
+```
+
+- **Files** copied or cut in Ferret keep the information whether they were cut. Files copied in other apps are reported as `copy`.
+- **Paths** are relative to the current folder; `~/` is the home folder. Write to `$FE_TEMP_DIR` if you only need the file while the script runs.
+- **Text in a file:** `fe:clipboard-text` is the way to get text with tabs, line breaks or backslashes unchanged. `fe:clipboard` stays the quick way for short, single-line text.
+
+### Paste handlers
+
+An action with `location: paste` runs when the user pastes in a file list, with `Ctrl+V` (or the shortcut set for Paste) or the **Paste** menu entries. Pasting into text fields such as the path bar or the search box is never intercepted. The handler decides what happens:
+
+- **`fe:pass`** lets Ferret paste normally. Ferret pastes right away, even if the script keeps running.
+- **Exiting** without `fe:pass` means the handler took care of the paste, and Ferret does nothing else. This also applies when the script fails; the error is shown as usual.
+
+```yaml
+actions:
+  - id: paste-image
+    location: paste
+    clipboard: [image, files]
+    extensions: [png, jpg, jpeg, webp]
+    multiple: false
+    script: scripts/paste.sh
+```
+
+- **`clipboard`** limits when the handler runs: `files`, `image`, `text`, or a list of them. Without it, the handler runs on every paste. Use it, so Ferret doesn't start your script for pastes you don't care about.
+- **Copied files vs. image data:** `image` means image data, e.g. from **Copy Image** in a browser or a screenshot tool. An image *file* copied in Ferret or another file manager is `files`. To react to both, use `clipboard: [image, files]`.
+- **`extensions`** and **`multiple`** filter copied files: the handler only runs if every copied file has one of the extensions, and with `multiple: false` only if exactly one file was copied. They don't affect `image` and `text`. Copying files also puts their paths on the clipboard as text, so `text` makes a handler run for every file paste.
+- **`FE_CLIPBOARD`** tells the script what the clipboard held when the user pasted, in the format of `fe:clipboard-types` (e.g. `image` or `files text`). `FE_CURRENT_DIR` is the folder to paste into.
+- **Several handlers:** they run one after another in addon order. Each one that passes hands the paste on to the next, and the last pass lets Ferret paste.
+- **Paste handlers** have no menu entry, shortcut or path bar keyword; `terminal`, `confirm`, `targets` and `parent` don't apply. With a handler installed, **Paste** stays clickable even when no files were copied.
+
+A full example is [paste-image](../examples/addons/paste-image): with image data or one copied image file on the clipboard, `Ctrl+V` asks for a file name and format and saves the image into the open folder, converted if needed. Everything else, including cut files, is pasted normally.
 
 ### Working with files
 
@@ -623,6 +777,7 @@ Ferret writes **events** to the service's stdin, one per line:
 | `event:click <id>` | the user clicked the service's [status bar item](#status-bar-items) `<id>` |
 | `event:reply <text>` | the answer to `fe:prompt`, `fe:confirm` (`yes`/`no`), `fe:choose` or a form |
 | `event:cancel` | the user cancelled `fe:prompt`, `fe:choose` or a form |
+| `event:change <id><TAB><values…>` | a field of a [live form](#live-forms) changed |
 | `event:setting <id> <value>` | a [setting](#settings) was changed (one line per changed setting) |
 | `event:close` | Ferret is about to stop the service; exit now |
 
@@ -827,4 +982,4 @@ case "$FE_ACTION_ID" in
 esac
 ```
 
-More examples are in [`examples/addons`](../examples/addons).
+More examples are in [`examples/addons`](../examples/addons). [`markdown-tools`](../examples/addons/markdown-tools) shows submenus: a nested **Markdown › Export** submenu for `.md` files and a **New › Markdown File…** entry with a form.

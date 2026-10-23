@@ -42,6 +42,8 @@ public partial class MainWindow
         public bool IsService { get; init; }
         public Channel<string>? Input { get; set; }
         public AddonPendingForm? PendingForm { get; set; }
+        public AddonFormDialog? ActiveForm { get; set; }
+        public TaskCompletionSource<bool>? PasteDecision { get; set; }
         public TaskCompletionSource<int> Exited { get; } = new();
 
         public string AddonName => Addon.GetName(LocalizationService.Instance.LanguageCode);
@@ -54,7 +56,6 @@ public partial class MainWindow
         }
     }
 
-    private readonly Dictionary<string, KeyGesture?> _addonGestures = new();
     private readonly HashSet<string> _loadedAddons = new(StringComparer.Ordinal);
     private bool _isAddonHookHost;
     private bool _addonHooksReady;
@@ -256,8 +257,9 @@ public partial class MainWindow
     {
         RemoveAddonItems(AddonsMenuItem.Items);
 
-        List<AddonAction> actions = AddonService.Instance.GetActions(AddonLocation.AddonsMenu, CurrentAddonMode);
-        if (actions.Count == 0)
+        AddonMenuTree tree = new(AddonService.Instance.GetActions(AddonLocation.AddonsMenu, CurrentAddonMode), null);
+        List<AddonAction> roots = tree.GetChildren(null);
+        if (roots.Count == 0)
         {
             return;
         }
@@ -265,11 +267,11 @@ public partial class MainWindow
         AddonsMenuItem.Items.Add(CreateAddonSeparator());
 
         string language = LocalizationService.Instance.LanguageCode;
-        foreach (IGrouping<Addon, AddonAction> group in actions.GroupBy(a => a.Addon))
+        foreach (IGrouping<Addon, AddonAction> group in roots.GroupBy(a => a.Addon))
         {
             if (group.Count() == 1)
             {
-                AddItems(AddonsMenuItem.Items, WrapWithSeparators(group.First(), CreateAddonMenuItem(group.First(), CreateAddonContext)));
+                AddItems(AddonsMenuItem.Items, WrapWithSeparators(group.First(), CreateAddonTreeItem(group.First(), tree, CreateAddonContext, false)));
                 continue;
             }
 
@@ -278,7 +280,7 @@ public partial class MainWindow
             SetAddonIcon(submenu, group.Key.IconPath);
             foreach (AddonAction action in group)
             {
-                AddItems(submenu.Items, WrapWithSeparators(action, CreateAddonMenuItem(action, CreateAddonContext)));
+                AddItems(submenu.Items, WrapWithSeparators(action, CreateAddonTreeItem(action, tree, CreateAddonContext, false)));
             }
 
             CollapseAddonSeparators(submenu.Items);
@@ -293,7 +295,57 @@ public partial class MainWindow
         RemoveAddonItems(menu.Items);
 
         AddonContext context = CreateAddonContext();
-        List<AddonAction> actions = AddonService.Instance.GetActions(AddonLocation.ContextMenu, context);
+        AddonMenuTree tree = new(AddonService.Instance.GetActions(AddonLocation.ContextMenu, context.Mode), context);
+        Func<AddonAction, MenuItem> create = action => CreateAddonTreeItem(action, tree, () => context, true);
+        PlaceAddonItems(menu.Items, tree.GetChildren(null), create);
+
+        foreach (string parent in tree.GetBuiltInParents())
+        {
+            MenuItem? builtIn = menu.Items
+                .OfType<MenuItem>()
+                .FirstOrDefault(m => !IsAddonControl(m) && m.ItemsSource == null && m.Tag is string tag && string.Equals(tag, parent, StringComparison.OrdinalIgnoreCase));
+            if (builtIn == null)
+            {
+                continue;
+            }
+
+            PlaceAddonItems(builtIn.Items, tree.GetChildren(parent), create);
+        }
+    }
+
+    private MenuItem CreateAddonTreeItem(AddonAction action, AddonMenuTree tree, Func<AddonContext> contextFactory, bool usePlacement)
+    {
+        if (!action.IsGroup)
+        {
+            return CreateAddonMenuItem(action, contextFactory);
+        }
+
+        MenuItem group = new()
+        {
+            Header = action.GetTitle(LocalizationService.Instance.LanguageCode),
+            Tag = action.Key,
+        };
+        group.Classes.Add(AddonItemClass);
+        SetAddonIcon(group, action.IconPath);
+
+        List<AddonAction> children = tree.GetChildren(action.Key);
+        if (usePlacement)
+        {
+            PlaceAddonItems(group.Items, children, child => CreateAddonTreeItem(child, tree, contextFactory, true));
+            return group;
+        }
+
+        foreach (AddonAction child in children)
+        {
+            AddItems(group.Items, WrapWithSeparators(child, CreateAddonTreeItem(child, tree, contextFactory, false)));
+        }
+
+        CollapseAddonSeparators(group.Items);
+        return group;
+    }
+
+    private static void PlaceAddonItems(ItemCollection items, List<AddonAction> actions, Func<AddonAction, MenuItem> create)
+    {
         if (actions.Count == 0)
         {
             return;
@@ -303,26 +355,26 @@ public partial class MainWindow
         Dictionary<Control, Control> lastAfter = new();
         foreach (AddonAction action in actions)
         {
-            Control? target = FindMenuAnchor(menu.Items, action.After ?? action.Before);
+            Control? target = FindMenuAnchor(items, action.After ?? action.Before);
             if (target == null)
             {
                 indexed.Add(action);
                 continue;
             }
 
-            List<Control> unit = WrapWithSeparators(action, CreateAddonMenuItem(action, () => context));
+            List<Control> unit = WrapWithSeparators(action, create(action));
             if (action.After != null)
             {
                 Control previous = lastAfter.GetValueOrDefault(target, target);
-                InsertItems(menu.Items, menu.Items.IndexOf(previous) + 1, unit);
+                InsertItems(items, items.IndexOf(previous) + 1, unit);
                 lastAfter[target] = unit[^1];
                 continue;
             }
 
-            InsertItems(menu.Items, menu.Items.IndexOf(target), unit);
+            InsertItems(items, items.IndexOf(target), unit);
         }
 
-        List<Control> anchors = menu.Items
+        List<Control> anchors = items
             .OfType<Control>()
             .Where(c => c.IsVisible)
             .ToList();
@@ -330,7 +382,7 @@ public partial class MainWindow
         List<(int? Index, Control Item)> inserts = new();
         foreach (AddonAction action in indexed)
         {
-            MenuItem item = CreateAddonMenuItem(action, () => context);
+            MenuItem item = create(action);
             units[item] = WrapWithSeparators(action, item);
             inserts.Add((action.Index, item));
         }
@@ -352,11 +404,11 @@ public partial class MainWindow
                 continue;
             }
 
-            InsertItems(menu.Items, menu.Items.IndexOf(anchor), unit);
+            InsertItems(items, items.IndexOf(anchor), unit);
         }
 
-        InsertTrailingGroup(menu.Items, trailing);
-        CollapseAddonSeparators(menu.Items);
+        InsertTrailingGroup(items, trailing);
+        CollapseAddonSeparators(items);
     }
 
     private static Control? FindMenuAnchor(ItemCollection items, string? id)
@@ -467,6 +519,11 @@ public partial class MainWindow
         {
             items.Remove(control);
         }
+
+        foreach (MenuItem builtIn in items.OfType<MenuItem>().Where(m => m.ItemsSource == null && m.Items.Count > 0))
+        {
+            RemoveAddonItems(builtIn.Items);
+        }
     }
 
     private static Separator CreateAddonSeparator()
@@ -512,30 +569,9 @@ public partial class MainWindow
         };
     }
 
-    private KeyGesture? GetAddonGesture(AddonAction action)
+    private static KeyGesture? GetAddonGesture(AddonAction action)
     {
-        if (action.Shortcut == null)
-        {
-            return null;
-        }
-
-        if (_addonGestures.TryGetValue(action.Shortcut, out KeyGesture? cached))
-        {
-            return cached;
-        }
-
-        KeyGesture? gesture = null;
-        try
-        {
-            gesture = KeyGesture.Parse(action.Shortcut);
-        }
-        catch (Exception ex) when (ex is ArgumentException or FormatException)
-        {
-            Logger.LogW($"Invalid shortcut '{action.Shortcut}' in addon action {action.Key}");
-        }
-
-        _addonGestures[action.Shortcut] = gesture;
-        return gesture;
+        return KeybindService.Instance.Get(action);
     }
 
     private bool TryRunAddonShortcut(KeyEventArgs e)
@@ -643,6 +679,7 @@ public partial class MainWindow
         EndAddonProgress(run);
         SetAddonLoading(run, false);
         run.Input?.Writer.TryComplete();
+        run.PasteDecision?.TrySetResult(false);
         OnAddonServiceExited(run);
         run.Exited.TrySetResult(exitCode);
 
@@ -675,6 +712,7 @@ public partial class MainWindow
                 break;
             case AddonCommandKind.Message:
                 ConfirmDialog dialog = new(run.AddonName, text);
+                dialog.ShowAsInfo();
                 await dialog.ShowDialog<bool?>(this);
                 break;
             case AddonCommandKind.Open:
@@ -700,7 +738,13 @@ public partial class MainWindow
                 AddAddonFormField(run, argument);
                 break;
             case AddonCommandKind.FormShow:
-                await ShowAddonFormAsync(run);
+                await ShowAddonFormAsync(run, argument);
+                break;
+            case AddonCommandKind.FieldSet:
+                SetAddonFormField(run, argument);
+                break;
+            case AddonCommandKind.FieldSelect:
+                SelectAddonFormField(run, argument);
                 break;
             case AddonCommandKind.StatusBar:
                 SetAddonStatusItem(run, argument);
@@ -746,6 +790,21 @@ public partial class MainWindow
                 break;
             case AddonCommandKind.Clipboard:
                 await ReplyAddonClipboardAsync(run);
+                break;
+            case AddonCommandKind.ClipboardTypes:
+                await ReplyAddonClipboardTypesAsync(run);
+                break;
+            case AddonCommandKind.ClipboardFiles:
+                await ReplyAddonClipboardFilesAsync(run);
+                break;
+            case AddonCommandKind.ClipboardText:
+                await SaveAddonClipboardTextAsync(run, argument);
+                break;
+            case AddonCommandKind.ClipboardImage:
+                await SaveAddonClipboardImageAsync(run, argument);
+                break;
+            case AddonCommandKind.Pass:
+                PassAddonPaste(run);
                 break;
             case AddonCommandKind.Copy:
                 await CopyFromAddonAsync(command.Argument);

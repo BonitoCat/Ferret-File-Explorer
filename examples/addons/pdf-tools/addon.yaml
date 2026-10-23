@@ -19,32 +19,28 @@ settings:
     default: 150
 
 actions:
-  - id: merge
-    title: $Merge
+  - id: pdf
+    title: $AddonName
+    icon: icon.svg
     location: context-menu
     after: compress
     targets: [file]
     extensions: [.pdf]
 
+  - id: merge
+    title: $Merge
+    parent: pdf
+
   - id: compress
     title: $Compress
-    location: context-menu
-    after: pdf-tools/merge
-    targets: [file]
-    extensions: [.pdf]
+    parent: pdf
 
   - id: extract
     title: $Extract
-    location: context-menu
-    after: pdf-tools/compress
-    targets: [file]
+    parent: pdf
     multiple: false
-    extensions: [.pdf]
 
   - id: split
     title: $Split
-    location: context-menu
-    after: pdf-tools/extract
-    targets: [file]
+    parent: pdf
     multiple: false
-    extensions: [.pdf]
