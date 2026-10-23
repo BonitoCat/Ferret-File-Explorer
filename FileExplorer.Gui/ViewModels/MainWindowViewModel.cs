@@ -2495,6 +2495,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 return;
             }
 
+            if (PickerMode == PickerMode.File && PickerOptions?.AllowMultiple == true)
+            {
+                ConfirmCurrentPicker();
+                return;
+            }
+
             if (PickerMode == PickerMode.File)
             {
                 PickerCompleted?.Invoke(FilePickerResult.Selected(item.FullPath));
