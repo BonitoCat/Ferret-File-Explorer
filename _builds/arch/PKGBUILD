@@ -3,12 +3,26 @@ pkgname=ferret
 # Arch forbids hyphens; keep prereleases ordered before the final release.
 pkgver=${FERRET_VERSION/-/}
 pkgver=${pkgver//-/.}
-pkgrel=1
+pkgrel=2
 pkgdesc='Advanced terminal and desktop file explorer (CLI + GUI)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/BonitoCat/Ferret-File-Explorer'
 license=('MIT')
-depends=('glibc' 'gcc-libs' 'zlib' 'openssl' 'icu' 'file' 'wl-clipboard' 'xclip')
+depends=(
+    # Native dependencies of the bundled .NET runtime and HTTPS requests.
+    'glibc' 'gcc-libs' 'zlib' 'openssl' 'icu' 'krb5' 'libunwind' 'ca-certificates'
+    # File metadata, associations, clipboard, shell commands and CLI tools.
+    'bash' 'coreutils' 'util-linux' 'file' 'glib2' 'shared-mime-info' 'xdg-utils'
+    'wl-clipboard' 'xclip' 'which' 'nano' 'sudo'
+    # GIO remote filesystems, SMB, WebDAV, discovery, and the SFTP client.
+    'gvfs' 'gvfs-smb' 'gvfs-dnssd' 'gvfs-wsdd' 'openssh'
+    # Removable drives, elevated file operations and saved credentials.
+    'udisks2' 'polkit' 'libsecret'
+    # All compression formats exposed by ArchiveService.
+    '7zip' 'tar' 'gzip' 'bzip2' 'xz' 'zstd'
+    # Desktop keyring, notifications, local SMB sharing and application launchers.
+    'org.freedesktop.secrets' 'libnotify' 'samba' 'iproute2' 'nemo' 'xterm'
+)
 provides=('ferret-cli')
 conflicts=('ferret-headless')
 # Stripping a .NET single-file executable can damage its embedded payload.
@@ -18,8 +32,19 @@ if [[ $FERRET_VARIANT == headless ]]; then
     pkgname=ferret-headless
     pkgdesc='Advanced terminal file explorer (Headless / TUI only)'
     conflicts=('ferret')
+    depends+=('gtk3')
 else
-    depends+=('libx11' 'libice' 'libsm' 'fontconfig')
+    depends+=(
+        # Avalonia/X11, native drag feedback, GTK integration and font rendering.
+        'libx11' 'libice' 'libsm' 'libxext' 'libxcursor' 'libxrandr' 'libxfixes' 'libxi'
+        'fontconfig' 'freetype2' 'ttf-dejavu' 'libglvnd' 'gtk3'
+        # The included ferret-portal backend is activated by this portal broker.
+        'xdg-desktop-portal'
+    )
+    depends+=(
+        # Video/PDF thumbnails and additional device and remote filesystem backends.
+        'ffmpegthumbnailer' 'poppler' 'gvfs-mtp' 'gvfs-gphoto2' 'gvfs-afc' 'gvfs-nfs'
+    )
 fi
 
 package() {
