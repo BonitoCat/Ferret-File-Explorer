@@ -55,5 +55,6 @@ nunit-*.xml
 
 # Rider
 .idea
+*.DotSettings.user
 _builds/fe-linux-x64/usr/local/bin/
 _builds/output
