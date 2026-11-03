@@ -5,7 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
+using FileExplorer.Core.Addons;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Models;
@@ -29,6 +30,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly FileSystemService _fileService = new();
     private readonly FileOperationService _operationService = new();
+    private FileUndoService? _undoHistory;
     private readonly FileExecutionService _executionService = new();
     private readonly BookmarkService _bookmarkService = new();
     private readonly NetworkService _networkService = new();
@@ -37,32 +39,30 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private string _searchQuery = "";
     private bool _showHiddenFiles = true;
+    private int _gridNameLines = NormalizeGridNameLines(GuiSettings.GridNameLines);
+    private FileItemComparer _sortComparer = new(Enum.TryParse(GuiSettings.SortColumn, out SortColumn column) ? column : SortColumn.Name, GuiSettings.SortDescending);
     private string _statusText = "";
+    private DateTime _statusHoldUntil;
     private bool _isGridView = true;
     private bool _isDualPane;
+    private bool _isTriplePane;
     private double _colNameWidth = 260;
-    private double _colSizeWidth = 110;
-    private double _colTypeWidth = 110;
-    private double _colModifiedWidth = 140;
     public event Action<string>? ScriptOpenRequested;
     public event Action<NetworkConnectionInfo>? NetworkLoginRequested;
     public event Action<PaneViewModel, string, bool>? NetworkServerLoginRequested;
     public event Action<string>? AccessDenied;
     public event Action<string>? DirectoryAccessDenied;
+    public event Action<string>? BrokenLinkOpened;
     public event Action<string, IReadOnlyList<string>>? TransferCompleted;
+
+    public FileUndoService UndoHistory => _undoHistory ??= new(_operationService);
     public Func<TransferConflict, Task<ConflictResolution>>? ConflictResolver { get; set; }
+    public Func<string, Task<bool>>? ElevationConfirm { get; set; }
     private bool _isPathEditing;
     private PaneViewModel _activePane;
-    private CancellationTokenSource? _operationCts;
-
-    private bool _isOperationInProgress;
-    private string _operationTitle = "";
-    private double _operationPercent;
-    private string _operationItemsProgress = "";
-    private string _operationSpeedAndEta = "";
-    private string _operationCurrentFileName = "";
-    private string _operationIconSvg = "";
-    private IImage? _operationIcon;
+    private OperationProgressViewModel? _selectedOperation;
+    private int _externalLoadingCount;
+    private int _addonErrorCount;
 
 
     public bool IsGridView
@@ -95,78 +95,151 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _colNameWidth, value);
     }
 
+    public ListColumns Columns { get; } = new();
+
     public double ColSizeWidth
     {
-        get => _colSizeWidth;
-        set => SetProperty(ref _colSizeWidth, value);
+        get => Columns.Size.Width;
+        set => Columns.Size.Width = value;
     }
 
     public double ColTypeWidth
     {
-        get => _colTypeWidth;
-        set => SetProperty(ref _colTypeWidth, value);
+        get => Columns.Type.Width;
+        set => Columns.Type.Width = value;
     }
 
     public double ColModifiedWidth
     {
-        get => _colModifiedWidth;
-        set => SetProperty(ref _colModifiedWidth, value);
+        get => Columns.Modified.Width;
+        set => Columns.Modified.Width = value;
     }
 
-    public bool IsOperationInProgress
+    public ObservableCollection<OperationProgressViewModel> Operations { get; } = new();
+
+    public ObservableCollection<AddonStatusItemViewModel> AddonStatusItems { get; } = new();
+
+    public OperationProgressViewModel? SelectedOperation
     {
-        get => _isOperationInProgress;
-        set => SetProperty(ref _isOperationInProgress, value);
+        get => _selectedOperation;
+        set
+        {
+            if (!SetProperty(ref _selectedOperation, value))
+            {
+                return;
+            }
+
+            foreach (OperationProgressViewModel operation in Operations)
+            {
+                operation.IsSelected = operation == value;
+            }
+        }
     }
 
-    public string OperationTitle
+    public bool IsOperationInProgress => Operations.Count > 0;
+
+    public bool HasMultipleOperations => Operations.Count > 1;
+
+    public string OperationPosition => SelectedOperation == null ? "" : $"{Operations.IndexOf(SelectedOperation) + 1} / {Operations.Count}";
+
+    public int AddonErrorCount
     {
-        get => _operationTitle;
-        set => SetProperty(ref _operationTitle, value);
+        get => _addonErrorCount;
+        set
+        {
+            if (SetProperty(ref _addonErrorCount, value))
+            {
+                OnPropertyChanged(nameof(HasAddonErrors));
+            }
+        }
     }
 
-    public double OperationPercent
+    public bool HasAddonErrors => AddonErrorCount > 0;
+
+    public void AddOperation(OperationProgressViewModel operation)
     {
-        get => _operationPercent;
-        set => SetProperty(ref _operationPercent, value);
+        Operations.Add(operation);
+        SelectedOperation = operation;
+        NotifyOperationsChanged();
     }
 
-    public string OperationItemsProgress
+    public void RemoveOperation(OperationProgressViewModel operation)
     {
-        get => _operationItemsProgress;
-        set => SetProperty(ref _operationItemsProgress, value);
+        int index = Operations.IndexOf(operation);
+        if (index < 0)
+        {
+            return;
+        }
+
+        Operations.RemoveAt(index);
+        if (SelectedOperation == operation)
+        {
+            SelectedOperation = Operations.Count == 0 ? null : Operations[Math.Min(index, Operations.Count - 1)];
+        }
+
+        NotifyOperationsChanged();
     }
 
-    public string OperationSpeedAndEta
+    public void CycleOperation(int offset)
     {
-        get => _operationSpeedAndEta;
-        set => SetProperty(ref _operationSpeedAndEta, value);
+        if (Operations.Count == 0)
+        {
+            return;
+        }
+
+        int index = SelectedOperation == null ? 0 : Operations.IndexOf(SelectedOperation);
+        SelectedOperation = Operations[((index + offset) % Operations.Count + Operations.Count) % Operations.Count];
+        OnPropertyChanged(nameof(OperationPosition));
     }
 
-    public string OperationCurrentFileName
+    public void SelectOperation(OperationProgressViewModel operation)
     {
-        get => _operationCurrentFileName;
-        set => SetProperty(ref _operationCurrentFileName, value);
+        if (!Operations.Contains(operation))
+        {
+            return;
+        }
+
+        SelectedOperation = operation;
+        OnPropertyChanged(nameof(OperationPosition));
     }
 
-    public string OperationIconSvg
+    public void SetExternalLoading(bool loading)
     {
-        get => _operationIconSvg;
-        set => SetProperty(ref _operationIconSvg, value);
+        _externalLoadingCount = Math.Max(0, _externalLoadingCount + (loading ? 1 : -1));
+        foreach (PaneViewModel pane in Panes)
+        {
+            pane.IsExternalLoading = _externalLoadingCount > 0;
+        }
     }
 
-    public IImage? OperationIcon
+    private void NotifyOperationsChanged()
     {
-        get => _operationIcon;
-        set => SetProperty(ref _operationIcon, value);
+        OnPropertyChanged(nameof(IsOperationInProgress));
+        OnPropertyChanged(nameof(HasMultipleOperations));
+        OnPropertyChanged(nameof(OperationPosition));
     }
 
     public PaneViewModel Pane1 { get; }
     public PaneViewModel Pane2 { get; }
-    public IEnumerable<PaneViewModel> Panes => [Pane1, Pane2];
+    public PaneViewModel Pane3 { get; }
+    public IEnumerable<PaneViewModel> Panes => [Pane1, Pane2, Pane3];
+
+    public IReadOnlyList<PaneViewModel> VisiblePanes
+    {
+        get
+        {
+            if (IsTriplePane)
+            {
+                return [Pane1, Pane2, Pane3];
+            }
+
+            return IsDualPane ? [Pane1, Pane2] : [Pane1];
+        }
+    }
 
     private static readonly TimeSpan TransferSettleTimeout = TimeSpan.FromMinutes(10);
-    public IEnumerable<FileItemViewModel> AllItems => Pane1.Items.Concat(Pane2.Items);
+    private static readonly TimeSpan StatusMessageHold = TimeSpan.FromSeconds(4);
+    public IEnumerable<FileItemViewModel> AllItems => Pane1.Items.Concat(Pane2.Items).Concat(Pane3.Items);
 
     public PaneViewModel ActivePane
     {
@@ -203,6 +276,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             if (!value)
             {
+                IsTriplePane = false;
                 ActivePane = Pane1;
                 Pane2.Close();
             }
@@ -210,6 +284,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _isDualPane = value;
             OnPropertyChanged(nameof(IsDualPane));
             OnPropertyChanged(nameof(SecondaryPaneMinWidth));
+            OnPropertyChanged(nameof(CanAddPane));
 
             if (value && !Pane2.IsOpen)
             {
@@ -219,6 +294,42 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     public double SecondaryPaneMinWidth => IsDualPane ? 200 : 0;
+
+    public bool IsTriplePane
+    {
+        get => _isTriplePane;
+        private set
+        {
+            if (_isTriplePane == value)
+            {
+                return;
+            }
+
+            if (!value)
+            {
+                if (ActivePane == Pane3)
+                {
+                    ActivePane = Pane2;
+                }
+
+                Pane3.Close();
+            }
+
+            _isTriplePane = value;
+            OnPropertyChanged(nameof(IsTriplePane));
+            OnPropertyChanged(nameof(TertiaryPaneMinWidth));
+            OnPropertyChanged(nameof(CanAddPane));
+
+            if (value && !Pane3.IsOpen)
+            {
+                Pane3.NavigateTo(ActivePane.CurrentPath);
+            }
+        }
+    }
+
+    public double TertiaryPaneMinWidth => IsTriplePane ? 200 : 0;
+
+    public bool CanAddPane => !IsTriplePane;
 
     public bool IsPathEditing
     {
@@ -243,6 +354,28 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public ObservableCollection<BreadcrumbItem> Breadcrumbs { get; } = new();
 
     public string CurrentPath => ActivePane.CurrentPath;
+
+    private const string AppTitle = "Ferret";
+
+    public string CurrentLocationName
+    {
+        get
+        {
+            string path = CurrentPath;
+            if (string.IsNullOrEmpty(path))
+            {
+                return AppTitle;
+            }
+
+            if (PathManager.IsSameOrAncestor(LocationResolver.TrashFilesDir, path))
+            {
+                return LocalizationService.Get("Trash");
+            }
+
+            string? name = Breadcrumbs.FirstOrDefault(c => c.IsCurrent)?.Name ?? BuildBreadcrumbs(path).LastOrDefault()?.Name;
+            return string.IsNullOrWhiteSpace(name) ? AppTitle : name;
+        }
+    }
 
     public string SearchQuery
     {
@@ -269,10 +402,72 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
+    public int GridNameLines
+    {
+        get => _gridNameLines;
+        set
+        {
+            if (SetProperty(ref _gridNameLines, NormalizeGridNameLines(value)))
+            {
+                GuiSettings.GridNameLines = _gridNameLines;
+            }
+        }
+    }
+
+    public SortColumn SortColumn => _sortComparer.Column;
+    public bool SortDescending => _sortComparer.Descending;
+    public bool IsSortedByName => SortColumn == SortColumn.Name;
+    public bool IsSortedBySize => SortColumn == SortColumn.Size;
+    public bool IsSortedByType => SortColumn == SortColumn.Type;
+    public bool IsSortedByModified => SortColumn == SortColumn.Modified;
+    public IImage? SortArrowIcon => IconService.Get(SortDescending ? "arrow-down" : "arrow-up");
+
+    public void ToggleSort(SortColumn column)
+    {
+        SetSort(column, column == SortColumn && !SortDescending);
+    }
+
+    public void SetSort(SortColumn column, bool descending)
+    {
+        if (column == SortColumn && descending == SortDescending)
+        {
+            return;
+        }
+
+        _sortComparer = new(column, descending);
+        GuiSettings.SortColumn = column.ToString();
+        GuiSettings.SortDescending = descending;
+        Logger.LogI($"Sorting by {column} ({(descending ? "descending" : "ascending")})");
+
+        OnPropertyChanged(nameof(SortColumn));
+        OnPropertyChanged(nameof(SortDescending));
+        OnPropertyChanged(nameof(IsSortedByName));
+        OnPropertyChanged(nameof(IsSortedBySize));
+        OnPropertyChanged(nameof(IsSortedByType));
+        OnPropertyChanged(nameof(IsSortedByModified));
+        OnPropertyChanged(nameof(SortArrowIcon));
+
+        foreach (PaneViewModel pane in Panes)
+        {
+            pane.ApplySort(_sortComparer);
+        }
+    }
+
+    private static int NormalizeGridNameLines(int lines)
+    {
+        return lines is 0 or 2 or 3 ? lines : 3;
+    }
+
     public string StatusText
     {
         get => _statusText;
         set => SetProperty(ref _statusText, value);
+    }
+
+    public void ShowStatusMessage(string text)
+    {
+        _statusHoldUntil = DateTime.UtcNow + StatusMessageHold;
+        StatusText = text;
     }
 
     public bool CanGoBack => ActivePane.CanGoBack;
@@ -351,6 +546,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Pane1 = CreatePane();
         Pane2 = CreatePane();
+        Pane3 = CreatePane();
         _activePane = Pane1;
         Pane1.IsActive = true;
 
@@ -397,6 +593,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private PaneViewModel CreatePane()
     {
         PaneViewModel pane = new(_fileService, () => ShowHiddenFiles);
+        pane.ApplySort(_sortComparer);
         if (PickerOptions?.Filters.Count > 0)
         {
             pane.FileFilter = MatchesPickerFilter;
@@ -445,7 +642,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        StatusText = LocalizationService.Format("NetworkBrowseFailed", error);
+        StatusText = LocalizationService.Format(NetworkBrowseService.IsBrowseLocation(pane.CurrentPath) ? "NetworkBrowseFailed" : "FolderLoadFailed", error);
     }
 
     private void OnPaneContentChanged(PaneViewModel pane)
@@ -486,13 +683,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     {
         string current = CurrentPath;
         string? trail = ActivePane.BreadcrumbTrail;
-        if (trail == null || !IsSameOrAncestor(current, trail) || !Directory.Exists(trail))
+        if (trail == null || !PathManager.IsSameOrAncestor(current, trail) || !(PathManager.IsRemote(trail) || Directory.Exists(trail)))
         {
             trail = current;
         }
 
         List<BreadcrumbItem> crumbs = BuildBreadcrumbs(trail);
-        if (!crumbs.Any(c => IsSamePath(c.FullPath, current)))
+        if (!crumbs.Any(c => PathManager.AreEqual(c.FullPath, current)))
         {
             trail = current;
             crumbs = BuildBreadcrumbs(trail);
@@ -500,7 +697,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         foreach (BreadcrumbItem crumb in crumbs)
         {
-            crumb.IsCurrent = IsSamePath(crumb.FullPath, current);
+            crumb.IsCurrent = PathManager.AreEqual(crumb.FullPath, current);
         }
 
         ActivePane.BreadcrumbTrail = trail;
@@ -510,35 +707,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             Breadcrumbs.Add(crumb);
         }
+
+        OnPropertyChanged(nameof(CurrentLocationName));
     }
 
     private void ResetActiveBreadcrumbTrail()
     {
         ActivePane.BreadcrumbTrail = null;
-    }
-
-    private static bool IsSamePath(string a, string b)
-    {
-        return string.Equals(NormalizeTrailPath(a), NormalizeTrailPath(b), StringComparison.Ordinal);
-    }
-
-    private static bool IsSameOrAncestor(string ancestor, string path)
-    {
-        string normAncestor = NormalizeTrailPath(ancestor);
-        string normPath = NormalizeTrailPath(path);
-        if (normAncestor == normPath)
-        {
-            return true;
-        }
-
-        string prefix = normAncestor == "/" ? "/" : normAncestor + "/";
-        return normPath.StartsWith(prefix, StringComparison.Ordinal);
-    }
-
-    private static string NormalizeTrailPath(string path)
-    {
-        string trimmed = path.TrimEnd('/');
-        return string.IsNullOrEmpty(trimmed) ? "/" : trimmed;
     }
 
     public void SetGridView(bool grid)
@@ -549,19 +724,87 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void ToggleDualPane()
     {
-        if (IsDualPane && ActivePane == Pane2 && Pane2.IsOpen)
+        if (IsDualPane && ActivePane != Pane1 && ActivePane.IsOpen)
         {
-            Pane1.TakeOver(Pane2);
+            Pane1.TakeOver(ActivePane);
         }
 
         IsDualPane = !IsDualPane;
         Logger.LogI($"Toggled dual pane: {IsDualPane}");
     }
 
+    public void OpenInOtherPane(FileItemViewModel item)
+    {
+        if (!item.IsDirectory || TryReportBrokenLink(item))
+        {
+            return;
+        }
+
+        PaneViewModel source = ActivePane;
+        if (!IsDualPane)
+        {
+            Pane2.NavigateTo(item.FullPath);
+            IsDualPane = true;
+            return;
+        }
+
+        IReadOnlyList<PaneViewModel> visible = VisiblePanes;
+        PaneViewModel other = visible[(IndexOfPane(visible, source) + 1) % visible.Count];
+        other.NavigateTo(item.FullPath);
+    }
+
+    private static int IndexOfPane(IReadOnlyList<PaneViewModel> panes, PaneViewModel pane)
+    {
+        for (int i = 0; i < panes.Count; i++)
+        {
+            if (panes[i] == pane)
+            {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+
+    public void AddPane()
+    {
+        if (IsTriplePane)
+        {
+            return;
+        }
+
+        if (!IsDualPane)
+        {
+            IsDualPane = true;
+            Logger.LogI("Added secondary pane");
+            return;
+        }
+
+        IsTriplePane = true;
+        Logger.LogI("Added third pane");
+    }
+
+    public void SwitchToNextPane()
+    {
+        IReadOnlyList<PaneViewModel> visible = VisiblePanes;
+        if (visible.Count < 2)
+        {
+            return;
+        }
+
+        ActivePane = visible[(IndexOfPane(visible, ActivePane) + 1) % visible.Count];
+    }
+
     public void CloseActivePane()
     {
         if (!IsDualPane)
         {
+            return;
+        }
+
+        if (IsTriplePane)
+        {
+            CloseActivePaneOfThree();
             return;
         }
 
@@ -578,13 +821,34 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Logger.LogI("Closed primary pane, promoted secondary pane");
     }
 
+    private void CloseActivePaneOfThree()
+    {
+        if (ActivePane == Pane3 || !Pane3.IsOpen)
+        {
+            IsTriplePane = false;
+            Logger.LogI("Closed third pane");
+            return;
+        }
+
+        if (ActivePane == Pane1)
+        {
+            Pane1.TakeOver(Pane2);
+        }
+
+        Pane2.TakeOver(Pane3);
+        IsTriplePane = false;
+
+        Logger.LogI("Closed pane, shifted remaining panes");
+    }
+
     public void TogglePathEditing()
     {
         IsPathEditing = !IsPathEditing;
     }
 
     private readonly HashSet<PlaceCategory> _collapsedCategories = new();
-    private static readonly PlaceCategory[] DefaultSectionOrder = [PlaceCategory.Places, PlaceCategory.Bookmarks, PlaceCategory.Devices, PlaceCategory.Network];
+    private static readonly PlaceCategory[] DefaultSectionOrder = [PlaceCategory.Places, PlaceCategory.Bookmarks, PlaceCategory.Devices, PlaceCategory.Network, PlaceCategory.Addons];
+    private readonly HashSet<string> _collapsedAddonSections = new(StringComparer.Ordinal);
     private readonly SidebarOrderService _sidebarOrder = new();
     private List<PlaceCategory> _sectionOrder = new(DefaultSectionOrder);
 
@@ -628,16 +892,86 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Logger.LogI($"Moved sidebar section {source} {(insertAbove ? "above" : "below")} {target}");
     }
 
+    public void SetAddonPlaces(IReadOnlyList<AddonPlaceEntry> entries)
+    {
+        List<PlaceItem> items = new();
+        int index = 0;
+        foreach (IGrouping<string, AddonPlaceEntry> section in entries.GroupBy(e => e.SectionKey))
+        {
+            bool isCollapsed = _collapsedAddonSections.Contains(section.Key);
+            items.Add(new PlaceItem
+            {
+                Name = section.First().Section,
+                Path = "",
+                IsHeader = true,
+                Category = PlaceCategory.Addons,
+                SectionKey = section.Key,
+                SortIndex = index++,
+                IsCollapsed = isCollapsed,
+            });
+
+            foreach (AddonPlaceEntry entry in section)
+            {
+                items.Add(new PlaceItem
+                {
+                    Name = entry.Name,
+                    Path = entry.Path,
+                    Icon = entry.Icon,
+                    Category = PlaceCategory.Addons,
+                    SectionKey = section.Key,
+                    SortIndex = index++,
+                    IsVisible = !isCollapsed,
+                });
+            }
+        }
+
+        SyncPlaces(Places
+            .Where(p => p.Category != PlaceCategory.Addons)
+            .Concat(items)
+            .ToList());
+    }
+
+    public void ToggleAddonSectionCollapse(string sectionKey)
+    {
+        if (!_collapsedAddonSections.Remove(sectionKey))
+        {
+            _collapsedAddonSections.Add(sectionKey);
+        }
+
+        bool isCollapsed = _collapsedAddonSections.Contains(sectionKey);
+        foreach (PlaceItem item in Places.Where(p => p.Category == PlaceCategory.Addons && p.SectionKey == sectionKey))
+        {
+            if (item.IsHeader)
+            {
+                item.IsCollapsed = isCollapsed;
+            }
+            else
+            {
+                item.IsVisible = !isCollapsed;
+            }
+        }
+    }
+
+    private int GetPlaceSortIndex(PlaceItem place)
+    {
+        if (place.Category == PlaceCategory.Addons)
+        {
+            return place.SortIndex;
+        }
+
+        return place.IsHeader ? -1 : _sidebarOrder.GetItemIndex((PlaceKind) place.Category, GetPlaceKey(place));
+    }
+
     private void SyncPlaces(List<PlaceItem> target)
     {
-        foreach (IGrouping<PlaceCategory, PlaceItem> group in target.Where(p => !p.IsHeader).GroupBy(p => p.Category))
+        foreach (IGrouping<PlaceCategory, PlaceItem> group in target.Where(p => !p.IsHeader && p.Category != PlaceCategory.Addons).GroupBy(p => p.Category))
         {
             _sidebarOrder.AppendMissing((PlaceKind) group.Key, group.Select(GetPlaceKey));
         }
 
         List<PlaceItem> resolved = target
             .OrderBy(p => _sectionOrder.IndexOf(p.Category))
-            .ThenBy(p => p.IsHeader ? -1 : _sidebarOrder.GetItemIndex((PlaceKind) p.Category, GetPlaceKey(p)))
+            .ThenBy(GetPlaceSortIndex)
             .Select(t => Places.FirstOrDefault(p => IsSamePlace(p, t)) ?? t)
             .ToList();
 
@@ -666,6 +1000,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private static bool IsSamePlace(PlaceItem a, PlaceItem b)
     {
         return a.Category == b.Category
+            && a.SectionKey == b.SectionKey
             && a.IsHeader == b.IsHeader
             && a.Path == b.Path
             && a.Name == b.Name
@@ -865,6 +1200,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void LoadDevicesAndNetworkPlacesAsync()
     {
+        int version = Interlocked.Increment(ref _placesVersion);
         Task.Run(() =>
         {
             List<PlaceItem> extraPlaces = new();
@@ -886,24 +1222,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
                 foreach (string bm in bookmarkList)
                 {
-                    string resolvedPath = bm;
-                    try
-                    {
-                        DirectoryInfo dir = new(bm);
-                        FileSystemInfo? target = dir.ResolveLinkTarget(true);
-                        if (target != null)
-                        {
-                            resolvedPath = target.FullName;
-                        }
-                    }
-                    catch { }
-
+                    string resolvedPath = BookmarkService.ResolveTarget(bm);
                     extraPlaces.Add(new PlaceItem
                     {
-                        Name = resolvedPath == "/" ? LocalizationService.Get("Root") : BookmarkService.GetDisplayName(resolvedPath),
+                        Name = PathManager.IsRoot(resolvedPath) ? LocalizationService.Get("Root") : BookmarkService.GetDisplayName(resolvedPath),
                         Path = resolvedPath,
-                        Icon = IconService.Get("bookmark"),
+                        Icon = IconService.GetLazy("bookmark"),
                         IsBookmark = true,
+                        IsMounted = !PathManager.IsRemote(resolvedPath) || GvfsPath.IsMounted(resolvedPath),
                         Category = PlaceCategory.Bookmarks,
                         IsVisible = !bookmarksCollapsed,
                     });
@@ -986,12 +1312,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     string name = drive.VolumeLabel;
                     if (string.IsNullOrWhiteSpace(name) || name.Contains('/'))
                     {
-                        name = Path.GetFileName(mount.TrimEnd('/'));
+                        name = PathManager.GetName(mount);
                     }
 
                     if (string.IsNullOrWhiteSpace(name) || name.Contains('/'))
                     {
-                        name = Path.GetFileName(drive.Name.TrimEnd('/'));
+                        name = PathManager.GetName(drive.Name);
                     }
 
                     if (string.IsNullOrWhiteSpace(name))
@@ -1003,7 +1329,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     {
                         Name = name,
                         Path = mount,
-                        Icon = IconService.Get("disk"),
+                        Icon = IconService.GetLazy("disk"),
                         Category = PlaceCategory.Devices,
                         IsMounted = true,
                         IsVisible = !devicesCollapsed,
@@ -1012,101 +1338,111 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
             catch { }
 
+            List<PlaceItem> localPlaces = extraPlaces.ToList();
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (version != _placesVersion)
+                {
+                    return;
+                }
+
+                SyncPlaces(Places
+                    .Where(p => p.Category is PlaceCategory.Places or PlaceCategory.Addons)
+                    .Concat(localPlaces)
+                    .Concat(Places.Where(p => p.Category == PlaceCategory.Network))
+                    .ToList());
+            });
+
             List<NetworkBookmark> savedBookmarks = _networkBookmarkService.GetBookmarks();
             List<PlaceItem> networkPlaces = new();
             HashSet<string> matchedBookmarkUris = new(StringComparer.OrdinalIgnoreCase);
 
             try
             {
-                string gvfsDir = $"/run/user/{GetUserId()}/gvfs";
-                if (Directory.Exists(gvfsDir))
+                foreach (string gvfsMount in GvfsPath.GetMountRoots())
                 {
-                    string[] gvfsMounts = Directory.GetDirectories(gvfsDir);
-                    foreach (string gvfsMount in gvfsMounts)
+                    string dirName = Path.GetFileName(gvfsMount);
+                    string displayName = GetGvfsFastName(gvfsMount);
+                    PlaceItem placeItem;
+
+                    if (dirName.StartsWith("mtp:", StringComparison.OrdinalIgnoreCase) ||
+                        dirName.StartsWith("afc:", StringComparison.OrdinalIgnoreCase))
                     {
-                        string dirName = Path.GetFileName(gvfsMount);
-                        string displayName = GetGvfsFastName(gvfsMount);
-                        PlaceItem placeItem;
-
-                        if (dirName.StartsWith("mtp:", StringComparison.OrdinalIgnoreCase) ||
-                            dirName.StartsWith("afc:", StringComparison.OrdinalIgnoreCase))
+                        placeItem = new()
                         {
-                            placeItem = new()
-                            {
-                                Name = displayName,
-                                Path = gvfsMount,
-                                Icon = IconService.Get("phone") ?? IconService.Get("disk"),
-                                Category = PlaceCategory.Devices,
-                                IsVisible = !devicesCollapsed,
-                            };
-                            extraPlaces.Add(placeItem);
-                        }
-                        else if (dirName.StartsWith("gphoto2:", StringComparison.OrdinalIgnoreCase))
-                        {
-                            placeItem = new()
-                            {
-                                Name = displayName,
-                                Path = gvfsMount,
-                                Icon = IconService.Get("camera") ?? IconService.Get("disk"),
-                                Category = PlaceCategory.Devices,
-                                IsVisible = !devicesCollapsed,
-                            };
-                            extraPlaces.Add(placeItem);
-                        }
-                        else if (dirName.StartsWith("cdda:", StringComparison.OrdinalIgnoreCase))
-                        {
-                            placeItem = new()
-                            {
-                                Name = displayName,
-                                Path = gvfsMount,
-                                Icon = IconService.Get("disk"),
-                                Category = PlaceCategory.Devices,
-                                IsVisible = !devicesCollapsed,
-                            };
-                            extraPlaces.Add(placeItem);
-                        }
-                        else
-                        {
-                            NetworkBookmark? matchedBookmark = savedBookmarks.FirstOrDefault(b =>
-                            {
-                                try
-                                {
-                                    Uri u = new(b.Uri);
-                                    return dirName.Contains(u.Host, StringComparison.OrdinalIgnoreCase);
-                                }
-                                catch
-                                {
-                                    return false;
-                                }
-                            });
-
-                            if (matchedBookmark != null)
-                            {
-                                matchedBookmarkUris.Add(matchedBookmark.Uri);
-                            }
-
-                            placeItem = new()
-                            {
-                                Name = matchedBookmark?.Name ?? displayName,
-                                Path = gvfsMount,
-                                RemoteUri = matchedBookmark?.Uri,
-                                Icon = IconService.Get("network"),
-                                Category = PlaceCategory.Network,
-                                IsNetworkBookmark = matchedBookmark != null,
-                                IsMounted = true,
-                            };
-                            networkPlaces.Add(placeItem);
-                        }
-
-                        if (placeItem.IsNetworkBookmark)
-                        {
-                            continue;
-                        }
-
-                        string mountToResolve = gvfsMount;
-                        PlaceItem itemToUpdate = placeItem;
-                        Task.Run(() => ResolveGvfsDisplayNameAsync(mountToResolve, itemToUpdate));
+                            Name = displayName,
+                            Path = gvfsMount,
+                            Icon = IconService.Get("phone") ?? IconService.Get("disk"),
+                            Category = PlaceCategory.Devices,
+                            IsVisible = !devicesCollapsed,
+                        };
+                        extraPlaces.Add(placeItem);
                     }
+                    else if (dirName.StartsWith("gphoto2:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        placeItem = new()
+                        {
+                            Name = displayName,
+                            Path = gvfsMount,
+                            Icon = IconService.Get("camera") ?? IconService.Get("disk"),
+                            Category = PlaceCategory.Devices,
+                            IsVisible = !devicesCollapsed,
+                        };
+                        extraPlaces.Add(placeItem);
+                    }
+                    else if (dirName.StartsWith("cdda:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        placeItem = new()
+                        {
+                            Name = displayName,
+                            Path = gvfsMount,
+                            Icon = IconService.GetLazy("disk"),
+                            Category = PlaceCategory.Devices,
+                            IsVisible = !devicesCollapsed,
+                        };
+                        extraPlaces.Add(placeItem);
+                    }
+                    else
+                    {
+                        NetworkBookmark? matchedBookmark = savedBookmarks.FirstOrDefault(b =>
+                        {
+                            try
+                            {
+                                Uri u = new(b.Uri);
+                                return dirName.Contains(u.Host, StringComparison.OrdinalIgnoreCase);
+                            }
+                            catch
+                            {
+                                return false;
+                            }
+                        });
+
+                        if (matchedBookmark != null)
+                        {
+                            matchedBookmarkUris.Add(matchedBookmark.Uri);
+                        }
+
+                        placeItem = new()
+                        {
+                            Name = matchedBookmark?.Name ?? displayName,
+                            Path = gvfsMount,
+                            RemoteUri = matchedBookmark?.Uri,
+                            Icon = IconService.GetLazy("network"),
+                            Category = PlaceCategory.Network,
+                            IsNetworkBookmark = matchedBookmark != null,
+                            IsMounted = true,
+                        };
+                        networkPlaces.Add(placeItem);
+                    }
+
+                    if (placeItem.IsNetworkBookmark)
+                    {
+                        continue;
+                    }
+
+                    string mountToResolve = gvfsMount;
+                    PlaceItem itemToUpdate = placeItem;
+                    Task.Run(() => ResolveGvfsDisplayNameAsync(mountToResolve, itemToUpdate));
                 }
             }
             catch { }
@@ -1124,7 +1460,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     Name = bm.Name,
                     Path = bm.Uri,
                     RemoteUri = bm.Uri,
-                    Icon = IconService.Get("network"),
+                    Icon = IconService.GetLazy("network"),
                     Category = PlaceCategory.Network,
                     IsNetworkBookmark = true,
                     IsMounted = false,
@@ -1138,7 +1474,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 {
                     Name = LocalizationService.Get("NetworkBrowse"),
                     Path = NetworkBrowseService.NetworkRoot,
-                    Icon = IconService.Get("network"),
+                    Icon = IconService.GetLazy("network"),
                     Category = PlaceCategory.Network,
                     IsMounted = true,
                     IsVisible = !networkCollapsed,
@@ -1162,8 +1498,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             Dispatcher.UIThread.Post(() =>
             {
+                if (version != _placesVersion)
+                {
+                    return;
+                }
+
                 SyncPlaces(Places
-                    .Where(p => p.Category == PlaceCategory.Places)
+                    .Where(p => p.Category is PlaceCategory.Places or PlaceCategory.Addons)
                     .Concat(extraPlaces)
                     .ToList());
                 UpdateActiveBreadcrumbs();
@@ -1172,6 +1513,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     private CancellationTokenSource? _reloadPlacesCts;
+    private int _placesVersion;
     private readonly List<IDisposable> _deviceWatchers = new();
     private Process? _udisksMonitorProcess;
 
@@ -1231,7 +1573,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             seenPaths.Add(mountpoint);
             seenPaths.Add(path);
 
-            string name = !string.IsNullOrWhiteSpace(label) ? label : (!string.IsNullOrWhiteSpace(partlabel) ? partlabel : (!string.IsNullOrWhiteSpace(model) ? model : Path.GetFileName(mountpoint.TrimEnd('/'))));
+            string name = !string.IsNullOrWhiteSpace(label) ? label : (!string.IsNullOrWhiteSpace(partlabel) ? partlabel : (!string.IsNullOrWhiteSpace(model) ? model : PathManager.GetName(mountpoint)));
             if (string.IsNullOrWhiteSpace(name))
             {
                 name = LocalizationService.Get("Drive");
@@ -1242,7 +1584,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 Name = name,
                 Path = mountpoint,
                 DevicePath = path,
-                Icon = IconService.Get("disk"),
+                Icon = IconService.GetLazy("disk"),
                 Category = PlaceCategory.Devices,
                 IsMounted = true,
                 IsVisible = isVisible,
@@ -1384,6 +1726,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         });
     }
 
+    private const string UdisksMonitorScript = "udisksctl monitor & monitor=$!; read _; kill $monitor";
+
     private void StartDeviceMonitoring()
     {
         if (!OperatingSystem.IsLinux())
@@ -1395,7 +1739,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             AddMountRootWatchers("/media");
             AddMountRootWatchers("/run/media");
-            AddDeviceWatcher($"/run/user/{GetUserId()}/gvfs");
+            AddDeviceWatcher(GvfsPath.MountDirectory);
         });
 
         Task.Run(async () =>
@@ -1404,12 +1748,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             {
                 ProcessStartInfo psi = new()
                 {
-                    FileName = "udisksctl",
-                    Arguments = "monitor",
+                    FileName = "sh",
+                    RedirectStandardInput = true,
                     RedirectStandardOutput = true,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                 };
+                psi.ArgumentList.Add("-c");
+                psi.ArgumentList.Add(UdisksMonitorScript);
 
                 _udisksMonitorProcess = new() { StartInfo = psi };
                 _udisksMonitorProcess.Start();
@@ -1572,7 +1918,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void CancelOperation()
     {
-        _operationCts?.Cancel();
+        SelectedOperation?.Cancel();
     }
 
     public void TransferItemsTo(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
@@ -1580,11 +1926,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         _ = TransferItemsToAsync(paths, destinationDirectory, isCopy);
     }
 
-    public async Task TransferItemsToAsync(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
+    public async Task<bool> TransferItemsToAsync(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
     {
         if (string.IsNullOrEmpty(destinationDirectory) || !Directory.Exists(destinationDirectory))
         {
-            return;
+            return false;
         }
 
         string normDest = Path.GetFullPath(destinationDirectory).TrimEnd(Path.DirectorySeparatorChar);
@@ -1619,63 +1965,156 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         if (pathList.Count == 0)
         {
-            return;
+            return false;
         }
 
-        _operationCts?.Cancel();
-        _operationCts = new();
-        CancellationToken token = _operationCts.Token;
+        if (ElevatedFileService.NeedsElevation(destinationDirectory) || (!isCopy && ElevatedFileService.NeedsElevation(pathList)))
+        {
+            return await TransferElevatedAsync(pathList, destinationDirectory, isCopy);
+        }
 
-        string destName = Path.GetFileName(destinationDirectory.TrimEnd('/'));
+        using CancellationTokenSource cts = new();
+        CancellationToken token = cts.Token;
+        bool retryElevated = false;
+
+        string destName = PathManager.GetName(destinationDirectory);
         if (string.IsNullOrEmpty(destName))
         {
             destName = destinationDirectory;
         }
 
         string operation = isCopy ? "Copy" : "Move";
-        OperationTitle = LocalizationService.Format(pathList.Count == 1 ? $"{operation}TitleOne" : $"{operation}TitleMany", pathList.Count, destName);
-        OperationItemsProgress = LocalizationService.Format($"{operation}Progress", 0, pathList.Count);
-        OperationSpeedAndEta = LocalizationService.Get("Calculating");
-        OperationPercent = 0;
-        OperationCurrentFileName = "";
-        OperationIcon = IconService.Get(isCopy ? "copy" : "cut");
-        IsOperationInProgress = true;
+        OperationProgressViewModel progressView = new()
+        {
+            Title = LocalizationService.Format(pathList.Count == 1 ? $"{operation}TitleOne" : $"{operation}TitleMany", pathList.Count, destName),
+            Text = LocalizationService.Format($"{operation}Progress", 0, pathList.Count),
+            Status = LocalizationService.Get("Calculating"),
+            Icon = IconService.Get(isCopy ? "copy" : "cut"),
+            CancelAction = () => cts.Cancel(),
+        };
+        AddOperation(progressView);
 
         Progress<FileTransferProgress> progress = new(p =>
         {
-            OperationPercent = p.Percent;
+            progressView.Value = p.Percent;
             string sizeText = p.TotalBytes > 0
                 ? LocalizationService.Format("TransferSizeProgress", FileUtils.FormatSize(p.TransferredBytes), FileUtils.FormatSize(p.TotalBytes))
                 : "";
-            OperationItemsProgress = LocalizationService.Format($"{operation}Progress", p.TransferredItems, p.TotalItems) + sizeText;
-            OperationSpeedAndEta = $"{FileUtils.FormatSpeed(p.BytesPerSecond)} — {FormatEta(p.EstimatedRemaining)}";
-            OperationCurrentFileName = p.CurrentItemName;
+            progressView.Text = LocalizationService.Format($"{operation}Progress", p.TransferredItems, p.TotalItems) + sizeText;
+            progressView.Status = $"{FileUtils.FormatSpeed(p.BytesPerSecond)} — {FormatEta(p.EstimatedRemaining)}";
+            progressView.Item = p.CurrentItemName;
         });
 
         try
         {
             ClipboardMode mode = isCopy ? ClipboardMode.Copy : ClipboardMode.Cut;
-            await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, progress, token), token);
-            List<string> targets = pathList.Select(p => Path.Combine(destinationDirectory, Path.GetFileName(p.TrimEnd('/')))).ToList();
-            OperationSpeedAndEta = LocalizationService.Get("FinishingTransfer");
-            OperationCurrentFileName = "";
+            List<TransferStep> steps = new();
+            List<string> targets = await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, steps, progress, token), token);
+            RecordTransfer(steps, isCopy);
+            progressView.Status = LocalizationService.Get("FinishingTransfer");
+            progressView.Item = "";
             await WaitForTargetsAsync(targets, token);
             StatusText = LocalizationService.Get($"{operation}Completed");
             TransferCompleted?.Invoke(destinationDirectory, targets);
+            return true;
         }
         catch (OperationCanceledException)
         {
             StatusText = LocalizationService.Get($"{operation}Cancelled");
+            return false;
+        }
+        catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
+        {
+            retryElevated = true;
         }
         catch (Exception ex)
         {
             StatusText = LocalizationService.Format($"{operation}Failed", ex.Message);
+            return false;
         }
         finally
         {
-            IsOperationInProgress = false;
+            progressView.CancelAction = null;
+            RemoveOperation(progressView);
             Refresh();
         }
+
+        return retryElevated && await TransferElevatedAsync(pathList, destinationDirectory, isCopy);
+    }
+
+    private void RecordTransfer(List<TransferStep> steps, bool isCopy)
+    {
+        if (steps.Count == 0 || steps.Any(step => step.ReplaceExisting))
+        {
+            return;
+        }
+
+        if (isCopy)
+        {
+            UndoHistory.Record(FileUndoKind.Copy, steps.Select(step => (step.Target, "")));
+            return;
+        }
+
+        if (steps.All(step => AddonRunner.IsTempPath(step.Source)))
+        {
+            UndoHistory.Record(FileUndoKind.Create, steps.Select(step => (step.Target, "")));
+            return;
+        }
+
+        UndoHistory.Record(FileUndoKind.Move, steps.Select(step => (step.Source, step.Target)));
+    }
+
+    private async Task<bool> TransferElevatedAsync(List<string> paths, string destinationDirectory, bool isCopy)
+    {
+        string operation = isCopy ? "Copy" : "Move";
+        string message = LocalizationService.Format($"Elevate{operation}", DescribeTargets(paths), PathManager.GetName(destinationDirectory));
+        if (!await ConfirmElevationAsync(message))
+        {
+            return false;
+        }
+
+        List<TransferStep> steps;
+        try
+        {
+            steps = await _operationService.PlanTransferAsync(destinationDirectory, isCopy ? ClipboardMode.Copy : ClipboardMode.Cut, paths, ConflictResolver);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = LocalizationService.Get($"{operation}Cancelled");
+            return false;
+        }
+        catch (IOException ex)
+        {
+            StatusText = LocalizationService.Format($"{operation}Failed", ex.Message);
+            return false;
+        }
+
+        ElevatedScript script = new();
+        foreach (TransferStep step in steps)
+        {
+            script.Transfer(step, isCopy);
+        }
+
+        if (!await RunElevatedScriptAsync(script))
+        {
+            return false;
+        }
+
+        foreach (TransferStep step in steps.Where(step => Directory.Exists(step.Target)))
+        {
+            if (isCopy)
+            {
+                FolderColorStore.Copy(step.Source, step.Target);
+            }
+            else
+            {
+                FolderColorStore.Move(step.Source, step.Target);
+            }
+        }
+
+        StatusText = LocalizationService.Get($"{operation}Completed");
+        TransferCompleted?.Invoke(destinationDirectory, steps.Select(step => step.Target).ToList());
+        return true;
     }
 
     private static async Task WaitForTargetsAsync(List<string> targets, CancellationToken token)
@@ -1798,6 +2237,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        if (PathManager.IsRemote(path))
+        {
+            Logger.LogI("Navigated to remote directory");
+            ActivePane.NavigateTo(path);
+            return;
+        }
+
         if (!Directory.Exists(path))
         {
             return;
@@ -1826,7 +2272,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public async Task DismountPlaceAsync(PlaceItem item)
     {
-        if (item.IsHeader || string.IsNullOrEmpty(item.Path) || item.Path == "/")
+        if (item.IsHeader || string.IsNullOrEmpty(item.Path) || PathManager.IsRoot(item.Path))
         {
             return;
         }
@@ -1932,6 +2378,26 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return await _networkService.MountUriAsync(uri, password, cancellationToken);
     }
 
+    public string? FindSavedNetworkUri(string path)
+    {
+        if (!GvfsPath.TryGetMountRoot(path, out string mountRoot) || GvfsPath.MountNameToUri(Path.GetFileName(mountRoot)) is not { } derived)
+        {
+            return null;
+        }
+
+        Uri target = new(derived);
+        return _networkBookmarkService.GetBookmarks()
+            .FirstOrDefault(b => Uri.TryCreate(b.Uri, UriKind.Absolute, out Uri? saved)
+                                 && string.Equals(saved.Scheme, target.Scheme, StringComparison.OrdinalIgnoreCase)
+                                 && string.Equals(saved.Host, target.Host, StringComparison.OrdinalIgnoreCase))
+            ?.Uri;
+    }
+
+    public static bool IsMountableUri(string uri)
+    {
+        return IsNetworkUri(uri);
+    }
+
     private static bool IsNetworkUri(string path)
     {
         return path.StartsWith("sftp://", StringComparison.OrdinalIgnoreCase) ||
@@ -1985,8 +2451,64 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private static Regex GlobToRegex(string glob)
     {
-        string pattern = "^" + Regex.Escape(glob).Replace("\\*", ".*").Replace("\\?", ".") + "$";
-        return new(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        StringBuilder pattern = new("^");
+        for (int i = 0; i < glob.Length; i++)
+        {
+            char c = glob[i];
+            if (c == '*')
+            {
+                pattern.Append(".*");
+                continue;
+            }
+
+            if (c == '?')
+            {
+                pattern.Append('.');
+                continue;
+            }
+
+            int close = c == '[' ? glob.IndexOf(']', i + 1) : -1;
+            if (close <= i + 1)
+            {
+                pattern.Append(Regex.Escape(c.ToString()));
+                continue;
+            }
+
+            string set = glob[(i + 1)..close].Replace("\\", "\\\\").Replace("[", "\\[");
+            if (set.StartsWith('!'))
+            {
+                set = "^" + set[1..];
+            }
+
+            pattern.Append('[').Append(set).Append(']');
+            i = close;
+        }
+
+        pattern.Append('$');
+        return new(pattern.ToString(), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    public async Task<bool> TryCompletePickerAsync(string path)
+    {
+        bool isValid = PickerMode switch
+        {
+            PickerMode.File => File.Exists(path),
+            PickerMode.Folder => Directory.Exists(path),
+            PickerMode.Save => !Directory.Exists(path) && Directory.Exists(Path.GetDirectoryName(path)),
+            _ => false,
+        };
+        if (!isValid)
+        {
+            return false;
+        }
+
+        if (PickerMode == PickerMode.Save && File.Exists(path) && OverwriteConfirmer != null && !await OverwriteConfirmer(path))
+        {
+            return true;
+        }
+
+        PickerCompleted?.Invoke(FilePickerResult.Selected(path));
+        return true;
     }
 
     private async Task ConfirmSaveAsync()
@@ -2128,12 +2650,23 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        if (TryReportBrokenLink(item))
+        {
+            return;
+        }
+
         if (IsPickerMode)
         {
             if (item.IsDirectory)
             {
                 ResetActiveBreadcrumbTrail();
                 NavigateTo(item.FullPath);
+                return;
+            }
+
+            if (PickerMode == PickerMode.File && PickerOptions?.AllowMultiple == true)
+            {
+                ConfirmCurrentPicker();
                 return;
             }
 
@@ -2175,6 +2708,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         _executionService.Execute(item.Entry);
+    }
+
+    private bool TryReportBrokenLink(FileItemViewModel item)
+    {
+        if (!item.IsSymlink || BrokenLinkOpened == null || !FileSystemService.IsBrokenLink(item.FullPath))
+        {
+            return false;
+        }
+
+        Logger.LogI("Opened broken symlink");
+        BrokenLinkOpened.Invoke(item.FullPath);
+        return true;
     }
 
     private static readonly string[] ScriptExtensions = [".sh", ".bash"];
@@ -2233,7 +2778,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             ProcessStartInfo psi = new()
             {
                 FileName = command[0],
-                WorkingDirectory = Path.GetDirectoryName(path) ?? "/",
+                WorkingDirectory = PathManager.GetParent(path),
                 UseShellExecute = false,
             };
             foreach (string arg in command.Skip(1))
@@ -2270,7 +2815,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void RunInTerminal(string path, string[] command)
     {
-        RunInTerminalAt(Path.GetDirectoryName(path) ?? "/", command);
+        RunInTerminalAt(PathManager.GetParent(path), command);
     }
 
     public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment = null)
@@ -2325,6 +2870,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void OpenWith(FileItemViewModel item, string program, bool always)
     {
+        if (TryReportBrokenLink(item))
+        {
+            return;
+        }
+
         if (always && OperatingSystem.IsLinux())
         {
             string path = item.FullPath;
@@ -2357,19 +2907,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        List<string> paths = targets.Select(t => t.FullPath).ToList();
-        try
-        {
-            ClipboardService.WritePaths(ClipboardMode.Copy, paths);
-            ClipboardService.Copy(string.Join(Environment.NewLine, paths));
-            Logger.LogI($"Copied {targets.Count} items to clipboard");
-        }
-        catch { }
-
-        foreach (FileItemViewModel item in AllItems)
-        {
-            item.IsCut = false;
-        }
+        WriteClipboardPaths(ClipboardMode.Copy, targets.Select(t => t.FullPath).ToList());
     }
 
     public void CutSelected(IEnumerable<FileItemViewModel>? selection = null)
@@ -2380,18 +2918,27 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        List<string> paths = targets.Select(t => t.FullPath).ToList();
+        WriteClipboardPaths(ClipboardMode.Cut, targets.Select(t => t.FullPath).ToList());
+    }
+
+    public void WriteClipboardPaths(ClipboardMode mode, IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
         try
         {
-            ClipboardService.WritePaths(ClipboardMode.Cut, paths);
+            ClipboardService.WritePaths(mode, paths);
             ClipboardService.Copy(string.Join(Environment.NewLine, paths));
-            Logger.LogI($"Cut {targets.Count} items to clipboard");
+            Logger.LogI($"{(mode == ClipboardMode.Cut ? "Cut" : "Copied")} {paths.Count} items to clipboard");
         }
         catch { }
 
         foreach (FileItemViewModel item in AllItems)
         {
-            item.IsCut = paths.Contains(item.FullPath);
+            item.IsCut = mode == ClipboardMode.Cut && paths.Contains(item.FullPath);
         }
     }
 
@@ -2450,7 +2997,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return [];
         }
 
+        if (ElevatedFileService.NeedsElevation(dir))
+        {
+            return await CreateSymlinksElevatedAsync(paths.ToList(), dir);
+        }
+
         (List<string> created, List<string> errors) = await _operationService.CreateSymlinksAsync(dir, paths, ConflictResolver);
+        UndoHistory.Record(FileUndoKind.Link, created.Select(link => (Path: link, Other: new FileInfo(link).LinkTarget ?? "")).Where(link => link.Other.Length > 0));
         if (errors.Count > 0)
         {
             StatusText = LocalizationService.Format("SymlinkFailed", errors[0]);
@@ -2465,6 +3018,44 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         return created;
     }
 
+    private async Task<List<string>> CreateSymlinksElevatedAsync(List<string> paths, string dir)
+    {
+        List<string> sources = paths.Where(EntryExists).Select(path => Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar)).ToList();
+        if (sources.Count == 0 || !await ConfirmElevationAsync(LocalizationService.Format("ElevateSymlink", PathManager.GetName(dir))))
+        {
+            return [];
+        }
+
+        List<TransferStep> steps;
+        try
+        {
+            steps = await _operationService.PlanTransferAsync(dir, ClipboardMode.Copy, sources, ConflictResolver, false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException)
+        {
+            return [];
+        }
+
+        ElevatedScript script = new();
+        foreach (TransferStep step in steps)
+        {
+            if (step.ReplaceExisting)
+            {
+                script.Delete(step.Target);
+            }
+
+            script.Symlink(step.Source, step.Target);
+        }
+
+        if (!await RunElevatedScriptAsync(script))
+        {
+            return [];
+        }
+
+        StatusText = LocalizationService.Format("SymlinksCreated", steps.Count);
+        return steps.Select(step => step.Target).ToList();
+    }
+
     public void DeleteSelected(IEnumerable<FileItemViewModel>? selection = null, bool permanent = false)
     {
         List<FileItemViewModel> targets = ResolveTargets(selection);
@@ -2474,8 +3065,109 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         List<string> paths = targets.Select(t => t.FullPath).ToList();
-        _operationService.Delete(paths, permanent);
+        _ = DeletePathsAsync(paths, permanent);
+    }
+
+    private async Task DeletePathsAsync(List<string> paths, bool permanent)
+    {
+        if (ElevatedFileService.NeedsElevation(paths))
+        {
+            await DeleteElevatedAsync(paths, permanent);
+            return;
+        }
+
+        bool retryElevated = false;
+        using CancellationTokenSource cts = new();
+        CancellationToken token = cts.Token;
+
+        string operation = permanent ? "Delete" : "Trash";
+        OperationProgressViewModel progressView = new()
+        {
+            Title = paths.Count == 1
+                ? LocalizationService.Format($"{operation}TitleOne", PathManager.GetName(paths[0]))
+                : LocalizationService.Format($"{operation}TitleMany", paths.Count),
+            Status = LocalizationService.Get("Calculating"),
+            IsIndeterminate = true,
+            Icon = IconService.Get(permanent ? "delete-forever" : "trash"),
+            CancelAction = () => cts.Cancel(),
+        };
+        AddOperation(progressView);
+
+        Progress<FileTransferProgress> progress = new(p =>
+        {
+            progressView.IsIndeterminate = false;
+            progressView.Value = p.Percent;
+            progressView.Text = LocalizationService.Format($"{operation}Progress", p.TransferredItems, p.TotalItems);
+            progressView.Status = "";
+            progressView.Item = p.CurrentItemName;
+        });
+
+        List<TrashedItem> trashed = new();
+        try
+        {
+            await Task.Run(() => _operationService.Delete(paths, permanent, progress, token, trashed), token);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = LocalizationService.Get($"{operation}Cancelled");
+        }
+        catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
+        {
+            retryElevated = true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ReportFileError($"{operation}Failed", ex);
+        }
+        finally
+        {
+            progressView.CancelAction = null;
+            RemoveOperation(progressView);
+            RecordTrash(trashed);
+            Refresh();
+        }
+
+        if (retryElevated)
+        {
+            await DeleteElevatedAsync(paths.Where(EntryExists).ToList(), permanent);
+        }
+    }
+
+    private async Task DeleteElevatedAsync(List<string> paths, bool permanent)
+    {
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        ElevatedScript script = new();
+        foreach (string path in paths)
+        {
+            script.Delete(path);
+        }
+
+        string message = LocalizationService.Format(permanent ? "ElevateDelete" : "ElevateTrash", DescribeTargets(paths));
+        await RunElevatedAsync(message, script);
+    }
+
+    public async Task<int> TrashPathsAsync(IEnumerable<string> paths)
+    {
+        List<string> existing = paths.Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
+        if (existing.Count == 0)
+        {
+            return 0;
+        }
+
+        List<TrashedItem> trashed = new();
+        await Task.Run(() => _operationService.Delete(existing, false, null, CancellationToken.None, trashed));
+        RecordTrash(trashed);
         Refresh();
+        return existing.Count;
+    }
+
+    private void RecordTrash(List<TrashedItem> trashed)
+    {
+        UndoHistory.Record(FileUndoKind.Trash, trashed.Select(item => (item.OriginalPath, item.TrashedPath)));
     }
 
     public void RestoreSelectedFromTrash(PaneViewModel pane)
@@ -2503,6 +3195,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         try
         {
             _operationService.Rename(item.FullPath, newName);
+            UndoHistory.Record(FileUndoKind.Rename, [(item.FullPath, Path.Combine(PathManager.GetParent(item.FullPath), newName))]);
+        }
+        catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
+        {
+            _ = RenameElevatedAsync(item.FullPath, newName);
+            return;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -2512,6 +3210,22 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         Refresh();
     }
 
+    private async Task RenameElevatedAsync(string path, string newName)
+    {
+        string target = Path.Combine(PathManager.GetParent(path), newName);
+        if (EntryExists(target))
+        {
+            StatusText = LocalizationService.Format("NameAlreadyExists", newName);
+            return;
+        }
+
+        bool isDirectory = Directory.Exists(path);
+        if (await RunElevatedAsync(LocalizationService.Format("ElevateRename", DescribeTargets([path])), new ElevatedScript().Rename(path, target)) && isDirectory)
+        {
+            FolderColorStore.Move(path, target);
+        }
+    }
+
     public void BulkRename(IReadOnlyList<BulkRenameEntry> renames)
     {
         if (ActivePane.IsVirtual || renames.Count == 0)
@@ -2519,9 +3233,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        if (ElevatedFileService.NeedsElevation(renames.Select(rename => rename.Path)))
+        {
+            _ = BulkRenameElevatedAsync(renames);
+            return;
+        }
+
         HashSet<string> sourcePaths = new(renames.Select(rename => rename.Path), StringComparer.Ordinal);
         List<(string TempPath, string OriginalName, string NewName)> staged = new();
         List<BulkRenameEntry> direct = new();
+        List<(string From, string To)> done = new();
         foreach (BulkRenameEntry rename in renames)
         {
             string directory = Path.GetDirectoryName(rename.Path) ?? "";
@@ -2548,6 +3269,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             try
             {
                 _operationService.Rename(rename.Path, rename.NewName);
+                done.Add((rename.Path, Path.Combine(Path.GetDirectoryName(rename.Path) ?? "", rename.NewName)));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -2557,9 +3279,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         foreach ((string tempPath, string originalName, string newName) in staged)
         {
+            string directory = Path.GetDirectoryName(tempPath) ?? "";
             try
             {
                 _operationService.Rename(tempPath, newName);
+                done.Add((Path.Combine(directory, originalName), Path.Combine(directory, newName)));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -2568,7 +3292,42 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
         }
 
+        UndoHistory.Record(FileUndoKind.Rename, done);
         Refresh();
+    }
+
+    private async Task BulkRenameElevatedAsync(IReadOnlyList<BulkRenameEntry> renames)
+    {
+        HashSet<string> sourcePaths = new(renames.Select(rename => rename.Path), StringComparer.Ordinal);
+        ElevatedScript script = new();
+        List<(string TempPath, string TargetPath)> staged = new();
+        List<BulkRenameEntry> direct = new();
+        foreach (BulkRenameEntry rename in renames)
+        {
+            string directory = PathManager.GetParent(rename.Path);
+            string targetPath = Path.Combine(directory, rename.NewName);
+            if (!sourcePaths.Contains(targetPath))
+            {
+                direct.Add(rename);
+                continue;
+            }
+
+            string tempPath = Path.Combine(directory, $".fe-rename-{Guid.NewGuid():N}");
+            script.Rename(rename.Path, tempPath);
+            staged.Add((tempPath, targetPath));
+        }
+
+        foreach (BulkRenameEntry rename in direct)
+        {
+            script.Rename(rename.Path, Path.Combine(PathManager.GetParent(rename.Path), rename.NewName));
+        }
+
+        foreach ((string tempPath, string targetPath) in staged)
+        {
+            script.Rename(tempPath, targetPath);
+        }
+
+        await RunElevatedAsync(LocalizationService.Format("ElevateRename", DescribeTargets(renames.Select(rename => rename.Path).ToList())), script);
     }
 
     private void TryRestoreStagedRename(string tempPath, string originalName)
@@ -2591,11 +3350,28 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        foreach (FileItemViewModel item in targets)
+        List<string> paths = targets.Select(target => target.FullPath).ToList();
+        if (ElevatedFileService.NeedsElevation(paths))
+        {
+            _ = DuplicateElevatedAsync(paths);
+            return;
+        }
+
+        List<string> created = new();
+        for (int i = 0; i < paths.Count; i++)
         {
             try
             {
-                _operationService.Duplicate(item.FullPath);
+                string? copy = _operationService.Duplicate(paths[i]);
+                if (copy != null)
+                {
+                    created.Add(copy);
+                }
+            }
+            catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
+            {
+                _ = DuplicateElevatedAsync(paths.Skip(i).ToList());
+                break;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -2604,7 +3380,157 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
         }
 
+        UndoHistory.Record(FileUndoKind.Copy, created.Select(path => (path, "")));
         Refresh();
+    }
+
+    private async Task DuplicateElevatedAsync(List<string> paths)
+    {
+        ElevatedScript script = new();
+        List<(string Source, string Target)> copies = new();
+        foreach (string path in paths)
+        {
+            string? target = FileOperationService.GetDuplicatePath(path);
+            if (target == null)
+            {
+                continue;
+            }
+
+            script.Copy(path, target);
+            copies.Add((path, target));
+        }
+
+        if (!await RunElevatedAsync(LocalizationService.Format("ElevateDuplicate", DescribeTargets(paths)), script))
+        {
+            return;
+        }
+
+        foreach ((string source, string target) in copies.Where(copy => Directory.Exists(copy.Target)))
+        {
+            FolderColorStore.Copy(source, target);
+        }
+    }
+
+    public Task UndoAsync()
+    {
+        return ApplyUndoAsync(true);
+    }
+
+    public Task RedoAsync()
+    {
+        return ApplyUndoAsync(false);
+    }
+
+    private async Task ApplyUndoAsync(bool isUndo)
+    {
+        FileUndoEntry? entry = isUndo ? UndoHistory.NextUndo : UndoHistory.NextRedo;
+        if (entry == null)
+        {
+            StatusText = LocalizationService.Get(isUndo ? "NothingToUndo" : "NothingToRedo");
+            return;
+        }
+
+        FileUndoResult result = isUndo ? await UndoHistory.UndoAsync() : await UndoHistory.RedoAsync();
+        Refresh();
+        string direction = isUndo ? "Undo" : "Redo";
+        if (!result.Success)
+        {
+            StatusText = result.Error == null
+                ? ""
+                : LocalizationService.Format(result.IsConflict ? $"{direction}Conflict" : $"{direction}Failed", PathManager.GetName(result.Error));
+            return;
+        }
+
+        StatusText = LocalizationService.Format($"{direction}Done", DescribeUndo(entry));
+        string? folder = result.Paths.Count == 0 ? null : Path.GetDirectoryName(result.Paths[0]);
+        if (folder != null)
+        {
+            TransferCompleted?.Invoke(folder, result.Paths.Where(path => Path.GetDirectoryName(path) == folder).ToList());
+        }
+    }
+
+    public static string GetUndoKindName(FileUndoKind kind)
+    {
+        return LocalizationService.Get($"UndoKind{kind}");
+    }
+
+    public static string GetUndoTitle(FileUndoEntry entry)
+    {
+        return entry.Title ?? GetUndoKindName(entry.Kind);
+    }
+
+    private static string DescribeUndo(FileUndoEntry entry)
+    {
+        if (entry.Title != null)
+        {
+            return entry.Title;
+        }
+
+        string targets = entry.Steps.Count == 1 ? $"“{entry.FirstName}”" : LocalizationService.Plural("ConflictItems", entry.Steps.Count);
+        return $"{GetUndoKindName(entry.Kind)} ({targets})";
+    }
+
+    public async Task<bool> ConfirmElevationAsync(string message)
+    {
+        return ElevationConfirm != null && await ElevationConfirm(message);
+    }
+
+    private async Task<bool> RunElevatedAsync(string message, ElevatedScript script)
+    {
+        return !script.IsEmpty && await ConfirmElevationAsync(message) && await RunElevatedScriptAsync(script);
+    }
+
+    private async Task<bool> RunElevatedScriptAsync(ElevatedScript script)
+    {
+        if (script.IsEmpty)
+        {
+            return false;
+        }
+
+        using CancellationTokenSource cts = new();
+        OperationProgressViewModel progressView = new()
+        {
+            Title = LocalizationService.Get("ElevatedOperationTitle"),
+            Status = LocalizationService.Get("WaitingForAuthentication"),
+            IsIndeterminate = true,
+            Icon = IconService.Get("shield"),
+            CancelAction = () => cts.Cancel(),
+        };
+        AddOperation(progressView);
+
+        ElevatedResult result;
+        try
+        {
+            result = await ElevatedFileService.RunAsync(script, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            result = new(ElevatedStatus.Cancelled, "");
+        }
+        finally
+        {
+            progressView.CancelAction = null;
+            RemoveOperation(progressView);
+            Refresh();
+        }
+
+        if (result.Status == ElevatedStatus.Failed)
+        {
+            StatusText = LocalizationService.Format("ElevatedOperationFailed", result.Error);
+            _ = Logger.LogW($"Elevated file operation failed: {result.Error}");
+        }
+
+        return result.IsSuccess;
+    }
+
+    private static string DescribeTargets(IReadOnlyList<string> paths)
+    {
+        return paths.Count == 1 ? $"“{PathManager.GetName(paths[0])}”" : LocalizationService.Plural("ConflictItems", paths.Count);
+    }
+
+    private static bool EntryExists(string path)
+    {
+        return File.Exists(path) || Directory.Exists(path) || new FileInfo(path).LinkTarget != null;
     }
 
     private void ReportFileError(string key, Exception ex)
@@ -2631,6 +3557,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         try
         {
             _operationService.CreateFolder(fullPath);
+            UndoHistory.Record(FileUndoKind.Create, [(fullPath, "")]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -2654,6 +3581,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         try
         {
             _operationService.CreateFile(fullPath);
+            UndoHistory.Record(FileUndoKind.Create, [(fullPath, "")]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -2663,6 +3591,71 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Refresh();
         return fullPath;
+    }
+
+    public async Task<string?> CreateFromTemplateAsync(string template, string name)
+    {
+        if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(name) || !File.Exists(template))
+        {
+            return null;
+        }
+
+        string baseDir = CurrentPath;
+        string fullPath = Path.Combine(baseDir, name);
+        if (EntryExists(fullPath))
+        {
+            StatusText = LocalizationService.Format("NameAlreadyExists", name);
+            return null;
+        }
+
+        if (ElevatedFileService.NeedsElevation(baseDir))
+        {
+            string message = LocalizationService.Format("ElevateCreateFile", name, PathManager.GetName(baseDir));
+            return await RunElevatedAsync(message, new ElevatedScript().Copy(template, fullPath)) ? fullPath : null;
+        }
+
+        try
+        {
+            await Task.Run(() => File.Copy(template, fullPath));
+            UndoHistory.Record(FileUndoKind.Create, [(fullPath, "")]);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ReportFileError("CreateFileFailed", ex);
+            return null;
+        }
+
+        Refresh();
+        return fullPath;
+    }
+
+    public Task<string?> CreateFolderAsync(string folderName)
+    {
+        return CreateEntryAsync(folderName, true);
+    }
+
+    public Task<string?> CreateFileAsync(string fileName)
+    {
+        return CreateEntryAsync(fileName, false);
+    }
+
+    private async Task<string?> CreateEntryAsync(string name, bool isFolder)
+    {
+        if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        string baseDir = CurrentPath;
+        if (!ElevatedFileService.NeedsElevation(baseDir))
+        {
+            return isFolder ? CreateFolder(name) : CreateFile(name);
+        }
+
+        string fullPath = Path.Combine(baseDir, name);
+        ElevatedScript script = isFolder ? new ElevatedScript().CreateFolder(fullPath) : new ElevatedScript().CreateFile(fullPath);
+        string message = LocalizationService.Format(isFolder ? "ElevateCreateFolder" : "ElevateCreateFile", name, PathManager.GetName(baseDir));
+        return await RunElevatedAsync(message, script) ? fullPath : null;
     }
 
     public void ToggleBookmark(string path)
@@ -2784,9 +3777,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return crumbs;
         }
 
-        if (path == "/")
+        string root = PathManager.GetRoot(path);
+        if (PathManager.IsRoot(path))
         {
-            crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = true });
+            crumbs.Add(new BreadcrumbItem { Name = GetRootCrumbName(root), FullPath = root, IsLast = true });
             return crumbs;
         }
 
@@ -2808,13 +3802,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return crumbs;
         }
 
-        crumbs.Add(new BreadcrumbItem { Name = LocalizationService.Get("Root"), FullPath = "/", IsLast = false });
-        string[] rootParts = path.Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries);
-        string currentAccum = "";
+        crumbs.Add(new BreadcrumbItem { Name = GetRootCrumbName(root), FullPath = root, IsLast = false });
+        string[] rootParts = PathManager.GetSegments(path);
+        string currentAccum = root;
 
         for (int i = 0; i < rootParts.Length; i++)
         {
-            currentAccum += "/" + rootParts[i];
+            currentAccum = Path.Combine(currentAccum, rootParts[i]);
             crumbs.Add(new BreadcrumbItem
             {
                 Name = rootParts[i],
@@ -2824,6 +3818,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         return crumbs;
+    }
+
+    private static string GetRootCrumbName(string root)
+    {
+        return root == PathManager.RootPath && !PathManager.IsWindows ? LocalizationService.Get("Root") : PathManager.TrimEnd(root).TrimEnd(PathManager.Separators);
     }
 
     private static void AddRootedCrumbs(List<BreadcrumbItem> crumbs, string rootPath, string rootName, string path)
@@ -2850,7 +3849,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         mountPath = "";
         name = "";
 
-        string gvfsRoot = $"/run/user/{GetUserId()}/gvfs/";
+        string gvfsRoot = GvfsPath.MountDirectory + "/";
         if (path.StartsWith(gvfsRoot, StringComparison.Ordinal))
         {
             string mountDir = path[gvfsRoot.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
@@ -2861,7 +3860,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             mountPath = gvfsRoot + mountDir;
             string mount = mountPath;
-            PlaceItem? place = Places.FirstOrDefault(p => !p.IsHeader && IsSamePath(p.Path, mount));
+            PlaceItem? place = Places.FirstOrDefault(p => !p.IsHeader && PathManager.AreEqual(p.Path, mount));
             name = place?.Name ?? GetGvfsFastName(mountPath);
             return true;
         }
@@ -2869,16 +3868,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         string userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         PlaceItem? device = Places
             .Where(p => !p.IsHeader && p.Category == PlaceCategory.Devices && p.IsMounted && Path.IsPathRooted(p.Path))
-            .Where(p => NormalizeTrailPath(p.Path) != "/" && !IsSameOrAncestor(p.Path, userProfile))
-            .Where(p => IsSameOrAncestor(p.Path, path))
-            .OrderByDescending(p => NormalizeTrailPath(p.Path).Length)
+            .Where(p => !PathManager.IsRoot(p.Path) && !PathManager.IsSameOrAncestor(p.Path, userProfile))
+            .Where(p => PathManager.IsSameOrAncestor(p.Path, path))
+            .OrderByDescending(p => PathManager.TrimEnd(p.Path).Length)
             .FirstOrDefault();
         if (device == null)
         {
             return false;
         }
 
-        mountPath = NormalizeTrailPath(device.Path);
+        mountPath = PathManager.TrimEnd(device.Path);
         name = device.Name;
         return true;
     }
@@ -2918,6 +3917,13 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void UpdateStatus()
     {
+        TimeSpan hold = _statusHoldUntil - DateTime.UtcNow;
+        if (hold > TimeSpan.Zero)
+        {
+            DispatcherTimer.RunOnce(UpdateStatus, hold);
+            return;
+        }
+
         PaneViewModel pane = ActivePane;
         if (pane.IsLoading)
         {
@@ -2976,25 +3982,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         catch { }
     }
 
-    [DllImport("libc", EntryPoint = "getuid")]
-    private static extern uint libc_getuid();
-
-    private static string GetUserId()
-    {
-        try
-        {
-            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
-            {
-                return libc_getuid().ToString();
-            }
-        }
-        catch
-        {
-        }
-
-        return "1000";
-    }
-
     private static string GetGvfsFastName(string mountPath)
     {
         string rawName = Path.GetFileName(mountPath);
@@ -3020,24 +4007,23 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return LocalizationService.Get("DigitalCamera");
         }
 
-        if (rawName.StartsWith("sftp:host=", StringComparison.OrdinalIgnoreCase))
+        foreach ((string prefix, string label) in new[] { ("sftp:host=", "SFTP"), ("ftp:host=", "FTP"), ("dav:host=", "WebDAV"), ("davs:host=", "WebDAV"), ("smb-share:server=", "SMB") })
         {
-            string hostPart = rawName["sftp:host=".Length..];
+            if (!rawName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string hostPart = rawName[prefix.Length..];
             int commaIdx = hostPart.IndexOf(',');
             string host = commaIdx >= 0 ? hostPart[..commaIdx] : hostPart;
-            return $"{host} (SFTP)";
-        }
-
-        if (rawName.StartsWith("smb-share:server=", StringComparison.OrdinalIgnoreCase))
-        {
-            string srvPart = rawName["smb-share:server=".Length..];
-            int commaIdx = srvPart.IndexOf(',');
-            string srv = commaIdx >= 0 ? srvPart[..commaIdx] : srvPart;
-            return $"{srv} (SMB)";
+            return $"{host} ({label})";
         }
 
         return rawName;
     }
+
+    private const int GvfsNameTimeoutMs = 3000;
 
     private static void ResolveGvfsDisplayNameAsync(string mountPath, PlaceItem item)
     {
@@ -3058,9 +4044,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 return;
             }
 
-            string output = process.StandardOutput.ReadToEnd();
-            process.WaitForExit(1000);
+            Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+            if (!process.WaitForExit(GvfsNameTimeoutMs))
+            {
+                process.Kill(true);
+                return;
+            }
 
+            string output = outputTask.GetAwaiter().GetResult();
             string[] lines = output.Split('\n');
             foreach (string line in lines)
             {
@@ -3168,7 +4159,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             if (_udisksMonitorProcess != null && !_udisksMonitorProcess.HasExited)
             {
-                _udisksMonitorProcess.Kill();
+                _udisksMonitorProcess.Kill(true);
             }
         }
         catch { }
@@ -3177,6 +4168,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Pane1.Dispose();
         Pane2.Dispose();
-        _operationCts?.Dispose();
+        Pane3.Dispose();
+        foreach (OperationProgressViewModel operation in Operations.ToList())
+        {
+            operation.Cancel();
+        }
     }
 }

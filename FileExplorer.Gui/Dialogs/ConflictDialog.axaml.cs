@@ -35,7 +35,7 @@ public partial class ConflictDialog : Window
         string destinationFolder = Path.GetFileName(Path.GetDirectoryName(conflict.DestinationPath) ?? "");
         if (string.IsNullOrEmpty(destinationFolder))
         {
-            destinationFolder = Path.GetDirectoryName(conflict.DestinationPath) ?? "/";
+            destinationFolder = PathManager.GetParent(conflict.DestinationPath);
         }
 
         if (conflict.CanMerge)

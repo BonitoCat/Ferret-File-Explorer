@@ -1,0 +1,58 @@
+id: markdown-tools
+name: $AddonName
+description: $AddonDescription
+version: 1.0.0
+author: BonitoCat
+icon: icon.svg
+script: scripts/markdown.sh
+
+dependencies:
+  - pandoc
+
+actions:
+  - id: new-markdown
+    title: $NewMarkdown
+    icon: icon.svg
+    parent: new
+    after: new-file
+    targets: [background, folder]
+    multiple: false
+
+  - id: markdown
+    title: Markdown
+    icon: icon.svg
+    after: open-with
+    targets: [file]
+    extensions: [.md, .markdown]
+
+  - id: export
+    title: $Export
+    parent: markdown
+
+  - id: export-html
+    title: $ExportHtml
+    parent: export
+
+  - id: export-docx
+    title: $ExportDocx
+    parent: export
+
+  - id: export-odt
+    title: $ExportOdt
+    parent: export
+
+  - id: copy-html
+    title: $CopyHtml
+    parent: markdown
+    multiple: false
+
+  - id: copy-outline
+    title: $CopyOutline
+    parent: markdown
+    multiple: false
+
+  - id: stats
+    title: $Statistics
+    parent: markdown
+    multiple: false
+    separator: before

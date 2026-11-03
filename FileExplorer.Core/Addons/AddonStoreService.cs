@@ -96,7 +96,7 @@ public sealed class AddonStoreService
         string cachePath = Path.Combine(_cacheDir, IndexFileName);
         try
         {
-            string yaml = await _client.GetStringAsync(BuildUrl(IndexFileName), token);
+            string yaml = await _client.GetStringAsync(BuildUrl(IndexFileName, DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString()), token);
             List<AddonStoreEntry> entries = ParseIndex(yaml);
             TryWriteCache(cachePath, yaml);
             return new(entries, false);
@@ -136,7 +136,7 @@ public sealed class AddonStoreService
 
         try
         {
-            byte[] data = await _client.GetByteArrayAsync(BuildUrl(entry.Icon), token);
+            byte[] data = await _client.GetByteArrayAsync(BuildUrl(entry.Icon, entry.Sha256), token);
             await File.WriteAllBytesAsync(path, data, token);
             return path;
         }
@@ -156,7 +156,7 @@ public sealed class AddonStoreService
 
         try
         {
-            using HttpResponseMessage response = await _client.GetAsync(BuildUrl(entry.Download), HttpCompletionOption.ResponseHeadersRead, token);
+            using HttpResponseMessage response = await _client.GetAsync(BuildUrl(entry.Download, entry.Sha256), HttpCompletionOption.ResponseHeadersRead, token);
             response.EnsureSuccessStatusCode();
 
             await using Stream source = await response.Content.ReadAsStreamAsync(token);
@@ -291,7 +291,7 @@ public sealed class AddonStoreService
         return name;
     }
 
-    private static Uri BuildUrl(string? relativePath)
+    private static Uri BuildUrl(string? relativePath, string? cacheKey = null)
     {
         string path = (relativePath ?? "").Trim();
         string[] segments = path.Split('/');
@@ -300,7 +300,13 @@ public sealed class AddonStoreService
             throw new AddonInstallException("AddonStoreErrorInvalidPath", path);
         }
 
-        return new(RepositoryUrl + string.Join('/', segments.Select(Uri.EscapeDataString)));
+        string url = RepositoryUrl + string.Join('/', segments.Select(Uri.EscapeDataString));
+        if (string.IsNullOrWhiteSpace(cacheKey))
+        {
+            return new(url);
+        }
+
+        return new($"{url}?v={Uri.EscapeDataString(cacheKey.Trim())}");
     }
 
     private static List<AddonStoreEntry>? TryReadCache(string cachePath)

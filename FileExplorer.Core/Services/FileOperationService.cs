@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Enumeration;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -16,54 +17,185 @@ namespace FileExplorer.Core.Services;
 
 public class FileOperationService
 {
+    private static readonly TimeSpan DeleteProgressInterval = TimeSpan.FromMilliseconds(50);
+
     public void Delete(IEnumerable<string> paths, bool permanent = false)
+    {
+        Delete(paths, permanent, null, CancellationToken.None);
+    }
+
+    public void Delete(IEnumerable<string> paths, bool permanent, IProgress<FileTransferProgress>? progress, CancellationToken token)
+    {
+        Delete(paths, permanent, progress, token, null);
+    }
+
+    public void Delete(IEnumerable<string> paths, bool permanent, IProgress<FileTransferProgress>? progress, CancellationToken token, ICollection<TrashedItem>? trashed)
     {
         List<string> pathList = paths.ToList();
         if (pathList.Count == 0) return;
 
+        DeleteTracker tracker = new(progress, permanent ? CountEntries(pathList, token) : pathList.Count);
         foreach (string path in pathList)
         {
-            if (Directory.Exists(path))
+            token.ThrowIfCancellationRequested();
+            bool isDirectory = Directory.Exists(path);
+            if (!isDirectory && !File.Exists(path) && new FileInfo(path).LinkTarget == null)
             {
-                bool hasColors = FolderColorStore.HasAny(path);
-                if (permanent)
-                {
-                    Directory.Delete(path, true);
-                }
-                else
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "gio",
-                        Arguments = $"trash \"{path}\"",
-                        UseShellExecute = false
-                    })?.WaitForExit();
-                }
-
-                if (hasColors)
-                {
-                    ForgetFolderColors(path, permanent);
-                }
+                continue;
             }
-            else if (File.Exists(path))
+
+            bool hasColors = isDirectory && FolderColorStore.HasAny(path);
+            if (permanent)
             {
-                if (permanent)
+                DeleteEntry(path, tracker, token);
+            }
+            else
+            {
+                tracker.Report(PathManager.GetName(path));
+                MoveToTrash(path);
+                tracker.Advance(PathManager.GetName(path));
+            }
+
+            string? trashedPath = permanent || trashed == null && !hasColors ? null : FindTrashedPath(path);
+            if (trashedPath != null && trashed != null)
+            {
+                trashed.Add(new(path, trashedPath));
+            }
+
+            if (hasColors)
+            {
+                ForgetFolderColors(path, permanent ? null : trashedPath);
+            }
+        }
+
+        tracker.Flush();
+        _ = Logger.LogI($"{(permanent ? "Permanently deleted" : "Moved to trash")} {pathList.Count} items");
+    }
+
+    private static readonly EnumerationOptions ChildEnumeration = new()
+    {
+        AttributesToSkip = 0,
+        IgnoreInaccessible = false,
+        RecurseSubdirectories = false,
+        ReturnSpecialDirectories = false,
+    };
+
+    private static int CountEntries(List<string> paths, CancellationToken token)
+    {
+        int count = paths.Count;
+        Stack<string> pending = new(paths.Where(IsRealDirectory));
+        while (pending.Count > 0)
+        {
+            token.ThrowIfCancellationRequested();
+            List<(string Path, bool IsDirectory)> children;
+            try
+            {
+                children = ListChildren(pending.Pop());
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            count += children.Count;
+            foreach ((string childPath, bool isDirectory) in children)
+            {
+                if (isDirectory && !IsLink(childPath))
                 {
-                    File.Delete(path);
-                }
-                else
-                {
-                    Process.Start(new ProcessStartInfo
-                    {
-                        FileName = "gio",
-                        Arguments = $"trash \"{path}\"",
-                        UseShellExecute = false
-                    })?.WaitForExit();
+                    pending.Push(childPath);
                 }
             }
         }
 
-        _ = Logger.LogI($"{(permanent ? "Permanently deleted" : "Moved to trash")} {pathList.Count} items");
+        return count;
+    }
+
+    private static void DeleteEntry(string path, DeleteTracker tracker, CancellationToken token)
+    {
+        DeleteEntry(path, Directory.Exists(path), tracker, token);
+    }
+
+    private static void DeleteEntry(string path, bool isDirectory, DeleteTracker tracker, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        string name = PathManager.GetName(path);
+        if (!isDirectory)
+        {
+            File.Delete(path);
+            tracker.Advance(name);
+            return;
+        }
+
+        if (!IsLink(path))
+        {
+            foreach ((string childPath, bool childIsDirectory) in ListChildren(path))
+            {
+                DeleteEntry(childPath, childIsDirectory, tracker, token);
+            }
+        }
+
+        Directory.Delete(path);
+        tracker.Advance(name);
+    }
+
+    private static List<(string Path, bool IsDirectory)> ListChildren(string directory)
+    {
+        return new FileSystemEnumerable<(string Path, bool IsDirectory)>(
+            directory,
+            (ref FileSystemEntry entry) => (entry.ToFullPath(), entry.IsDirectory),
+            ChildEnumeration).ToList();
+    }
+
+    private static bool IsRealDirectory(string path)
+    {
+        return Directory.Exists(path) && !IsLink(path);
+    }
+
+    private static bool IsLink(string path)
+    {
+        return new FileInfo(path).LinkTarget != null;
+    }
+
+    private sealed class DeleteTracker
+    {
+        private readonly IProgress<FileTransferProgress>? _progress;
+        private readonly int _total;
+        private readonly Stopwatch _sinceReport = Stopwatch.StartNew();
+        private int _deleted;
+        private string _currentName = "";
+
+        public DeleteTracker(IProgress<FileTransferProgress>? progress, int total)
+        {
+            _progress = progress;
+            _total = total;
+            Report("");
+        }
+
+        public void Advance(string name)
+        {
+            _deleted++;
+            _currentName = name;
+            if (_sinceReport.Elapsed >= DeleteProgressInterval)
+            {
+                Report(name);
+            }
+        }
+
+        public void Report(string name)
+        {
+            _sinceReport.Restart();
+            _progress?.Report(new()
+            {
+                TransferredItems = Math.Min(_deleted, _total),
+                TotalItems = _total,
+                CurrentItemName = name,
+            });
+        }
+
+        public void Flush()
+        {
+            Report(_currentName);
+        }
     }
 
     public List<string> RestoreFromTrash(IEnumerable<string> trashedPaths)
@@ -93,14 +225,43 @@ public class FileOperationService
         return failed;
     }
 
-    private static void ForgetFolderColors(string path, bool permanent)
+    private static void MoveToTrash(string path)
+    {
+        ProcessStartInfo psi = new()
+        {
+            FileName = "gio",
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("trash");
+        psi.ArgumentList.Add("--");
+        psi.ArgumentList.Add(path);
+
+        Process.Start(psi)?.WaitForExit();
+    }
+
+    public List<string> TrashForUndo(IEnumerable<string> paths, ICollection<TrashedItem> trashed)
+    {
+        List<string> failed = new();
+        foreach (string path in paths)
+        {
+            int before = trashed.Count;
+            Delete([path], false, null, CancellationToken.None, trashed);
+            if (trashed.Count == before)
+            {
+                failed.Add(path);
+            }
+        }
+
+        return failed;
+    }
+
+    private static void ForgetFolderColors(string path, string? trashedPath)
     {
         if (Directory.Exists(path))
         {
             return;
         }
 
-        string? trashedPath = permanent ? null : FindTrashedPath(path);
         if (trashedPath != null)
         {
             FolderColorStore.Move(path, trashedPath);
@@ -123,7 +284,8 @@ public class FileOperationService
 
             try
             {
-                string? infoFile = new DirectoryInfo(infoDir).EnumerateFiles("*.trashinfo")
+                string pattern = Path.GetFileNameWithoutExtension(fullPath).Replace('*', '?') + "*.trashinfo";
+                string? infoFile = new DirectoryInfo(infoDir).EnumerateFiles(pattern)
                     .OrderByDescending(f => f.LastWriteTimeUtc)
                     .Where(f => ReadTrashInfoPath(f.FullName, trashDir) == fullPath)
                     .Select(f => f.Name)
@@ -262,50 +424,58 @@ public class FileOperationService
         _ = Logger.LogI("Created new file");
     }
 
-    public void Duplicate(string path)
+    public string? Duplicate(string path)
     {
+        string? newPath = GetDuplicatePath(path);
+        if (newPath == null)
+        {
+            return null;
+        }
+
         if (File.Exists(path))
         {
-            string ext = Path.GetExtension(path);
-            string name = Path.GetFileNameWithoutExtension(path);
-            string? dir = Path.GetDirectoryName(path);
-            if (dir == null) return;
-
-            int count = 1;
-            string newPath;
-            string destDir = Directory.GetParent(path)?.FullName ?? "/";
-
-            do
-            {
-                newPath = Path.Combine(destDir, $"{name} ({count}){ext}");
-                count++;
-            }
-            while (File.Exists(newPath) || Directory.Exists(newPath));
-
             File.Copy(path, newPath);
             _ = Logger.LogI("Duplicated item");
+            return newPath;
         }
-        else if (Directory.Exists(path))
+
+        if (!Directory.Exists(path))
         {
-            string name = Path.GetFileName(path);
-            string? dir = Path.GetDirectoryName(path);
-            if (dir == null) return;
-
-            int count = 1;
-            string newPath;
-            string destDir = Directory.GetParent(path)?.FullName ?? "/";
-
-            do
-            {
-                newPath = Path.Combine(destDir, $"{name} ({count})");
-                count++;
-            }
-            while (File.Exists(newPath) || Directory.Exists(newPath));
-
-            CopyDirectory(path, newPath);
-            FolderColorStore.Copy(path, newPath);
-            _ = Logger.LogI("Duplicated item");
+            return null;
         }
+
+        CopyDirectory(path, newPath);
+        FolderColorStore.Copy(path, newPath);
+        _ = Logger.LogI("Duplicated item");
+        return newPath;
+    }
+
+    public static string? GetDuplicatePath(string path)
+    {
+        bool isFile = File.Exists(path);
+        if (!isFile && !Directory.Exists(path))
+        {
+            return null;
+        }
+
+        string? dir = Path.GetDirectoryName(path);
+        if (dir == null)
+        {
+            return null;
+        }
+
+        string ext = isFile ? Path.GetExtension(path) : "";
+        string name = isFile ? Path.GetFileNameWithoutExtension(path) : Path.GetFileName(path);
+        int count = 1;
+        string newPath;
+        do
+        {
+            newPath = Path.Combine(dir, $"{name} ({count}){ext}");
+            count++;
+        }
+        while (File.Exists(newPath) || Directory.Exists(newPath));
+
+        return newPath;
     }
 
     private void CopyDirectory(string sourceDir, string destinationDir)
@@ -383,7 +553,76 @@ public class FileOperationService
         _ = Logger.LogI($"Pasted {count} items (mode: {mode})");
     }
 
-    public Task TransferAsync(
+    public async Task<List<TransferStep>> PlanTransferAsync(
+        string destDir,
+        ClipboardMode mode,
+        IEnumerable<string> sourcePaths,
+        Func<TransferConflict, Task<ConflictResolution>>? resolveConflict,
+        bool allowMerge = true)
+    {
+        List<string> pathList = sourcePaths.Where(PathExists).ToList();
+        List<TransferStep> steps = new();
+        ConflictState conflicts = new(resolveConflict, mode == ClipboardMode.Copy, pathList.Count > 1 || pathList.Any(Directory.Exists), allowMerge);
+        string normDest = Path.GetFullPath(destDir).TrimEnd(Path.DirectorySeparatorChar);
+
+        foreach (string path in pathList)
+        {
+            string normSrc = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar);
+            string destPath = Path.Combine(destDir, Path.GetFileName(normSrc));
+            if (Directory.Exists(path) && (string.Equals(normSrc, normDest, StringComparison.Ordinal) || normDest.StartsWith(normSrc + Path.DirectorySeparatorChar, StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            if (mode == ClipboardMode.Cut && string.Equals(Path.GetDirectoryName(normSrc), normDest, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!PathExists(destPath))
+            {
+                steps.Add(new(path, destPath, false));
+                continue;
+            }
+
+            if (IsSamePath(path, destPath))
+            {
+                steps.Add(new(path, GetUniqueDestinationPath(destDir, Path.GetFileName(normSrc)), false));
+                continue;
+            }
+
+            ConflictAction action = await conflicts.ResolveAsync(path, destPath);
+            switch (action)
+            {
+                case ConflictAction.Cancel:
+                    throw new OperationCanceledException();
+
+                case ConflictAction.Skip:
+                    continue;
+
+                case ConflictAction.Duplicate:
+                    steps.Add(new(path, GetUniqueDestinationPath(destDir, Path.GetFileName(destPath)), false));
+                    continue;
+
+                case ConflictAction.Replace:
+                    if (IsInside(path, destPath))
+                    {
+                        throw new IOException($"Cannot replace \"{Path.GetFileName(destPath)}\" because it contains the item being transferred.");
+                    }
+
+                    steps.Add(new(path, destPath, true));
+                    continue;
+
+                default:
+                    steps.Add(new(path, destPath, false));
+                    continue;
+            }
+        }
+
+        return steps;
+    }
+
+    public Task<List<string>> TransferAsync(
         string destDir,
         ClipboardMode mode,
         IEnumerable<string> sourcePaths,
@@ -393,7 +632,7 @@ public class FileOperationService
         return TransferAsync(destDir, mode, sourcePaths, (Func<TransferConflict, Task<ConflictResolution>>?) null, progress, cancellationToken);
     }
 
-    public async Task TransferAsync(
+    public Task<List<string>> TransferAsync(
         string destDir,
         ClipboardMode mode,
         IEnumerable<string> sourcePaths,
@@ -401,15 +640,28 @@ public class FileOperationService
         IProgress<FileTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        return TransferAsync(destDir, mode, sourcePaths, resolveConflict, null, progress, cancellationToken);
+    }
+
+    public async Task<List<string>> TransferAsync(
+        string destDir,
+        ClipboardMode mode,
+        IEnumerable<string> sourcePaths,
+        Func<TransferConflict, Task<ConflictResolution>>? resolveConflict,
+        ICollection<TransferStep>? steps,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        List<string> targets = new();
         if (string.IsNullOrEmpty(destDir) || !Directory.Exists(destDir))
         {
-            return;
+            return targets;
         }
 
         List<string> pathList = sourcePaths.Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
         if (pathList.Count == 0)
         {
-            return;
+            return targets;
         }
 
         await Logger.LogI($"Starting transfer of {pathList.Count} items (mode: {mode})");
@@ -535,6 +787,7 @@ public class FileOperationService
                 continue;
             }
 
+            bool targetExisted = false;
             if (PathExists(destPath))
             {
                 if (IsSamePath(path, destPath))
@@ -550,9 +803,12 @@ public class FileOperationService
                     }
 
                     destPath = ApplyConflictAction(action, path, destPath);
+                    targetExisted = action != ConflictAction.Duplicate;
                 }
             }
 
+            targets.Add(destPath);
+            steps?.Add(new(path, destPath, targetExisted));
             if (File.Exists(path))
             {
                 await TransferSingleFileAsync(path, destPath, mode, buffer, () => transferredBytes, v => transferredBytes = v, () => transferredItems, v => transferredItems = v, ReportProgress, cancellationToken);
@@ -576,6 +832,7 @@ public class FileOperationService
         });
 
         await Logger.LogI($"Transfer completed for {totalItems} items (mode: {mode})");
+        return targets;
     }
 
     private async Task TransferSingleFileAsync(

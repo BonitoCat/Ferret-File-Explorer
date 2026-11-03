@@ -1,0 +1,95 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.AddonDependencyDialog"
+        Title="{markup:Translate Key=AddonDependenciesTitle}"
+        Width="500"
+        SizeToContent="Height"
+        MaxHeight="680"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+          Margin="20">
+
+        <TextBlock x:Name="MessageText"
+                   Grid.Row="0"
+                   TextWrapping="Wrap"
+                   FontSize="13"
+                   Margin="0,0,0,12"/>
+
+        <Border Grid.Row="1"
+                Background="#1E1E20"
+                BorderBrush="#333333"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="12,8">
+            <StackPanel x:Name="DependenciesPanel"
+                        Spacing="6"/>
+        </Border>
+
+        <TextBlock x:Name="HintText"
+                   Grid.Row="2"
+                   TextWrapping="Wrap"
+                   FontSize="12"
+                   Foreground="#999999"
+                   Margin="0,12,0,0"/>
+
+        <StackPanel x:Name="ResultPanel"
+                    Grid.Row="3"
+                    Spacing="8"
+                    Margin="0,12,0,0"
+                    IsVisible="False">
+
+            <ProgressBar x:Name="BusyBar"
+                         IsIndeterminate="True"
+                         Height="4"
+                         MinHeight="4"/>
+
+            <TextBlock x:Name="StatusText"
+                       TextWrapping="Wrap"
+                       FontSize="12"/>
+
+            <TextBox x:Name="OutputBox"
+                     IsReadOnly="True"
+                     TextWrapping="Wrap"
+                     FontFamily="monospace"
+                     FontSize="11"
+                     MaxHeight="180"
+                     IsVisible="False"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="10"
+                    Margin="0,20,0,0">
+
+            <Button x:Name="CopyButton"
+                    Content="{markup:Translate Key=AddonDependenciesCopy}"
+                    Click="OnCopyClick"
+                    Background="#333333"
+                    Padding="14,6"/>
+
+            <Button x:Name="SkipButton"
+                    Content="{markup:Translate Key=AddonDependenciesSkip}"
+                    Click="OnSkipClick"
+                    Background="#333333"
+                    MinWidth="80"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"/>
+
+            <Button x:Name="InstallButton"
+                    Content="{markup:Translate Key=AddonDependenciesInstall}"
+                    Click="OnInstallClick"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="White"
+                    MinWidth="80"
+                    Padding="14,6"
+                    HorizontalContentAlignment="Center"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

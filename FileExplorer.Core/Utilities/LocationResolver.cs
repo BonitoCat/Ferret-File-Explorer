@@ -21,7 +21,7 @@ public static class LocationResolver
 
         if (location == "~" || location.StartsWith("~/", StringComparison.Ordinal))
         {
-            return UserDirs.Home + location[1..];
+            return PathManager.ToNative(UserDirs.Home + location[1..]);
         }
 
         if (TryStripScheme(location, "trash:", out string trashRest))
@@ -30,9 +30,18 @@ public static class LocationResolver
             return trashRest.Length == 0 ? TrashFilesDir : Path.Combine(TrashFilesDir, trashRest);
         }
 
+        if (TryStripScheme(location, "xdg:", out string userDir))
+        {
+            string? resolved = ResolveUserDir(userDir);
+            if (resolved != null)
+            {
+                return resolved;
+            }
+        }
+
         if (TryStripScheme(location, "computer:", out _))
         {
-            return "/";
+            return PathManager.RootPath;
         }
 
         if (TryStripScheme(location, "network:", out _))
@@ -53,7 +62,7 @@ public static class LocationResolver
             return fileUri.LocalPath;
         }
 
-        return ResolveGvfs(location) ?? location;
+        return ResolveGvfs(location) ?? PathManager.ToNative(location);
     }
 
     private static string? ResolveGvfs(string location)
@@ -83,6 +92,22 @@ public static class LocationResolver
         }
 
         return null;
+    }
+
+    private static string? ResolveUserDir(string name)
+    {
+        return name.ToLowerInvariant() switch
+        {
+            "home" => UserDirs.Home,
+            "desktop" => UserDirs.Desktop,
+            "documents" => UserDirs.Documents,
+            "downloads" or "download" => UserDirs.Downloads,
+            "music" => UserDirs.Music,
+            "pictures" => UserDirs.Pictures,
+            "videos" => UserDirs.Videos,
+            "templates" => UserDirs.Templates,
+            _ => null,
+        };
     }
 
     private static bool TryStripScheme(string location, string scheme, out string rest)

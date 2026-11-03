@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using FileExplorer.Core.Services;
+using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Services;
 using LoggerLib;
 using static Avalonia.Interactivity.RoutingStrategies;
@@ -37,7 +38,7 @@ public partial class SmbShareDialog : Window
     public SmbShareDialog(string path) : this()
     {
         _path = path;
-        HeaderText.Text = Path.GetFileName(path.TrimEnd('/'));
+        HeaderText.Text = PathManager.GetName(path);
         NameTextBox.Text = SmbShareService.SuggestName(path);
         SetEnabled(false, false);
 

@@ -4,10 +4,10 @@
         xmlns:vm="using:FileExplorer.Gui.ViewModels"
         x:Class="FileExplorer.Gui.Dialogs.AddonsDialog"
         Title="{markup:Translate Key=Addons}"
-        Width="680"
-        Height="480"
-        MinWidth="520"
-        MinHeight="340"
+        Width="720"
+        Height="540"
+        MinWidth="560"
+        MinHeight="520"
         WindowStartupLocation="CenterOwner"
         Background="#242426"
         Foreground="#E0E0E0">
@@ -22,6 +22,22 @@
                     Value="Stretch"/>
             <Setter Property="HorizontalContentAlignment"
                     Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.donate">
+            <Setter Property="Background"
+                    Value="Transparent"/>
+            <Setter Property="Padding"
+                    Value="2"/>
+            <Setter Property="CornerRadius"
+                    Value="7"/>
+            <Setter Property="Cursor"
+                    Value="Hand"/>
+        </Style>
+
+        <Style Selector="Button.donate:pointerover /template/ ContentPresenter">
+            <Setter Property="Background"
+                    Value="#40FFFFFF"/>
         </Style>
     </Window.Styles>
 
@@ -49,7 +65,7 @@
                              SelectionChanged="OnSelectionChanged">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="vm:AddonItemViewModel">
-                                <Grid ColumnDefinitions="Auto,Auto,*"
+                                <Grid ColumnDefinitions="Auto,Auto,*,Auto"
                                       Margin="0,4">
 
                                     <CheckBox Grid.Column="0"
@@ -83,12 +99,44 @@
                                                    FontSize="12"
                                                    Foreground="#BBBBBB"/>
 
+                                        <TextBlock Text="{Binding Missing}"
+                                                   IsVisible="{Binding HasMissing}"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="12"
+                                                   Foreground="#E0A040"/>
+
                                         <TextBlock Text="{Binding Error}"
                                                    IsVisible="{Binding HasError}"
                                                    TextWrapping="Wrap"
                                                    FontSize="12"
                                                    Foreground="#FF7B72"/>
                                     </StackPanel>
+
+                                    <ItemsControl Grid.Column="3"
+                                                  ItemsSource="{Binding Donations}"
+                                                  IsVisible="{Binding HasDonations}"
+                                                  Margin="8,0,0,0"
+                                                  VerticalAlignment="Top">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal"
+                                                            Spacing="4"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:AddonDonationViewModel">
+                                                <Button Classes="donate"
+                                                        Tag="{Binding Url}"
+                                                        ToolTip.Tip="{Binding ToolTip}"
+                                                        Click="OnDonateClick">
+                                                    <Image Source="{Binding Icon}"
+                                                           Width="20"
+                                                           Height="20"/>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -107,7 +155,7 @@
             </Border>
 
             <StackPanel Grid.Column="1"
-                        Width="200"
+                        Width="230"
                         Spacing="8"
                         Margin="12,0,0,0">
 
@@ -120,6 +168,16 @@
                         Classes="side"
                         Content="{markup:Translate Key=MoveDown}"
                         Click="OnMoveDownClick"/>
+
+                <Button x:Name="SettingsButton"
+                        Classes="side"
+                        Content="{markup:Translate Key=AddonSettings}"
+                        Click="OnSettingsClick"/>
+
+                <Button x:Name="DependenciesButton"
+                        Classes="side"
+                        Content="{markup:Translate Key=InstallDependencies}"
+                        Click="OnDependenciesClick"/>
 
                 <Button x:Name="UninstallButton"
                         Classes="side"

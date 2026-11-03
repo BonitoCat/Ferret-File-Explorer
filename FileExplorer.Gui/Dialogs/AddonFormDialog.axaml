@@ -1,0 +1,73 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:markup="using:FileExplorer.Gui.Markup"
+        x:Class="FileExplorer.Gui.Dialogs.AddonFormDialog"
+        Width="500"
+        SizeToContent="Height"
+        MaxHeight="680"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Background="#242426"
+        Foreground="#E0E0E0">
+
+    <Grid RowDefinitions="Auto,*,Auto"
+          Margin="20">
+
+        <TextBlock x:Name="MessageText"
+                   Grid.Row="0"
+                   TextWrapping="Wrap"
+                   FontSize="13"
+                   Margin="0,0,0,16"/>
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel x:Name="FieldsPanel"
+                        Spacing="16"/>
+        </ScrollViewer>
+
+        <TextBlock x:Name="EmptyText"
+                   Grid.Row="1"
+                   Text="{markup:Translate Key=AddonNoSettings}"
+                   Foreground="#888888"
+                   FontSize="13"
+                   IsVisible="False"/>
+
+        <Grid Grid.Row="2"
+              ColumnDefinitions="Auto,*,Auto"
+              Margin="0,20,0,0">
+
+            <Button x:Name="ResetButton"
+                    Grid.Column="0"
+                    Content="{markup:Translate Key=ResetToDefaults}"
+                    Click="OnResetClick"
+                    Background="#333333"
+                    Padding="14,6"
+                    Margin="0,0,10,0"
+                    IsVisible="False"/>
+
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        Spacing="10">
+
+                <Button Content="{markup:Translate Key=Cancel}"
+                        Click="OnCancelClick"
+                        Background="#333333"
+                        MinWidth="80"
+                        Padding="14,6"
+                        HorizontalContentAlignment="Center"
+                        IsCancel="True"/>
+
+                <Button x:Name="ConfirmButton"
+                        Content="{markup:Translate Key=OK}"
+                        Click="OnConfirmClick"
+                        Background="{DynamicResource AccentBrush}"
+                        Foreground="White"
+                        MinWidth="80"
+                        Padding="14,6"
+                        HorizontalContentAlignment="Center"
+                        IsDefault="True"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

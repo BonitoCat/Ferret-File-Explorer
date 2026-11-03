@@ -19,6 +19,7 @@ public class FileEntry : IFileSystemEntry
     public bool IsReadOnly { get; set; }
     public bool IsSystem { get; set; }
     public bool IsSymlink { get; set; }
+    public bool IsBrokenLink { get; set; }
     public long FileSize { get; set; }
     
     public DateTime CreationTime { get; set; }
