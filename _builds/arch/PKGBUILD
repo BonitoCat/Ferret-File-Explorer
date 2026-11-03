@@ -1,0 +1,29 @@
+# Package the self-contained binaries already published by ../build.sh.
+pkgname=ferret
+# Arch forbids hyphens; keep prereleases ordered before the final release.
+pkgver=${FERRET_VERSION/-/}
+pkgver=${pkgver//-/.}
+pkgrel=1
+pkgdesc='Advanced terminal and desktop file explorer (CLI + GUI)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/BonitoCat/Ferret-File-Explorer'
+license=('MIT')
+depends=('glibc' 'gcc-libs' 'zlib' 'openssl' 'icu' 'file' 'wl-clipboard' 'xclip')
+provides=('ferret-cli')
+conflicts=('ferret-headless')
+# Stripping a .NET single-file executable can damage its embedded payload.
+options=('!strip' '!debug')
+
+if [[ $FERRET_VARIANT == headless ]]; then
+    pkgname=ferret-headless
+    pkgdesc='Advanced terminal file explorer (Headless / TUI only)'
+    conflicts=('ferret')
+else
+    depends+=('libx11' 'libice' 'libsm' 'fontconfig')
+fi
+
+package() {
+    cp -a --no-preserve=ownership "$FERRET_PACKAGE_TREE/usr" "$pkgdir/"
+    find "$pkgdir" -name .gitkeep -type f -delete
+    install -Dm644 "$FERRET_LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
