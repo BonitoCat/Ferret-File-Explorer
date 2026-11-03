@@ -3,7 +3,7 @@ pkgname=ferret
 # Arch forbids hyphens; keep prereleases ordered before the final release.
 pkgver=${FERRET_VERSION/-/}
 pkgver=${pkgver//-/.}
-pkgrel=2
+pkgrel=1
 pkgdesc='Advanced terminal and desktop file explorer (CLI + GUI)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/BonitoCat/Ferret-File-Explorer'
