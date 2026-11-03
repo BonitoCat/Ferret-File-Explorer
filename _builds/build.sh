@@ -161,6 +161,37 @@ dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-x64-headless" "$OUTPUT
 dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-full" "$OUTPUT_DIR/ferret-linux-arm64-full.deb"
 dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-headless" "$OUTPUT_DIR/ferret-linux-arm64-headless.deb"
 
+echo "=========================================="
+echo "Building Arch packages..."
+echo "=========================================="
+
+for target in x64 arm64; do
+    if [ "$target" = "x64" ]; then
+        ARCH_PACKAGE_ARCH="x86_64"
+    else
+        ARCH_PACKAGE_ARCH="aarch64"
+    fi
+
+    for variant in full headless; do
+        echo ">> Arch $ARCH_PACKAGE_ARCH $variant"
+        ARCH_BUILD_DIR="$SCRIPT_DIR/arch-build/$target-$variant"
+        mkdir -p "$ARCH_BUILD_DIR"
+        cp "$SCRIPT_DIR/arch/PKGBUILD" "$ARCH_BUILD_DIR/PKGBUILD"
+
+        (
+            cd "$ARCH_BUILD_DIR"
+            FERRET_VERSION="$NEW_VERSION" \
+            FERRET_VARIANT="$variant" \
+            FERRET_PACKAGE_TREE="$SCRIPT_DIR/fe-linux-$target-$variant" \
+            FERRET_LICENSE="$ROOT_DIR/LICENSE" \
+            CARCH="$ARCH_PACKAGE_ARCH" \
+            PKGDEST="$OUTPUT_DIR" \
+            PKGEXT=".pkg.tar.zst" \
+                makepkg --nodeps --force --cleanbuild --clean
+        )
+    done
+done
+
 APPIMAGETOOL="$SCRIPT_DIR/appimagetool-x86_64.AppImage"
 if [ -f "$APPIMAGETOOL" ]; then
     echo "=========================================="
