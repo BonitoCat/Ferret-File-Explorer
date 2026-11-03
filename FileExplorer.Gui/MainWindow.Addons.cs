@@ -44,6 +44,7 @@ public partial class MainWindow
         public AddonPendingForm? PendingForm { get; set; }
         public AddonFormDialog? ActiveForm { get; set; }
         public TaskCompletionSource<bool>? PasteDecision { get; set; }
+        public AddonContext? Context { get; set; }
         public TaskCompletionSource<int> Exited { get; } = new();
 
         public string AddonName => Addon.GetName(LocalizationService.Instance.LanguageCode);
@@ -250,7 +251,10 @@ public partial class MainWindow
 
     private AddonContext CreateAddonContext()
     {
-        return new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath), "", CurrentAddonMode);
+        return new(ViewModel.CurrentPath, GetSelectedItems().Select(i => i.FullPath), "", CurrentAddonMode)
+        {
+            TagLookup = GetAddonTags,
+        };
     }
 
     private void RebuildAddonsMenu()
@@ -638,7 +642,11 @@ public partial class MainWindow
             return;
         }
 
-        StartAddonRun(action.Addon, action.Id, action.GetTitle(language), launch);
+        AddonRun? run = StartAddonRun(action.Addon, action.Id, action.GetTitle(language), launch);
+        if (run != null)
+        {
+            run.Context = context;
+        }
     }
 
     private AddonRun? StartAddonRun(Addon addon, string source, string title, AddonLaunch launch, bool isService = false)
@@ -745,6 +753,24 @@ public partial class MainWindow
                 break;
             case AddonCommandKind.FieldSelect:
                 SelectAddonFormField(run, argument);
+                break;
+            case AddonCommandKind.Decorate:
+                SetAddonDecoration(run, command.Argument);
+                break;
+            case AddonCommandKind.Undecorate:
+                RemoveAddonDecoration(run, argument);
+                break;
+            case AddonCommandKind.UndoCreated:
+                RecordAddonCreated(run, argument);
+                break;
+            case AddonCommandKind.UndoPush:
+                PushAddonUndo(run, command.Argument);
+                break;
+            case AddonCommandKind.Watch:
+                AddAddonWatches(run, argument);
+                break;
+            case AddonCommandKind.Unwatch:
+                RemoveAddonWatches(run, argument);
                 break;
             case AddonCommandKind.StatusBar:
                 SetAddonStatusItem(run, argument);

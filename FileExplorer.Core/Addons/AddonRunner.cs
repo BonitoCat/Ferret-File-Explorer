@@ -14,6 +14,13 @@ public static partial class AddonRunner
     private const int SigTerm = 15;
     private const int SigKill = 9;
     private const string TempDirPrefix = "fe-addon-";
+
+    public static bool IsTempPath(string path)
+    {
+        string relative = Path.GetRelativePath(Path.GetTempPath(), path);
+        return relative.StartsWith(TempDirPrefix, StringComparison.Ordinal) && !Path.IsPathRooted(relative);
+    }
+
     private static readonly TimeSpan StopPollInterval = TimeSpan.FromMilliseconds(100);
 
     [LibraryImport("libc", EntryPoint = "kill")]

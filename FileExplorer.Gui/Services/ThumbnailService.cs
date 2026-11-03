@@ -24,6 +24,7 @@ namespace FileExplorer.Gui.Services;
 public static class ThumbnailService
 {
     private const int ThumbnailSize = 128;
+    private const string ThumbnailFormatVersion = "2";
     private const int MaxMemoryEntries = 4000;
     private const int JpegHeaderReadSize = 256 * 1024;
     private const int RemoteWorkerCount = 2;
@@ -198,9 +199,13 @@ public static class ThumbnailService
             {
                 continue;
             }
+            if (ReadPngText(png, "Software") == "Ferret" && ReadPngText(png, "X-Ferret::Version") != ThumbnailFormatVersion)
+            {
+                continue;
+            }
 
             using MemoryStream stream = new(png);
-            return Bitmap.DecodeToWidth(stream, ThumbnailSize);
+            return DecodeThumbnail(stream);
         }
 
         return null;
@@ -600,7 +605,7 @@ public static class ThumbnailService
         Bitmap thumbnail;
         using (FileStream stream = File.OpenRead(imagePath))
         {
-            thumbnail = Bitmap.DecodeToWidth(stream, ThumbnailSize);
+            thumbnail = DecodeThumbnail(stream);
         }
 
         return FinishThumbnail(thumbnail, uri, hash, mtime);
@@ -618,10 +623,28 @@ public static class ThumbnailService
         Bitmap thumbnail;
         using (FileStream stream = File.OpenRead(path))
         {
-            thumbnail = Bitmap.DecodeToWidth(stream, ThumbnailSize);
+            thumbnail = DecodeThumbnail(stream);
         }
 
         return FinishThumbnail(thumbnail, uri, hash, mtime);
+    }
+
+    private static Bitmap DecodeThumbnail(Stream stream)
+    {
+        int width;
+        using (SKManagedStream skStream = new(stream, false))
+        using (SKCodec? codec = SKCodec.Create(skStream))
+        {
+            width = codec?.Info.Width ?? 0;
+        }
+
+        stream.Position = 0;
+        if (width <= 0 || width > ThumbnailSize)
+        {
+            return Bitmap.DecodeToWidth(stream, ThumbnailSize);
+        }
+
+        return new(stream);
     }
 
     private static Bitmap? RenderSvg(string path)
@@ -696,6 +719,7 @@ public static class ThumbnailService
             ("Thumb::URI", uri),
             ("Thumb::MTime", mtime.ToString()),
             ("Software", "Ferret"),
+            ("X-Ferret::Version", ThumbnailFormatVersion),
         ]);
 
         string target = Path.Combine(directory, hash + ".png");

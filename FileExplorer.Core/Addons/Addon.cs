@@ -336,10 +336,11 @@ public sealed class Addon
                 continue;
             }
 
-            List<string> choices = (manifest.Choices ?? new())
-                .Select(c => c.Trim())
-                .Where(c => c.Length > 0)
+            List<(string Value, string Label)> parsedChoices = (manifest.Choices ?? new())
+                .Where(c => c.Trim().Length > 0)
+                .Select(AddonField.SplitChoice)
                 .ToList();
+            List<string> choices = parsedChoices.Select(c => c.Value).ToList();
             if (type == AddonFieldType.Choice && choices.Count == 0)
             {
                 SetError("AddonErrorSettingNoChoices", id);
@@ -353,7 +354,7 @@ public sealed class Addon
             }
 
             string label = string.IsNullOrWhiteSpace(manifest.Title) ? id : manifest.Title.Trim();
-            _settings.Add(new(id, label, manifest.Description?.Trim() ?? "", type, manifest.Default, choices, manifest.Min, manifest.Max));
+            _settings.Add(new(id, label, manifest.Description?.Trim() ?? "", type, manifest.Default, choices, manifest.Min, manifest.Max, parsedChoices.Select(c => c.Label).ToList()));
         }
     }
 

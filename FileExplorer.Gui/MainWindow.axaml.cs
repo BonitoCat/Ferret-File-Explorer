@@ -67,9 +67,7 @@ public partial class MainWindow : Window
     private bool _isResizingCol;
     private string? _resizingCol;
     private double _resizeStartX;
-    private double _initColNameWidth;
-    private double _initColSizeWidth;
-    private double _initColTypeWidth;
+    private double _initColWidth;
     private Grid? _resizeHeaderGrid;
 
     private string _typeAheadBuffer = "";
@@ -138,6 +136,8 @@ public partial class MainWindow : Window
         ThemeService.ColorsChanged += RefreshAllIcons;
         FileTypeIconService.Changed += RefreshAllIcons;
         InitializeAddons();
+        InitializeAddonDecorations();
+        InitializeListColumns();
 
         foreach (PaneViewModel pane in ViewModel.Panes)
         {
@@ -188,10 +188,11 @@ public partial class MainWindow : Window
             {
                 UpdateWindowTitle();
             }
-            else if (e.PropertyName == nameof(MainWindowViewModel.IsDualPane))
+            else if (e.PropertyName == nameof(MainWindowViewModel.IsDualPane) || e.PropertyName == nameof(MainWindowViewModel.IsTriplePane))
             {
                 FilePanesGrid.ColumnDefinitions[0].Width = new(1, GridUnitType.Star);
                 FilePanesGrid.ColumnDefinitions[2].Width = ViewModel.IsDualPane ? new(1, GridUnitType.Star) : new(0, GridUnitType.Pixel);
+                FilePanesGrid.ColumnDefinitions[4].Width = ViewModel.IsTriplePane ? new(1, GridUnitType.Star) : new(0, GridUnitType.Pixel);
             }
         };
 
@@ -489,6 +490,11 @@ public partial class MainWindow : Window
     private void OnToggleHiddenClick(object? sender, RoutedEventArgs e)
     {
         ViewModel.ShowHiddenFiles = !ViewModel.ShowHiddenFiles;
+    }
+
+    private void OnAddPaneClick(object? sender, RoutedEventArgs e)
+    {
+        ViewModel.AddPane();
     }
 
     private void OnToggleDualPaneClick(object? sender, RoutedEventArgs e)
@@ -1919,6 +1925,60 @@ public partial class MainWindow : Window
         return true;
     }
 
+    private bool TryHandlePickerKey(KeyEventArgs e)
+    {
+        if (!ViewModel.IsPickerMode || e.Key is not (Key.Enter or Key.Escape))
+        {
+            return false;
+        }
+
+        TopLevel? topLevel = TopLevel.GetTopLevel(this);
+        IInputElement? focusedElement = topLevel?.FocusManager?.GetFocusedElement();
+        if (focusedElement is TextBox && (e.Key == Key.Enter || focusedElement != PickerNameTextBox))
+        {
+            return false;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            if (e.KeyModifiers != KeyModifiers.None)
+            {
+                return false;
+            }
+
+            ViewModel.CancelPicker();
+            return true;
+        }
+
+        FileItemViewModel? selected = ViewModel.ActivePane.SelectedItem ?? GetSelectedItems().FirstOrDefault();
+        if (e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (selected is not { IsDirectory: true })
+            {
+                return false;
+            }
+
+            ViewModel.OpenEntry(selected);
+            FocusActiveListBox();
+            return true;
+        }
+
+        if (e.KeyModifiers != KeyModifiers.None)
+        {
+            return false;
+        }
+
+        if (ViewModel.PickerMode != PickerMode.Folder && selected is { IsDirectory: true })
+        {
+            ViewModel.OpenEntry(selected);
+            FocusActiveListBox();
+            return true;
+        }
+
+        ViewModel.ConfirmCurrentPicker();
+        return true;
+    }
+
     private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
     {
         if (TryListViewArrowNavigation(e))
@@ -1934,6 +1994,12 @@ public partial class MainWindow : Window
         }
 
         if (TryRunAddonShortcut(e))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (TryHandlePickerKey(e))
         {
             e.Handled = true;
             return;
@@ -2183,6 +2249,17 @@ public partial class MainWindow : Window
             e.Handled = true;
         }
 
+        if (point.Properties.IsMiddleButtonPressed)
+        {
+            if (clickedItem?.DataContext is FileItemViewModel { IsDirectory: true } folder)
+            {
+                ViewModel.OpenInOtherPane(folder);
+                e.Handled = true;
+            }
+
+            return;
+        }
+
         if (point.Properties.IsRightButtonPressed)
         {
             if (clickedItem?.DataContext is FileItemViewModel fileItem)
@@ -2376,11 +2453,20 @@ public partial class MainWindow : Window
                     return;
                 }
 
+                if (pressEvent.Source is not Visual pressSource || TopLevel.GetTopLevel(pressSource) != this)
+                {
+                    return;
+                }
+
                 _activeDragPaths = paths;
                 X11DragFeedback.ShowPreview(this, draggedItem, paths.Count);
                 try
                 {
                     await DoDragDropAsync(pressEvent, data, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogW($"Drag and drop failed: {ex.Message}");
                 }
                 finally
                 {
@@ -2848,6 +2934,7 @@ public partial class MainWindow : Window
             return;
         }
 
+        InjectTemplateItems(menu);
         InjectAddonContextItems(menu);
 
         MenuItem? openWithMenu = menu.Items.OfType<MenuItem>().FirstOrDefault(m => m.Tag is "open-with");
@@ -3337,6 +3424,16 @@ public partial class MainWindow : Window
                 ViewModel.DuplicateSelected(GetSelectedItems());
                 return true;
 
+            case "Undo":
+            case "Redo":
+                if (TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement() is TextBox)
+                {
+                    return false;
+                }
+
+                _ = id == "Undo" ? ViewModel.UndoAsync() : ViewModel.RedoAsync();
+                return true;
+
             case "DualPane":
                 OnToggleDualPaneClick(this, args);
                 return true;
@@ -3382,7 +3479,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        ViewModel.ActivePane = ViewModel.ActivePane == ViewModel.Pane1 ? ViewModel.Pane2 : ViewModel.Pane1;
+        ViewModel.SwitchToNextPane();
         ListBox? activeList = GetActiveListBox();
         if (activeList == null)
         {
@@ -3645,6 +3742,24 @@ public partial class MainWindow : Window
         bool canPaste = MainWindowViewModel.HasPasteContent();
         EditPasteMenuItem.IsEnabled = canPaste || HasAddonPasteHandlers();
         EditPasteSymlinkMenuItem.IsEnabled = canPaste;
+
+        FileUndoEntry? undo = ViewModel.UndoHistory.NextUndo;
+        FileUndoEntry? redo = ViewModel.UndoHistory.NextRedo;
+        bool isBusy = ViewModel.UndoHistory.IsBusy;
+        EditUndoMenuItem.Header = undo == null ? LocalizationService.Get("UndoMenuEmpty") : LocalizationService.Format("UndoMenu", MainWindowViewModel.GetUndoTitle(undo));
+        EditUndoMenuItem.IsEnabled = undo != null && !isBusy;
+        EditRedoMenuItem.Header = redo == null ? LocalizationService.Get("RedoMenuEmpty") : LocalizationService.Format("RedoMenu", MainWindowViewModel.GetUndoTitle(redo));
+        EditRedoMenuItem.IsEnabled = redo != null && !isBusy;
+    }
+
+    private void OnMenuUndoClick(object? sender, RoutedEventArgs e)
+    {
+        _ = ViewModel.UndoAsync();
+    }
+
+    private void OnMenuRedoClick(object? sender, RoutedEventArgs e)
+    {
+        _ = ViewModel.RedoAsync();
     }
 
     private async void OnMenuPasteAsSymlinkClick(object? sender, RoutedEventArgs e)
@@ -3828,9 +3943,7 @@ public partial class MainWindow : Window
         _isResizingCol = true;
         _resizingCol = border.Tag?.ToString();
         _resizeStartX = e.GetPosition(this).X;
-        _initColNameWidth = ViewModel.ColNameWidth;
-        _initColSizeWidth = ViewModel.ColSizeWidth;
-        _initColTypeWidth = ViewModel.ColTypeWidth;
+        _initColWidth = _resizingCol == "Name" ? ViewModel.ColNameWidth : ViewModel.Columns.Find(_resizingCol ?? "")?.Width ?? 0;
         _resizeHeaderGrid = FindVisualParent<Grid>(border);
 
         e.Pointer.Capture(border);
@@ -3845,20 +3958,17 @@ public partial class MainWindow : Window
         double delta = currentX - _resizeStartX;
         double containerWidth = _resizeHeaderGrid?.Bounds.Width ?? double.MaxValue;
 
-        if (_resizingCol == "Name")
+        ListColumn? column = ViewModel.Columns.Find(_resizingCol);
+        double others = ViewModel.Columns.All.Where(c => c.IsVisible && c != column).Sum(c => c.Width) + (column == null ? 0 : ViewModel.ColNameWidth);
+        double minWidth = column?.MinWidth ?? 100;
+        double width = Math.Clamp(_initColWidth + delta, minWidth, Math.Max(minWidth, containerWidth - others - 40));
+        if (column == null)
         {
-            double maxName = Math.Max(100, containerWidth - ViewModel.ColSizeWidth - ViewModel.ColTypeWidth - 110);
-            ViewModel.ColNameWidth = Math.Clamp(_initColNameWidth + delta, 100, maxName);
+            ViewModel.ColNameWidth = width;
         }
-        else if (_resizingCol == "Size")
+        else
         {
-            double maxSize = Math.Max(50, containerWidth - ViewModel.ColNameWidth - ViewModel.ColTypeWidth - 110);
-            ViewModel.ColSizeWidth = Math.Clamp(_initColSizeWidth + delta, 50, maxSize);
-        }
-        else if (_resizingCol == "Type")
-        {
-            double maxType = Math.Max(50, containerWidth - ViewModel.ColNameWidth - ViewModel.ColSizeWidth - 110);
-            ViewModel.ColTypeWidth = Math.Clamp(_initColTypeWidth + delta, 50, maxType);
+            column.Width = width;
         }
 
         e.Handled = true;

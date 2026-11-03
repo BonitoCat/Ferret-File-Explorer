@@ -156,6 +156,10 @@ public partial class MainWindow
 
         SendAddonEvent(run, $"event:navigate {ViewModel.CurrentPath}");
         SendAddonEvent(run, $"event:selection {GetSelectionEventText()}");
+        foreach (PaneViewModel pane in ViewModel.Panes.Where(p => !p.IsLoading && p.CurrentPath.Length > 0))
+        {
+            SendAddonEvent(run, $"event:refresh {pane.CurrentPath}");
+        }
     }
 
     private async Task StopAddonServiceAsync(AddonRun run, TimeSpan timeout)
@@ -185,6 +189,9 @@ public partial class MainWindow
         {
             RefreshAddonPlaces();
         }
+
+        RemoveAddonDecorations(e => e.Owner == run);
+        StopAddonWatches(run);
 
         if (!run.IsService)
         {
@@ -309,7 +316,8 @@ public partial class MainWindow
             return;
         }
 
-        AddonField field = new("choice", "", "", AddonFieldType.Choice, parts[1], parts.Skip(1).ToList());
+        List<(string Value, string Label)> choices = parts.Skip(1).Select(AddonField.SplitChoice).ToList();
+        AddonField field = new("choice", "", "", AddonFieldType.Choice, choices[0].Value, choices.Select(c => c.Value).ToList(), null, null, choices.Select(c => TranslateAddonText(run, c.Label)).ToList());
         AddonFormDialog dialog = new(run.AddonName, TranslateAddonText(run, parts[0]), [field]);
         Dictionary<string, string>? values = await dialog.ShowDialog<Dictionary<string, string>?>(this);
         ReplyToRun(run, values?.GetValueOrDefault(field.Id));
@@ -326,12 +334,13 @@ public partial class MainWindow
 
         string label = parts.Count > 2 ? TranslateAddonText(run, parts[2]) : parts[0];
         string value = parts.Count > 3 ? parts[3] : "";
-        List<string> choices = new();
+        List<(string Value, string Label)> choices = new();
         if (type == AddonFieldType.Choice)
         {
-            choices = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(c => c.TrimStart('*').Trim())
-                .Where(c => c.Length > 0)
+            List<string> raw = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            choices = raw
+                .Select(c => AddonField.SplitChoice(c.TrimStart('*')))
+                .Where(c => c.Value.Length > 0)
                 .ToList();
             if (choices.Count == 0)
             {
@@ -339,11 +348,12 @@ public partial class MainWindow
                 return;
             }
 
-            value = value.Split(',', StringSplitOptions.TrimEntries).FirstOrDefault(c => c.StartsWith('*'))?.TrimStart('*').Trim() ?? choices[0];
+            string? marked = raw.FirstOrDefault(c => c.StartsWith('*'));
+            value = marked == null ? choices[0].Value : AddonField.SplitChoice(marked.TrimStart('*')).Value;
         }
 
         run.PendingForm ??= new("");
-        run.PendingForm.Fields.Add(new(parts[0], label, "", type, value, choices));
+        run.PendingForm.Fields.Add(new(parts[0], label, "", type, value, choices.Select(c => c.Value).ToList(), null, null, choices.Select(c => TranslateAddonText(run, c.Label)).ToList()));
     }
 
     private async Task ShowAddonFormAsync(AddonRun run, string argument)
@@ -633,6 +643,7 @@ public partial class MainWindow
         }
 
         _dynamicAddonPlaces.RemoveAll(p => !active.Contains(p.AddonId));
+        RemoveAddonDecorations(e => !active.Contains(e.AddonId));
     }
 
     private void SaveAddonSetting(AddonRun run, string argument)

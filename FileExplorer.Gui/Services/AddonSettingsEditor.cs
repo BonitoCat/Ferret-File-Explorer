@@ -13,7 +13,7 @@ public static class AddonSettingsEditor
     {
         string language = LocalizationService.Instance.LanguageCode;
         List<AddonField> fields = addon.Settings
-            .Select(s => new AddonField(s.Id, addon.Translate(s.Label, language), addon.Translate(s.Description, language), s.Type, s.Default, s.Choices, s.Min, s.Max))
+            .Select(s => new AddonField(s.Id, addon.Translate(s.Label, language), addon.Translate(s.Description, language), s.Type, s.Default, s.Choices, s.Min, s.Max, s.ChoiceLabels.Select(l => addon.TranslateText(l, language)).ToList()))
             .ToList();
 
         AddonFormDialog dialog = new(LocalizationService.Format("AddonSettingsTitle", addon.GetName(language)), "", fields, AddonSettingsStore.GetValues(addon))

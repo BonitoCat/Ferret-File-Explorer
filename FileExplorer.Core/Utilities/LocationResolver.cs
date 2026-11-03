@@ -30,6 +30,15 @@ public static class LocationResolver
             return trashRest.Length == 0 ? TrashFilesDir : Path.Combine(TrashFilesDir, trashRest);
         }
 
+        if (TryStripScheme(location, "xdg:", out string userDir))
+        {
+            string? resolved = ResolveUserDir(userDir);
+            if (resolved != null)
+            {
+                return resolved;
+            }
+        }
+
         if (TryStripScheme(location, "computer:", out _))
         {
             return PathManager.RootPath;
@@ -83,6 +92,22 @@ public static class LocationResolver
         }
 
         return null;
+    }
+
+    private static string? ResolveUserDir(string name)
+    {
+        return name.ToLowerInvariant() switch
+        {
+            "home" => UserDirs.Home,
+            "desktop" => UserDirs.Desktop,
+            "documents" => UserDirs.Documents,
+            "downloads" or "download" => UserDirs.Downloads,
+            "music" => UserDirs.Music,
+            "pictures" => UserDirs.Pictures,
+            "videos" => UserDirs.Videos,
+            "templates" => UserDirs.Templates,
+            _ => null,
+        };
     }
 
     private static bool TryStripScheme(string location, string scheme, out string rest)

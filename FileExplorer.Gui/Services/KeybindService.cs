@@ -31,6 +31,8 @@ public sealed class KeybindService : INotifyPropertyChanged
         new("Up", "KeybindUp", "KeybindCategoryNavigation", "Alt+Up"),
         new("Refresh", "Reload", "KeybindCategoryNavigation", "F5"),
         new("SwitchPane", "KeybindSwitchPane", "KeybindCategoryNavigation", "F6"),
+        new("Undo", "KeybindUndo", "KeybindCategoryFiles", "Ctrl+Z"),
+        new("Redo", "KeybindRedo", "KeybindCategoryFiles", "Ctrl+Y"),
         new("NewFolder", "NewFolder", "KeybindCategoryFiles", "Ctrl+Shift+N"),
         new("NewFile", "NewFile", "KeybindCategoryFiles", "Ctrl+Alt+N"),
         new("Cut", "Cut", "KeybindCategoryFiles", "Ctrl+X"),

@@ -85,6 +85,7 @@ my-addon/
 | `separator`   | `before`, `after`, `both` or `none`                                         | `none`          |
 | `parent`      | Put it into a submenu (see [submenus](#submenus))                           | none            |
 | `modes`       | Where this action is offered (see [modes](#where-addons-run))               | addon `modes`   |
+| `tags`        | Only show it when every selected item has one of these [tags](#file-decorations) from this addon, e.g. `[modified]` | no tag needed   |
 | `clipboard`   | Paste handlers only: run only when the clipboard has `files`, `image` or `text`; `extensions` and `multiple` then filter the copied files | any content     |
 
 **Targets**
@@ -323,7 +324,7 @@ echo '$NotInstalled' >&2
 exit 1
 ```
 
-Use single quotes or `\$` so the shell doesn't expand the key itself. A key is `$` followed by letters, digits and `_`. Unknown keys are shown as written. Paths, ids, choice values and replies are never translated, so `fe:choose` sends back the value you wrote.
+Use single quotes or `\$` so the shell doesn't expand the key itself. A key is `$` followed by letters, digits and `_`. Unknown keys are shown as written. Paths, ids, choice values and replies are never translated, so `fe:choose` sends back the value you wrote. To show a translated text for a choice, give it a [label](#choice-labels).
 
 ### Running scripts
 
@@ -404,6 +405,12 @@ A script can control Ferret by printing these lines to stdout. Ferret ignores al
 | `fe:pass`            | Paste handlers only: let Ferret paste normally (see [paste handlers](#paste-handlers)) |
 | `fe:field-set <id> \| <value>` | Change a field of the open form (see [live forms](#live-forms)) |
 | `fe:field-select <id> \| …` | Focus a text field and select text in it (see [selecting text](#selecting-text)) |
+| `fe:watch <path> \| …` | Services only: get `event:watch` when these files or folders change (see [watching files](#watching-files)) |
+| `fe:unwatch [path \| …]` | Stop watching these paths (all of them without a path) |
+| `fe:undo-created <path> \| …` | Let the user undo files your script created (see [undo](#undo)) |
+| `fe:undo-push <data>` | Add your own step to Ctrl+Z (see [undo](#undo)) |
+| `fe:decorate <path> \| <key>=<value> \| …` | Color, badge, icon or tooltip for a file in the list (see [file decorations](#file-decorations)) |
+| `fe:undecorate [path \| …]` | Remove this addon's decorations (all of them without a path) |
 | `fe:copy <text>`     | Copy text to the clipboard (`\n` for line breaks) |
 | `fe:copy-files <path> \| …` | Copy files so the user can paste them (like Ctrl+C) |
 | `fe:cut-files <path> \| …`  | Cut files so the user can paste them (like Ctrl+X) |
@@ -459,6 +466,25 @@ IFS= read -r format || exit 0
 
 - **Look:** up to 6 options are shown as radio buttons, more as a drop-down list. The first option is selected at the start.
 - **Rules:** options are separated by `|` and trimmed, so `|` can't appear inside an option. You need at least one option; `fe:choose` without options is reported in **Addon Problems** and answered like a cancel.
+
+#### Choice labels
+
+Every choice, in `fe:choose`, in `choice` fields of forms and in `choice` settings, can show a different text than the value your script gets: write `value=label`. The label can be a translation key.
+
+```bash
+echo "fe:choose \$PickCorner | top-right=\$TopRight | bottom-left=\$BottomLeft"
+echo "fe:field size | choice | Size | s=Small,*m=Medium,l=Large"
+```
+
+```yaml
+settings:
+  - id: corner
+    type: choice
+    choices: [top-right=$TopRight, bottom-left=$BottomLeft]
+    default: top-right
+```
+
+The user sees "Top right", your script gets `top-right`, and saved settings keep the value even when the user switches the language. The value is everything before the first `=`, so a value can't contain `=`. A choice without `=` is its own label.
 
 ### Forms
 
@@ -645,6 +671,32 @@ IFS= read -r moved
 
 `FE_TEMP_DIR` is deleted together with its contents as soon as the script exits, so don't hand it to programs that keep running in the background.
 
+### Undo
+
+Ctrl+Z in Ferret undoes renames, moves, copies, new files and moving to the trash. What your addon does with Ferret's own commands is already part of it: `fe:copy-to`, `fe:move-to` and `fe:trash` can be undone like the user's own actions. A file moved out of `FE_TEMP_DIR` with `fe:move-to` counts as created, so undoing it moves it to the trash.
+
+For changes your script makes itself, there are two commands:
+
+- **`fe:undo-created <path> | …`** says that your script created these files or folders. Undo moves them to the trash, and redo brings them back. This is all most "convert" or "extract" addons need.
+- **`fe:undo-push <data>`** adds your own step. When the user undoes it, Ferret runs the same action again with the same selection and folder, and with `FE_UNDO=undo` and `FE_UNDO_DATA=<data>`; redo does the same with `FE_UNDO=redo`. Put whatever your script needs to reverse its change into `<data>`, e.g. the old value. Exit with code 0 when it worked; any other code means it failed, and the step is dropped from the history.
+
+```bash
+if [ "$FE_UNDO" = undo ]; then
+    chmod "$FE_UNDO_DATA" "$1"
+    exit 0
+fi
+
+old=$(stat -c %a "$1")
+[ "$FE_UNDO" = redo ] || echo "fe:undo-push $old"
+chmod +x "$1"
+```
+
+- **Menu text:** the Edit menu shows **Undo <action title>**, e.g. "Undo Make Executable".
+- **Services:** when a service pushes a step, it gets `event:undo <data>` or `event:redo <data>` instead, and the step counts as done. If the service no longer runs, the step can't be undone.
+- **While undoing:** the commands your script runs during `FE_UNDO=undo` or `redo` don't add new steps, so undo doesn't fill up its own history.
+- **Order:** each command is its own step. A script that moves three files with one `fe:move-to` adds one step, a script that calls `fe:move-to` three times adds three.
+- **Limits:** the history belongs to the window and is lost when it closes. A step is dropped when its action no longer exists, or the addon is disabled or uninstalled.
+
 ### Progress bars
 
 Your script can show a progress bar at the bottom of the window, like the one for copying files. When several bars are running at once (two addons, or an addon and a copy), they show up as tabs above the bar, and you can click them or use the arrows to switch between them.
@@ -779,6 +831,9 @@ Ferret writes **events** to the service's stdin, one per line:
 | `event:cancel` | the user cancelled `fe:prompt`, `fe:choose` or a form |
 | `event:change <id><TAB><values…>` | a field of a [live form](#live-forms) changed |
 | `event:setting <id> <value>` | a [setting](#settings) was changed (one line per changed setting) |
+| `event:watch <path>` | something in a path from [`fe:watch`](#watching-files) changed; `<path>` is the file that changed |
+| `event:undo <data>` / `event:redo <data>` | the user undid or redid a step the service added with [`fe:undo-push`](#undo) |
+| `event:refresh <path>` | the folder `<path>` finished loading: after opening it, reloading it, a change on disk or a new sort order (see [file decorations](#file-decorations)) |
 | `event:close` | Ferret is about to stop the service; exit now |
 
 ```bash
@@ -810,6 +865,23 @@ done
 - **Slow services:** Ferret never waits for your service to read. If it falls more than 500 events behind, the oldest ones are dropped.
 - **Missing script:** if `service` points to a file that doesn't exist, the addon gets an error and doesn't load.
 
+### Watching files
+
+A service can ask to be told when files change, instead of checking again and again:
+
+```bash
+echo "fe:watch $HOME/.config/myapp/state.json | $HOME/Notes"
+```
+
+From then on it gets `event:watch <path>` with the path of the file or folder that was created, changed, deleted or renamed (for a rename, both the old and the new path).
+
+- **Folders** are watched one level deep: changes to the files and folders directly inside count, changes further down don't. Watch the subfolders you need as well.
+- **Files** only report changes of that one file. Watching a path that doesn't exist is reported in **Addon Problems**.
+- **Bursts:** changes within 300 ms are collected, and each changed path is sent once.
+- **Limits:** a service can watch up to 64 paths. `fe:unwatch <path> | …` stops watching some, `fe:unwatch` alone all of them. Everything is unwatched when the service stops.
+- **Only services:** an action or hook ends too quickly to receive events, so `fe:watch` from them is ignored and reported in **Addon Problems**.
+- **Careful with loops:** if your service writes to a watched folder when it gets `event:watch`, it triggers itself again. The git-tools example uses `git --no-optional-locks` so that `git status` doesn't touch `.git` while it watches it.
+
 ### Status bar items
 
 `fe:statusbar <id> <text>` shows a small item with your addon's icon and the text at the right side of the status bar. The first word is the id, the rest is the text. Use the same id again to change the text.
@@ -824,6 +896,65 @@ done
 - **Lifetime:** items from a service disappear when the service stops. Items from actions and hooks stay until you remove them, the addon is disabled or uninstalled, or the window closes. Items belong to the window that ran the script.
 - **Look:** the icon is the addon's `icon` (none if it has none). Long texts are cut off with `…`, so keep them short. Items appear in the order they were added; the status bar is hidden in pickers.
 - **Mistakes:** `fe:statusbar` without an id, and a tooltip for an item that doesn't exist, are reported in **Addon Problems**.
+
+### File decorations
+
+Addons can mark files and folders in the file list: color their name, tint them, swap their icon, put a small badge in a corner of the icon or add a tooltip. Typical uses are a git status (changed files in orange, new ones in red) or a sync state.
+
+```
+fe:decorate <path> | <key>=<value> | <key>=<value> …
+```
+
+| Key | Effect |
+|-----|--------|
+| `color` | Color of the name |
+| `background` | Tint of the whole item |
+| `icon-background` | Tint behind the icon |
+| `text-background` | Tint behind the name |
+| `icon` | Replace the icon (a file in the addon folder, or the name of a Ferret icon such as `archive`); also hides the thumbnail |
+| `badge` | Small icon in a corner of the item's icon |
+| `badge-text` | Short text in the badge, e.g. `M` or `3` |
+| `badge-color` | Color of the badge; a badge with only a color is a dot |
+| `badge-corner` | `top-left`, `top-right`, `bottom-left` or `bottom-right` (default `top-right`) |
+| `tooltip` | Tooltip of the item (`\n` for line breaks) |
+| `tag` / `tags` | Comma-separated tags for [context menu entries](#addonyaml), e.g. `tag=modified` |
+
+- **Colors** are names (`red`) or hex values (`#E5534B`). The three backgrounds are made see-through automatically; give your own transparency as `#AARRGGBB` (alpha first).
+- **Replacing:** `fe:decorate` again for the same path replaces your earlier decoration of it completely. `fe:undecorate <path> | …` removes it, and `fe:undecorate` alone removes all of your addon's decorations.
+- **Several addons:** each addon has its own decoration per path. When two decorate the same item, the one that decorated it last wins for each key; tooltips are combined.
+- **Paths** can be relative to the open folder. They don't have to be in the open folder: decorations are kept and show up when the user opens it. Remove them when they are no longer true.
+- **Keeping it up to date:** services get `event:refresh <path>` whenever a folder finished loading, so they can decorate what is now on screen. In split view, each pane sends its own.
+- **Tags** let context menu entries appear only for certain items: an action with `tags: [untracked, modified]` only shows up when every selected item was decorated by the same addon with one of these tags. Actions with `tags` never show up for the empty folder background.
+- **List view:** the badge text is shown as a small label at the end of the name, and the corner badge as a dot or icon.
+- **Lifetime:** decorations from a service disappear when the service stops. Decorations from actions and hooks stay until they are removed, the addon is disabled or uninstalled, or the window closes.
+- **Mistakes:** an unknown key, an invalid color or corner, or an icon that can't be found are reported in **Addon Problems**, and the line is ignored.
+
+```bash
+#!/usr/bin/env bash
+# scripts/service.sh: mark files whose name contains "draft"
+while IFS= read -r line; do
+    case "$line" in
+        "event:refresh "*)
+            dir="${line#event:refresh }"
+            for file in "$dir"/*draft*; do
+                [ -e "$file" ] && echo "fe:decorate $file | color=orange | badge-text=D | tooltip=Draft | tag=draft"
+            done
+            ;;
+        "event:close")
+            exit 0
+            ;;
+    esac
+done
+```
+
+```yaml
+actions:
+  - id: publish
+    title: Publish Draft
+    tags: [draft]
+```
+
+The **git-tools** example addon uses this to show the git status of every file and offers settings for what to show, plus **Add to Git**, **Remove from Staging** and **Discard Changes** in the context menu.
 
 ### Sidebar places
 
@@ -887,7 +1018,7 @@ settings:
 | `description` | Small text below the input (`$Key` translates it) | |
 | `type`        | `text`, `password`, `number`, `bool`, `choice`, `file` or `folder` (see [field types](#forms)) | `text` |
 | `default`     | Value before the user changes it | empty, `false`, the minimum (or `0`), or the first choice |
-| `choices`     | Options of a `choice` setting (required for `choice`) | |
+| `choices`     | Options of a `choice` setting (required for `choice`); `value=label` shows a different, translatable text (see [choice labels](#choice-labels)) | |
 | `min`, `max`  | Limits of a `number` setting | none |
 
 - **Reading settings:** every action, hook and service gets each setting as an environment variable: `FE_SETTING_` followed by the id in capitals, with everything except letters and digits turned into `_`. `api_key` becomes `FE_SETTING_API_KEY`, `max-size` becomes `FE_SETTING_MAX_SIZE`. Settings the user never changed have their default value.

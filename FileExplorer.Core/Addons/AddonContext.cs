@@ -54,6 +54,7 @@ public sealed class AddonContext
     public IReadOnlyList<string> SelectedPaths { get; }
     public string Input { get; }
     public AddonMode Mode { get; }
+    public Func<string, string, IReadOnlySet<string>>? TagLookup { get; init; }
 
     public AddonContext(string currentDirectory, IEnumerable<string> selectedPaths, string input = "", AddonMode mode = AddonMode.Explorer)
     {
@@ -80,6 +81,11 @@ public sealed class AddonContext
 
             return target;
         }
+    }
+
+    public IReadOnlySet<string> GetTags(string addonId, string path)
+    {
+        return TagLookup?.Invoke(addonId, path) ?? new HashSet<string>();
     }
 
     public IReadOnlyList<string> TargetPaths => SelectedPaths.Count > 0 ? SelectedPaths : [CurrentDirectory];

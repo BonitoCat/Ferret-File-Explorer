@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -103,25 +104,39 @@ public partial class KeybindsDialog : Window
             return;
         }
 
-        Assign(_capturing, new(e.Key, e.KeyModifiers));
+        _ = AssignAsync(_capturing, new(e.Key, e.KeyModifiers));
     }
 
-    private void Assign(KeybindRowViewModel row, KeyGesture gesture)
+    private async Task AssignAsync(KeybindRowViewModel row, KeyGesture gesture)
     {
-        List<string> removedFrom = new();
-        foreach (KeybindRowViewModel other in _rows.Where(other => other != row && gesture.Equals(other.Gesture)))
+        StopCapture();
+        List<KeybindRowViewModel> conflicts = _rows.Where(other => other != row && gesture.Equals(other.Gesture)).ToList();
+        if (conflicts.Count > 0 && !await ConfirmTakeOverAsync(gesture, conflicts))
+        {
+            return;
+        }
+
+        foreach (KeybindRowViewModel other in conflicts)
         {
             KeybindService.Instance.Set(other.Id, null, other.DefaultGesture);
             other.Refresh();
-            removedFrom.Add(other.Title);
         }
 
         KeybindService.Instance.Set(row.Id, gesture, row.DefaultGesture);
         _ = Logger.LogI($"Shortcut {row.Id} set to {KeybindService.Format(gesture)}");
-        StopCapture();
         row.Refresh();
+        ShowStatus(null);
+    }
 
-        ShowStatus(removedFrom.Count == 0 ? null : LocalizationService.Format("KeybindReassigned", KeybindService.Format(gesture), string.Join(", ", removedFrom)));
+    private async Task<bool> ConfirmTakeOverAsync(KeyGesture gesture, List<KeybindRowViewModel> conflicts)
+    {
+        ConfirmDialog dialog = new(
+            LocalizationService.Get("KeybindInUseTitle"),
+            LocalizationService.Format("KeybindInUseMessage", KeybindService.Format(gesture), string.Join(", ", conflicts.Select(c => c.Title))),
+            LocalizationService.Get("KeybindInUseRemove"),
+            true,
+            false);
+        return await dialog.ShowDialog<bool?>(this) == true;
     }
 
     private void OnClearClick(object? sender, RoutedEventArgs e)

@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
+using FileExplorer.Core.Addons;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Models;
@@ -29,6 +30,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 {
     private readonly FileSystemService _fileService = new();
     private readonly FileOperationService _operationService = new();
+    private FileUndoService? _undoHistory;
     private readonly FileExecutionService _executionService = new();
     private readonly BookmarkService _bookmarkService = new();
     private readonly NetworkService _networkService = new();
@@ -43,10 +45,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private DateTime _statusHoldUntil;
     private bool _isGridView = true;
     private bool _isDualPane;
+    private bool _isTriplePane;
     private double _colNameWidth = 260;
-    private double _colSizeWidth = 110;
-    private double _colTypeWidth = 110;
-    private double _colModifiedWidth = 140;
     public event Action<string>? ScriptOpenRequested;
     public event Action<NetworkConnectionInfo>? NetworkLoginRequested;
     public event Action<PaneViewModel, string, bool>? NetworkServerLoginRequested;
@@ -54,6 +54,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public event Action<string>? DirectoryAccessDenied;
     public event Action<string>? BrokenLinkOpened;
     public event Action<string, IReadOnlyList<string>>? TransferCompleted;
+
+    public FileUndoService UndoHistory => _undoHistory ??= new(_operationService);
     public Func<TransferConflict, Task<ConflictResolution>>? ConflictResolver { get; set; }
     public Func<string, Task<bool>>? ElevationConfirm { get; set; }
     private bool _isPathEditing;
@@ -93,22 +95,24 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         set => SetProperty(ref _colNameWidth, value);
     }
 
+    public ListColumns Columns { get; } = new();
+
     public double ColSizeWidth
     {
-        get => _colSizeWidth;
-        set => SetProperty(ref _colSizeWidth, value);
+        get => Columns.Size.Width;
+        set => Columns.Size.Width = value;
     }
 
     public double ColTypeWidth
     {
-        get => _colTypeWidth;
-        set => SetProperty(ref _colTypeWidth, value);
+        get => Columns.Type.Width;
+        set => Columns.Type.Width = value;
     }
 
     public double ColModifiedWidth
     {
-        get => _colModifiedWidth;
-        set => SetProperty(ref _colModifiedWidth, value);
+        get => Columns.Modified.Width;
+        set => Columns.Modified.Width = value;
     }
 
     public ObservableCollection<OperationProgressViewModel> Operations { get; } = new();
@@ -217,11 +221,25 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public PaneViewModel Pane1 { get; }
     public PaneViewModel Pane2 { get; }
-    public IEnumerable<PaneViewModel> Panes => [Pane1, Pane2];
+    public PaneViewModel Pane3 { get; }
+    public IEnumerable<PaneViewModel> Panes => [Pane1, Pane2, Pane3];
+
+    public IReadOnlyList<PaneViewModel> VisiblePanes
+    {
+        get
+        {
+            if (IsTriplePane)
+            {
+                return [Pane1, Pane2, Pane3];
+            }
+
+            return IsDualPane ? [Pane1, Pane2] : [Pane1];
+        }
+    }
 
     private static readonly TimeSpan TransferSettleTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan StatusMessageHold = TimeSpan.FromSeconds(4);
-    public IEnumerable<FileItemViewModel> AllItems => Pane1.Items.Concat(Pane2.Items);
+    public IEnumerable<FileItemViewModel> AllItems => Pane1.Items.Concat(Pane2.Items).Concat(Pane3.Items);
 
     public PaneViewModel ActivePane
     {
@@ -258,6 +276,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             if (!value)
             {
+                IsTriplePane = false;
                 ActivePane = Pane1;
                 Pane2.Close();
             }
@@ -265,6 +284,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _isDualPane = value;
             OnPropertyChanged(nameof(IsDualPane));
             OnPropertyChanged(nameof(SecondaryPaneMinWidth));
+            OnPropertyChanged(nameof(CanAddPane));
 
             if (value && !Pane2.IsOpen)
             {
@@ -274,6 +294,42 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     }
 
     public double SecondaryPaneMinWidth => IsDualPane ? 200 : 0;
+
+    public bool IsTriplePane
+    {
+        get => _isTriplePane;
+        private set
+        {
+            if (_isTriplePane == value)
+            {
+                return;
+            }
+
+            if (!value)
+            {
+                if (ActivePane == Pane3)
+                {
+                    ActivePane = Pane2;
+                }
+
+                Pane3.Close();
+            }
+
+            _isTriplePane = value;
+            OnPropertyChanged(nameof(IsTriplePane));
+            OnPropertyChanged(nameof(TertiaryPaneMinWidth));
+            OnPropertyChanged(nameof(CanAddPane));
+
+            if (value && !Pane3.IsOpen)
+            {
+                Pane3.NavigateTo(ActivePane.CurrentPath);
+            }
+        }
+    }
+
+    public double TertiaryPaneMinWidth => IsTriplePane ? 200 : 0;
+
+    public bool CanAddPane => !IsTriplePane;
 
     public bool IsPathEditing
     {
@@ -490,6 +546,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Pane1 = CreatePane();
         Pane2 = CreatePane();
+        Pane3 = CreatePane();
         _activePane = Pane1;
         Pane1.IsActive = true;
 
@@ -667,19 +724,87 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void ToggleDualPane()
     {
-        if (IsDualPane && ActivePane == Pane2 && Pane2.IsOpen)
+        if (IsDualPane && ActivePane != Pane1 && ActivePane.IsOpen)
         {
-            Pane1.TakeOver(Pane2);
+            Pane1.TakeOver(ActivePane);
         }
 
         IsDualPane = !IsDualPane;
         Logger.LogI($"Toggled dual pane: {IsDualPane}");
     }
 
+    public void OpenInOtherPane(FileItemViewModel item)
+    {
+        if (!item.IsDirectory || TryReportBrokenLink(item))
+        {
+            return;
+        }
+
+        PaneViewModel source = ActivePane;
+        if (!IsDualPane)
+        {
+            Pane2.NavigateTo(item.FullPath);
+            IsDualPane = true;
+            return;
+        }
+
+        IReadOnlyList<PaneViewModel> visible = VisiblePanes;
+        PaneViewModel other = visible[(IndexOfPane(visible, source) + 1) % visible.Count];
+        other.NavigateTo(item.FullPath);
+    }
+
+    private static int IndexOfPane(IReadOnlyList<PaneViewModel> panes, PaneViewModel pane)
+    {
+        for (int i = 0; i < panes.Count; i++)
+        {
+            if (panes[i] == pane)
+            {
+                return i;
+            }
+        }
+
+        return 0;
+    }
+
+    public void AddPane()
+    {
+        if (IsTriplePane)
+        {
+            return;
+        }
+
+        if (!IsDualPane)
+        {
+            IsDualPane = true;
+            Logger.LogI("Added secondary pane");
+            return;
+        }
+
+        IsTriplePane = true;
+        Logger.LogI("Added third pane");
+    }
+
+    public void SwitchToNextPane()
+    {
+        IReadOnlyList<PaneViewModel> visible = VisiblePanes;
+        if (visible.Count < 2)
+        {
+            return;
+        }
+
+        ActivePane = visible[(IndexOfPane(visible, ActivePane) + 1) % visible.Count];
+    }
+
     public void CloseActivePane()
     {
         if (!IsDualPane)
         {
+            return;
+        }
+
+        if (IsTriplePane)
+        {
+            CloseActivePaneOfThree();
             return;
         }
 
@@ -694,6 +819,26 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         IsDualPane = false;
 
         Logger.LogI("Closed primary pane, promoted secondary pane");
+    }
+
+    private void CloseActivePaneOfThree()
+    {
+        if (ActivePane == Pane3 || !Pane3.IsOpen)
+        {
+            IsTriplePane = false;
+            Logger.LogI("Closed third pane");
+            return;
+        }
+
+        if (ActivePane == Pane1)
+        {
+            Pane1.TakeOver(Pane2);
+        }
+
+        Pane2.TakeOver(Pane3);
+        IsTriplePane = false;
+
+        Logger.LogI("Closed pane, shifted remaining panes");
     }
 
     public void TogglePathEditing()
@@ -1863,7 +2008,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         try
         {
             ClipboardMode mode = isCopy ? ClipboardMode.Copy : ClipboardMode.Cut;
-            List<string> targets = await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, progress, token), token);
+            List<TransferStep> steps = new();
+            List<string> targets = await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, steps, progress, token), token);
+            RecordTransfer(steps, isCopy);
             progressView.Status = LocalizationService.Get("FinishingTransfer");
             progressView.Item = "";
             await WaitForTargetsAsync(targets, token);
@@ -1893,6 +2040,28 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         return retryElevated && await TransferElevatedAsync(pathList, destinationDirectory, isCopy);
+    }
+
+    private void RecordTransfer(List<TransferStep> steps, bool isCopy)
+    {
+        if (steps.Count == 0 || steps.Any(step => step.ReplaceExisting))
+        {
+            return;
+        }
+
+        if (isCopy)
+        {
+            UndoHistory.Record(FileUndoKind.Copy, steps.Select(step => (step.Target, "")));
+            return;
+        }
+
+        if (steps.All(step => AddonRunner.IsTempPath(step.Source)))
+        {
+            UndoHistory.Record(FileUndoKind.Create, steps.Select(step => (step.Target, "")));
+            return;
+        }
+
+        UndoHistory.Record(FileUndoKind.Move, steps.Select(step => (step.Source, step.Target)));
     }
 
     private async Task<bool> TransferElevatedAsync(List<string> paths, string destinationDirectory, bool isCopy)
@@ -2834,6 +3003,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         (List<string> created, List<string> errors) = await _operationService.CreateSymlinksAsync(dir, paths, ConflictResolver);
+        UndoHistory.Record(FileUndoKind.Link, created.Select(link => (Path: link, Other: new FileInfo(link).LinkTarget ?? "")).Where(link => link.Other.Length > 0));
         if (errors.Count > 0)
         {
             StatusText = LocalizationService.Format("SymlinkFailed", errors[0]);
@@ -2932,9 +3102,10 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             progressView.Item = p.CurrentItemName;
         });
 
+        List<TrashedItem> trashed = new();
         try
         {
-            await Task.Run(() => _operationService.Delete(paths, permanent, progress, token), token);
+            await Task.Run(() => _operationService.Delete(paths, permanent, progress, token, trashed), token);
         }
         catch (OperationCanceledException)
         {
@@ -2952,6 +3123,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             progressView.CancelAction = null;
             RemoveOperation(progressView);
+            RecordTrash(trashed);
             Refresh();
         }
 
@@ -2986,9 +3158,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return 0;
         }
 
-        await Task.Run(() => _operationService.Delete(existing));
+        List<TrashedItem> trashed = new();
+        await Task.Run(() => _operationService.Delete(existing, false, null, CancellationToken.None, trashed));
+        RecordTrash(trashed);
         Refresh();
         return existing.Count;
+    }
+
+    private void RecordTrash(List<TrashedItem> trashed)
+    {
+        UndoHistory.Record(FileUndoKind.Trash, trashed.Select(item => (item.OriginalPath, item.TrashedPath)));
     }
 
     public void RestoreSelectedFromTrash(PaneViewModel pane)
@@ -3016,6 +3195,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         try
         {
             _operationService.Rename(item.FullPath, newName);
+            UndoHistory.Record(FileUndoKind.Rename, [(item.FullPath, Path.Combine(PathManager.GetParent(item.FullPath), newName))]);
         }
         catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
         {
@@ -3062,6 +3242,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         HashSet<string> sourcePaths = new(renames.Select(rename => rename.Path), StringComparer.Ordinal);
         List<(string TempPath, string OriginalName, string NewName)> staged = new();
         List<BulkRenameEntry> direct = new();
+        List<(string From, string To)> done = new();
         foreach (BulkRenameEntry rename in renames)
         {
             string directory = Path.GetDirectoryName(rename.Path) ?? "";
@@ -3088,6 +3269,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             try
             {
                 _operationService.Rename(rename.Path, rename.NewName);
+                done.Add((rename.Path, Path.Combine(Path.GetDirectoryName(rename.Path) ?? "", rename.NewName)));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -3097,9 +3279,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         foreach ((string tempPath, string originalName, string newName) in staged)
         {
+            string directory = Path.GetDirectoryName(tempPath) ?? "";
             try
             {
                 _operationService.Rename(tempPath, newName);
+                done.Add((Path.Combine(directory, originalName), Path.Combine(directory, newName)));
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -3108,6 +3292,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
         }
 
+        UndoHistory.Record(FileUndoKind.Rename, done);
         Refresh();
     }
 
@@ -3172,11 +3357,16 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        List<string> created = new();
         for (int i = 0; i < paths.Count; i++)
         {
             try
             {
-                _operationService.Duplicate(paths[i]);
+                string? copy = _operationService.Duplicate(paths[i]);
+                if (copy != null)
+                {
+                    created.Add(copy);
+                }
             }
             catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
             {
@@ -3190,6 +3380,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             }
         }
 
+        UndoHistory.Record(FileUndoKind.Copy, created.Select(path => (path, "")));
         Refresh();
     }
 
@@ -3218,6 +3409,65 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             FolderColorStore.Copy(source, target);
         }
+    }
+
+    public Task UndoAsync()
+    {
+        return ApplyUndoAsync(true);
+    }
+
+    public Task RedoAsync()
+    {
+        return ApplyUndoAsync(false);
+    }
+
+    private async Task ApplyUndoAsync(bool isUndo)
+    {
+        FileUndoEntry? entry = isUndo ? UndoHistory.NextUndo : UndoHistory.NextRedo;
+        if (entry == null)
+        {
+            StatusText = LocalizationService.Get(isUndo ? "NothingToUndo" : "NothingToRedo");
+            return;
+        }
+
+        FileUndoResult result = isUndo ? await UndoHistory.UndoAsync() : await UndoHistory.RedoAsync();
+        Refresh();
+        string direction = isUndo ? "Undo" : "Redo";
+        if (!result.Success)
+        {
+            StatusText = result.Error == null
+                ? ""
+                : LocalizationService.Format(result.IsConflict ? $"{direction}Conflict" : $"{direction}Failed", PathManager.GetName(result.Error));
+            return;
+        }
+
+        StatusText = LocalizationService.Format($"{direction}Done", DescribeUndo(entry));
+        string? folder = result.Paths.Count == 0 ? null : Path.GetDirectoryName(result.Paths[0]);
+        if (folder != null)
+        {
+            TransferCompleted?.Invoke(folder, result.Paths.Where(path => Path.GetDirectoryName(path) == folder).ToList());
+        }
+    }
+
+    public static string GetUndoKindName(FileUndoKind kind)
+    {
+        return LocalizationService.Get($"UndoKind{kind}");
+    }
+
+    public static string GetUndoTitle(FileUndoEntry entry)
+    {
+        return entry.Title ?? GetUndoKindName(entry.Kind);
+    }
+
+    private static string DescribeUndo(FileUndoEntry entry)
+    {
+        if (entry.Title != null)
+        {
+            return entry.Title;
+        }
+
+        string targets = entry.Steps.Count == 1 ? $"“{entry.FirstName}”" : LocalizationService.Plural("ConflictItems", entry.Steps.Count);
+        return $"{GetUndoKindName(entry.Kind)} ({targets})";
     }
 
     public async Task<bool> ConfirmElevationAsync(string message)
@@ -3307,6 +3557,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         try
         {
             _operationService.CreateFolder(fullPath);
+            UndoHistory.Record(FileUndoKind.Create, [(fullPath, "")]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -3330,6 +3581,43 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         try
         {
             _operationService.CreateFile(fullPath);
+            UndoHistory.Record(FileUndoKind.Create, [(fullPath, "")]);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            ReportFileError("CreateFileFailed", ex);
+            return null;
+        }
+
+        Refresh();
+        return fullPath;
+    }
+
+    public async Task<string?> CreateFromTemplateAsync(string template, string name)
+    {
+        if (ActivePane.IsVirtual || string.IsNullOrWhiteSpace(name) || !File.Exists(template))
+        {
+            return null;
+        }
+
+        string baseDir = CurrentPath;
+        string fullPath = Path.Combine(baseDir, name);
+        if (EntryExists(fullPath))
+        {
+            StatusText = LocalizationService.Format("NameAlreadyExists", name);
+            return null;
+        }
+
+        if (ElevatedFileService.NeedsElevation(baseDir))
+        {
+            string message = LocalizationService.Format("ElevateCreateFile", name, PathManager.GetName(baseDir));
+            return await RunElevatedAsync(message, new ElevatedScript().Copy(template, fullPath)) ? fullPath : null;
+        }
+
+        try
+        {
+            await Task.Run(() => File.Copy(template, fullPath));
+            UndoHistory.Record(FileUndoKind.Create, [(fullPath, "")]);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -3880,6 +4168,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
         Pane1.Dispose();
         Pane2.Dispose();
+        Pane3.Dispose();
         foreach (OperationProgressViewModel operation in Operations.ToList())
         {
             operation.Cancel();

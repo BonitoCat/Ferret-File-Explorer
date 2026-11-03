@@ -65,4 +65,5 @@ public sealed class AddonActionManifest
     public string? Separator { get; set; }
     public List<string>? Modes { get; set; }
     public List<string>? Clipboard { get; set; }
+    public List<string>? Tags { get; set; }
 }

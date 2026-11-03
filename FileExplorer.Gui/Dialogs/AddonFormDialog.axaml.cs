@@ -277,7 +277,8 @@ public partial class AddonFormDialog : Window
                 {
                     RadioButton radio = new()
                     {
-                        Content = choice,
+                        Content = field.GetChoiceLabel(choice),
+                        Tag = choice,
                         GroupName = group,
                         IsChecked = choice == value,
                     };
@@ -301,21 +302,22 @@ public partial class AddonFormDialog : Window
                     selected = text;
                     foreach (RadioButton radio in radios.Children.OfType<RadioButton>())
                     {
-                        radio.IsChecked = radio.Content as string == text;
+                        radio.IsChecked = radio.Tag as string == text;
                     }
                 };
                 _firstInput ??= radios.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true) ?? radios.Children.OfType<RadioButton>().FirstOrDefault();
                 return radios;
 
             case AddonFieldType.Choice:
+                List<string> choices = field.Choices.ToList();
                 ComboBox combo = new()
                 {
-                    ItemsSource = field.Choices,
-                    SelectedItem = value,
+                    ItemsSource = field.ChoiceLabels,
+                    SelectedIndex = choices.IndexOf(value),
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                 };
-                _readers.Add((field, () => combo.SelectedItem as string ?? ""));
-                _writers[field.Id] = text => combo.SelectedItem = text;
+                _readers.Add((field, () => combo.SelectedIndex >= 0 && combo.SelectedIndex < choices.Count ? choices[combo.SelectedIndex] : ""));
+                _writers[field.Id] = text => combo.SelectedIndex = choices.IndexOf(text);
                 combo.SelectionChanged += (_, _) => NotifyChanged(field);
                 _firstInput ??= combo;
                 return combo;

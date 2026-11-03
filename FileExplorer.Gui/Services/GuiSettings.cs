@@ -35,6 +35,12 @@ public static class GuiSettings
         set => SetBool("sort_descending", value);
     }
 
+    public static string? ListColumns
+    {
+        get => GetString("list_columns");
+        set => SetString("list_columns", value);
+    }
+
     public static string? PrimaryColor
     {
         get => GetString("primary_color");

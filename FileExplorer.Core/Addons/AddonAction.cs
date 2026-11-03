@@ -19,6 +19,7 @@ public sealed class AddonAction
     public AddonMode Modes { get; }
     public AddonClipboardContent Clipboard { get; }
     public IReadOnlyList<string> Extensions { get; }
+    public IReadOnlyList<string> Tags { get; }
     public bool Multiple { get; }
     public string? ScriptPath { get; }
     public string? Command { get; }
@@ -44,13 +45,18 @@ public sealed class AddonAction
         After = NormalizeAnchor(manifest.After);
         Before = NormalizeAnchor(manifest.Before);
         Parent = NormalizeAnchor(manifest.Parent);
-        HasFilters = manifest.Targets != null || manifest.Extensions != null || !manifest.Multiple;
+        HasFilters = manifest.Targets != null || manifest.Extensions != null || manifest.Tags != null || !manifest.Multiple;
         Targets = targets;
         Modes = modes;
         Clipboard = clipboard;
         Extensions = (manifest.Extensions ?? new())
             .Select(NormalizeExtension)
             .Where(e => e.Length > 0)
+            .ToList();
+        Tags = (manifest.Tags ?? new())
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         Multiple = manifest.Multiple;
         Command = string.IsNullOrWhiteSpace(manifest.Command) ? null : manifest.Command.Trim();
@@ -119,7 +125,7 @@ public sealed class AddonAction
 
         if (context.SelectedPaths.Count == 0)
         {
-            return Targets.HasFlag(AddonTarget.Background);
+            return Targets.HasFlag(AddonTarget.Background) && Tags.Count == 0;
         }
 
         if (!Multiple && context.SelectedPaths.Count > 1)
@@ -127,7 +133,18 @@ public sealed class AddonAction
             return false;
         }
 
-        return context.SelectedPaths.All(MatchesPath);
+        return context.SelectedPaths.All(path => MatchesPath(path) && HasTag(context, path));
+    }
+
+    private bool HasTag(AddonContext context, string path)
+    {
+        if (Tags.Count == 0)
+        {
+            return true;
+        }
+
+        IReadOnlySet<string> tags = context.GetTags(Addon.Id, path);
+        return Tags.Any(tags.Contains);
     }
 
     private bool MatchesPath(string path)

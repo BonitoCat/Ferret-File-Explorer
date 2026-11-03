@@ -26,6 +26,11 @@ public class FileOperationService
 
     public void Delete(IEnumerable<string> paths, bool permanent, IProgress<FileTransferProgress>? progress, CancellationToken token)
     {
+        Delete(paths, permanent, progress, token, null);
+    }
+
+    public void Delete(IEnumerable<string> paths, bool permanent, IProgress<FileTransferProgress>? progress, CancellationToken token, ICollection<TrashedItem>? trashed)
+    {
         List<string> pathList = paths.ToList();
         if (pathList.Count == 0) return;
 
@@ -51,9 +56,15 @@ public class FileOperationService
                 tracker.Advance(PathManager.GetName(path));
             }
 
+            string? trashedPath = permanent || trashed == null && !hasColors ? null : FindTrashedPath(path);
+            if (trashedPath != null && trashed != null)
+            {
+                trashed.Add(new(path, trashedPath));
+            }
+
             if (hasColors)
             {
-                ForgetFolderColors(path, permanent);
+                ForgetFolderColors(path, permanent ? null : trashedPath);
             }
         }
 
@@ -228,14 +239,29 @@ public class FileOperationService
         Process.Start(psi)?.WaitForExit();
     }
 
-    private static void ForgetFolderColors(string path, bool permanent)
+    public List<string> TrashForUndo(IEnumerable<string> paths, ICollection<TrashedItem> trashed)
+    {
+        List<string> failed = new();
+        foreach (string path in paths)
+        {
+            int before = trashed.Count;
+            Delete([path], false, null, CancellationToken.None, trashed);
+            if (trashed.Count == before)
+            {
+                failed.Add(path);
+            }
+        }
+
+        return failed;
+    }
+
+    private static void ForgetFolderColors(string path, string? trashedPath)
     {
         if (Directory.Exists(path))
         {
             return;
         }
 
-        string? trashedPath = permanent ? null : FindTrashedPath(path);
         if (trashedPath != null)
         {
             FolderColorStore.Move(path, trashedPath);
@@ -258,7 +284,8 @@ public class FileOperationService
 
             try
             {
-                string? infoFile = new DirectoryInfo(infoDir).EnumerateFiles("*.trashinfo")
+                string pattern = Path.GetFileNameWithoutExtension(fullPath).Replace('*', '?') + "*.trashinfo";
+                string? infoFile = new DirectoryInfo(infoDir).EnumerateFiles(pattern)
                     .OrderByDescending(f => f.LastWriteTimeUtc)
                     .Where(f => ReadTrashInfoPath(f.FullName, trashDir) == fullPath)
                     .Select(f => f.Name)
@@ -397,25 +424,30 @@ public class FileOperationService
         _ = Logger.LogI("Created new file");
     }
 
-    public void Duplicate(string path)
+    public string? Duplicate(string path)
     {
         string? newPath = GetDuplicatePath(path);
         if (newPath == null)
         {
-            return;
+            return null;
         }
 
         if (File.Exists(path))
         {
             File.Copy(path, newPath);
             _ = Logger.LogI("Duplicated item");
+            return newPath;
         }
-        else if (Directory.Exists(path))
+
+        if (!Directory.Exists(path))
         {
-            CopyDirectory(path, newPath);
-            FolderColorStore.Copy(path, newPath);
-            _ = Logger.LogI("Duplicated item");
+            return null;
         }
+
+        CopyDirectory(path, newPath);
+        FolderColorStore.Copy(path, newPath);
+        _ = Logger.LogI("Duplicated item");
+        return newPath;
     }
 
     public static string? GetDuplicatePath(string path)
@@ -600,11 +632,23 @@ public class FileOperationService
         return TransferAsync(destDir, mode, sourcePaths, (Func<TransferConflict, Task<ConflictResolution>>?) null, progress, cancellationToken);
     }
 
+    public Task<List<string>> TransferAsync(
+        string destDir,
+        ClipboardMode mode,
+        IEnumerable<string> sourcePaths,
+        Func<TransferConflict, Task<ConflictResolution>>? resolveConflict,
+        IProgress<FileTransferProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        return TransferAsync(destDir, mode, sourcePaths, resolveConflict, null, progress, cancellationToken);
+    }
+
     public async Task<List<string>> TransferAsync(
         string destDir,
         ClipboardMode mode,
         IEnumerable<string> sourcePaths,
         Func<TransferConflict, Task<ConflictResolution>>? resolveConflict,
+        ICollection<TransferStep>? steps,
         IProgress<FileTransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
@@ -743,6 +787,7 @@ public class FileOperationService
                 continue;
             }
 
+            bool targetExisted = false;
             if (PathExists(destPath))
             {
                 if (IsSamePath(path, destPath))
@@ -758,10 +803,12 @@ public class FileOperationService
                     }
 
                     destPath = ApplyConflictAction(action, path, destPath);
+                    targetExisted = action != ConflictAction.Duplicate;
                 }
             }
 
             targets.Add(destPath);
+            steps?.Add(new(path, destPath, targetExisted));
             if (File.Exists(path))
             {
                 await TransferSingleFileAsync(path, destPath, mode, buffer, () => transferredBytes, v => transferredBytes = v, () => transferredItems, v => transferredItems = v, ReportProgress, cancellationToken);

@@ -21,16 +21,23 @@ public sealed class AddonField
     public AddonFieldType Type { get; }
     public string Default { get; }
     public IReadOnlyList<string> Choices { get; }
+    public IReadOnlyList<string> ChoiceLabels { get; }
     public double? Min { get; }
     public double? Max { get; }
 
     public AddonField(string id, string label, string description, AddonFieldType type, string? defaultValue, IReadOnlyList<string>? choices = null, double? min = null, double? max = null)
+        : this(id, label, description, type, defaultValue, choices, min, max, null)
+    {
+    }
+
+    public AddonField(string id, string label, string description, AddonFieldType type, string? defaultValue, IReadOnlyList<string>? choices, double? min, double? max, IReadOnlyList<string>? choiceLabels)
     {
         Id = id;
         Label = label;
         Description = description;
         Type = type;
         Choices = choices ?? [];
+        ChoiceLabels = choiceLabels != null && choiceLabels.Count == Choices.Count ? choiceLabels : Choices;
         Min = min;
         Max = max;
         Default = "";
@@ -74,6 +81,26 @@ public sealed class AddonField
             default:
                 return value ?? "";
         }
+    }
+
+    public string GetChoiceLabel(string value)
+    {
+        int index = Choices.ToList().IndexOf(value);
+        return index < 0 ? value : ChoiceLabels[index];
+    }
+
+    public static (string Value, string Label) SplitChoice(string raw)
+    {
+        string text = raw.Trim();
+        int equals = text.IndexOf('=');
+        if (equals <= 0)
+        {
+            return (text, text);
+        }
+
+        string value = text[..equals].Trim();
+        string label = text[(equals + 1)..].Trim();
+        return (value, label.Length == 0 ? value : label);
     }
 
     public static bool TryParseType(string? value, out AddonFieldType type)

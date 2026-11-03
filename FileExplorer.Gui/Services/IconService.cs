@@ -114,6 +114,11 @@ public static class IconService
             return "folder-videos";
         }
 
+        if (trimmed == UserDirs.Templates && trimmed != PathManager.TrimEnd(UserDirs.Home))
+        {
+            return "folder-templates";
+        }
+
         return "folder";
     }
 
