@@ -196,10 +196,7 @@ public class MetadataKeybind : Keybind
 
     private void RenderPopupOnly()
     {
-        lock (_renderLock)
-        {
-            Program.Renderer.Render(_border.Render().ToList());
-        }
+        RenderPopup();
     }
 
     private void SetSection(string sectionTitle, List<(string Key, string Value)> rows)

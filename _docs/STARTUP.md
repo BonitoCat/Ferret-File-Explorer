@@ -21,10 +21,13 @@ acknowledged request IDs prevent duplicate windows during connection retries.
 ## Building
 
 `_builds/build.sh` publishes `FileExplorer.Launcher` with NativeAOT. Linux builds
-need the .NET 8+ SDK, clang, and zlib development headers in addition to the
+need the .NET 8+ SDK, clang, LLVM tools, and zlib development headers in addition to the
 existing GUI dependencies. Building ARM64 from x64 also needs an ARM64
 compiler/sysroot (for example `gcc-aarch64-linux-gnu` and `zlib1g-dev:arm64` on
-a configured Debian multiarch host). NativeAOT publishing must run on Linux.
+a configured Debian multiarch host, plus the ARM64 libc development files).
+The symbol tools must support the target architecture (`llvm-objcopy`, or
+`-p:ObjCopyName=aarch64-linux-gnu-objcopy` for an ARM64-only publish).
+NativeAOT publishing must run on Linux.
 
 The DEBs install the small launcher as `/usr/bin/ferret` and `/usr/bin/fe-gui`,
 and the GUI as `/usr/lib/ferret/ferret-gui`. AppImage and direct GUI starts use

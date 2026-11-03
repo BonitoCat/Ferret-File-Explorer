@@ -6,6 +6,12 @@ Now also with a GUI to go with it!
 
 Work in progress, report all issues in the issues tab
 
+## Building from source
+
+The required compatibility libraries are included in this repository. Build with
+`dotnet build FileExplorer.sln -c Release -m:1`; see the
+[library and verification guide](_docs/LIBRARIES.md) for Linux tests and credential storage.
+
 ## Fast Linux startup
 
 The full Linux packages keep a prepared Home window in the background after

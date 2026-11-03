@@ -5,3 +5,4 @@ Architecture: arm64
 Maintainer: BonitoCat
 Description: Advanced terminal file explorer (Headless / TUI only)
 Depends: wl-clipboard, xclip, libmagic1, libmagic-dev
+Recommends: libsecret-tools

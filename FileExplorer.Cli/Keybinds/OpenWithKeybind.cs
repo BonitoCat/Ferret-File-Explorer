@@ -148,10 +148,7 @@ public class OpenWithKeybind : Keybind
 
     private void RenderPopupOnly()
     {
-        lock (_renderLock)
-        {
-            Program.Renderer.Render(_border.Render().ToList());
-        }
+        Render();
     }
 
     private IEnumerable<RenderPart> RenderRow(OpenWithRow row)

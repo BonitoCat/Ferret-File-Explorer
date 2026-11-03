@@ -18,7 +18,6 @@ using InputLib.PlatformListener;
 
 using TuiLib;
 using TuiLib.Components;
-using TuiLib.Context;
 using TuiLib.Controls;
 using TuiLib.Helpers;
 using TuiLib.Rendering;
@@ -293,6 +292,7 @@ public static class Program
         {
             while (!ExitEvent.IsSet)
             {
+                Listener.ThrowIfFaulted();
                 if (Console.WindowWidth != lastWidth || Console.WindowHeight != lastHeight || Sidebar.ShouldShow != lastSidebarShown)
                 {
                     lastWidth = Console.WindowWidth;
@@ -321,9 +321,13 @@ public static class Program
         }
         finally
         {
-            Renderer.ClearScreen();
-            TerminalHelper.EndSession();
-            InputListener.EnableEcho();
+            try { Listener.Dispose(); }
+            finally
+            {
+                Renderer.ClearScreen();
+                TerminalHelper.EndSession();
+                InputListener.EnableEcho();
+            }
         }
     }
 
@@ -436,7 +440,7 @@ public static class Program
         string text = $" File-Explorer ({location})";
         if (text.Length > width)
         {
-            text = " ..." + text[Math.Max(text.Length - width + 4, 0)..];
+            text = width <= 4 ? text[..width] : " ..." + text[^(width - 4)..];
         }
 
         return new RenderPart

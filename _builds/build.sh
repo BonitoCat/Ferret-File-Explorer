@@ -120,6 +120,10 @@ echo "=========================================="
 echo "Assembling package trees..."
 echo "=========================================="
 
+for package in fe-linux-x64-full fe-linux-x64-headless fe-linux-arm64-full fe-linux-arm64-headless AppDir; do
+    mkdir -p "$SCRIPT_DIR/$package/usr/bin"
+done
+
 cp "$CLI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe"
 mkdir -p "$SCRIPT_DIR/fe-linux-x64-full/usr/lib/ferret"
 cp "$GUI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/lib/ferret/ferret-gui"

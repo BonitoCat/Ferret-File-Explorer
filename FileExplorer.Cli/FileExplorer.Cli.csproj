@@ -11,8 +11,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\..\TuiLib\TuiLib\TuiLib.csproj" />
-      <ProjectReference Include="..\..\InputLib\InputLib\InputLib.csproj" />
+      <ProjectReference Include="..\Libraries\TuiLib\TuiLib.csproj" />
+      <ProjectReference Include="..\Libraries\InputLib\InputLib.csproj" />
       <ProjectReference Include="..\FileExplorer.Core\FileExplorer.Core.csproj" />
     </ItemGroup>
 
