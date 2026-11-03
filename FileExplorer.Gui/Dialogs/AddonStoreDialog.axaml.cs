@@ -61,6 +61,7 @@ public partial class AddonStoreDialog : Window
         try
         {
             AddonStoreCatalog catalog = await AddonStoreService.Instance.FetchCatalogAsync(_cts.Token);
+            _iconRequests.Clear();
             _items = catalog.Entries
                 .Select(e => new AddonStoreItemViewModel(e))
                 .OrderBy(i => i.Name, StringComparer.CurrentCultureIgnoreCase)

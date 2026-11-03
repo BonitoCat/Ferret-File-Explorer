@@ -3,9 +3,7 @@ using System.Text;
 using FileExplorer.Cli.Models;
 using FileExplorer.Core.Entries;
 
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+using SkiaSharp;
 
 using TuiLib.Components;
 using Color = TuiLib.Color;
@@ -71,34 +69,14 @@ public static class ImagePreviewRenderer
             return [];
         }
 
-        Image<Rgba32> image;
-        try
-        {
-            image = Image.Load<Rgba32>(filePath);
-        }
-        catch (Exception)
+        SKBitmap? image = LoadScaled(filePath, windowWidth / 2 - 2, (int) (menuMaxHeight * 1.8f));
+        if (image == null)
         {
             return [];
         }
 
         using (image)
         {
-            int targetWidth = windowWidth / 2 - 2;
-            int targetHeight = (int) (menuMaxHeight * 1.8f);
-            if (targetWidth <= 0 || targetHeight <= 0)
-            {
-                return [];
-            }
-
-            image.Mutate(ctx =>
-            {
-                ctx.Resize(new ResizeOptions
-                {
-                    Size = new Size(targetWidth, targetHeight),
-                    Mode = ResizeMode.Max,
-                });
-            });
-
             int previewAreaX = windowWidth / 2 + 1;
             int availableWidth = windowWidth - previewAreaX - 1;
             int imageRows = (image.Height + 1) / 2;
@@ -135,10 +113,10 @@ public static class ImagePreviewRenderer
 
                 for (int x = 0; x < image.Width; x++)
                 {
-                    Rgba32 topPixel = image[x, imageY];
-                    Rgba32 bottomPixel = imageY + 1 < image.Height
-                        ? image[x, imageY + 1]
-                        : new Rgba32(0, 0, 0, 255);
+                    SKColor topPixel = image.GetPixel(x, imageY);
+                    SKColor bottomPixel = imageY + 1 < image.Height
+                        ? image.GetPixel(x, imageY + 1)
+                        : new SKColor(0, 0, 0, 255);
 
                     Color topColor = ToTuiColor(topPixel);
                     Color bottomColor = ToTuiColor(bottomPixel);
@@ -177,16 +155,43 @@ public static class ImagePreviewRenderer
         }
     }
 
-    private static Color ToTuiColor(Rgba32 pixel)
+    private static SKBitmap? LoadScaled(string filePath, int maxWidth, int maxHeight)
     {
-        if (pixel.A == 255)
+        if (maxWidth <= 0 || maxHeight <= 0)
         {
-            return new Color(pixel.R, pixel.G, pixel.B);
+            return null;
         }
 
-        byte r = (byte) (pixel.R * pixel.A / 255);
-        byte g = (byte) (pixel.G * pixel.A / 255);
-        byte b = (byte) (pixel.B * pixel.A / 255);
+        try
+        {
+            using SKBitmap? source = SKBitmap.Decode(filePath);
+            if (source == null || source.Width <= 0 || source.Height <= 0)
+            {
+                return null;
+            }
+
+            float scale = Math.Min((float) maxWidth / source.Width, (float) maxHeight / source.Height);
+            int width = Math.Max(1, (int) (source.Width * scale));
+            int height = Math.Max(1, (int) (source.Height * scale));
+            SKImageInfo info = new(width, height, SKColorType.Rgba8888, SKAlphaType.Unpremul);
+            return source.Resize(info, new SKSamplingOptions(SKCubicResampler.Mitchell));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static Color ToTuiColor(SKColor pixel)
+    {
+        if (pixel.Alpha == 255)
+        {
+            return new Color(pixel.Red, pixel.Green, pixel.Blue);
+        }
+
+        byte r = (byte) (pixel.Red * pixel.Alpha / 255);
+        byte g = (byte) (pixel.Green * pixel.Alpha / 255);
+        byte b = (byte) (pixel.Blue * pixel.Alpha / 255);
 
         return new Color(r, g, b);
     }

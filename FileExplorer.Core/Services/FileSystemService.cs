@@ -150,6 +150,12 @@ public partial class FileSystemService
                             }
                         }
 
+                        bool isBrokenLink = isSymlink && !isDir && IsBrokenLink(fullPath);
+                        if (isBrokenLink)
+                        {
+                            isDir = IsLikelyFolderLink(fullPath);
+                        }
+
                         if (isDir)
                         {
                             DateTime creationTime = default;
@@ -158,7 +164,7 @@ public partial class FileSystemService
                             FileAttributes attributes = default;
                             UnixFileMode? unixMode = null;
 
-                            if (!isRemote)
+                            if (!isRemote && !isBrokenLink)
                             {
                                 try
                                 {
@@ -184,6 +190,7 @@ public partial class FileSystemService
                                 IsReadOnly = (attributes & FileAttributes.ReadOnly) != 0,
                                 IsSystem = (attributes & FileAttributes.System) != 0,
                                 IsSymlink = isSymlink,
+                                IsBrokenLink = isBrokenLink,
                                 CreationTime = creationTime,
                                 LastAccessTime = lastAccessTime,
                                 LastWriteTime = lastWriteTime,
@@ -201,7 +208,7 @@ public partial class FileSystemService
                             UnixFileMode? unixMode = null;
                             bool isExecutable = false;
 
-                            if (!isRemote)
+                            if (!isRemote && !isBrokenLink)
                             {
                                 try
                                 {
@@ -221,7 +228,7 @@ public partial class FileSystemService
                                 {
                                 }
                             }
-                            else
+                            else if (!isBrokenLink)
                             {
                                 try
                                 {
@@ -246,6 +253,7 @@ public partial class FileSystemService
                                 IsReadOnly = false,
                                 IsSystem = (attributes & FileAttributes.System) != 0,
                                 IsSymlink = isSymlink,
+                                IsBrokenLink = isBrokenLink,
                                 CreationTime = creationTime,
                                 LastAccessTime = lastAccessTime,
                                 LastWriteTime = lastWriteTime,
@@ -336,17 +344,25 @@ public partial class FileSystemService
                     {
                     }
 
-                    if (info is DirectoryInfo dirInfo)
+                    bool isBrokenLink = info is FileInfo && info.LinkTarget != null && IsBrokenLink(info.FullName);
+                    if (isBrokenLink)
+                    {
+                        unixMode = null;
+                    }
+
+                    if (info is DirectoryInfo || (isBrokenLink && IsLikelyFolderLink(info.FullName)))
                     {
                         FolderEntry folder = new()
                         {
                             FullName = name,
-                            FullPath = dirInfo.FullName,
+                            FullPath = info.FullName,
                             IsHidden = (attributes & FileAttributes.Hidden) != 0 || name.StartsWith('.'),
                             IsEncrypted = (attributes & FileAttributes.Encrypted) != 0,
                             IsCompressed = (attributes & FileAttributes.Compressed) != 0,
                             IsReadOnly = (attributes & FileAttributes.ReadOnly) != 0,
                             IsSystem = (attributes & FileAttributes.System) != 0,
+                            IsSymlink = info.LinkTarget != null,
+                            IsBrokenLink = isBrokenLink,
                             CreationTime = creationTime,
                             LastAccessTime = lastAccessTime,
                             LastWriteTime = lastWriteTime,
@@ -365,7 +381,7 @@ public partial class FileSystemService
                         long fileSize = 0;
                         try
                         {
-                            fileSize = fileInfo.Length;
+                            fileSize = isBrokenLink ? 0 : fileInfo.Length;
                         }
                         catch
                         {
@@ -393,6 +409,8 @@ public partial class FileSystemService
                             IsCompressed = (attributes & FileAttributes.Compressed) != 0,
                             IsReadOnly = isReadOnly,
                             IsSystem = (attributes & FileAttributes.System) != 0,
+                            IsSymlink = info.LinkTarget != null,
+                            IsBrokenLink = isBrokenLink,
                             CreationTime = creationTime,
                             LastAccessTime = lastAccessTime,
                             LastWriteTime = lastWriteTime,
@@ -582,6 +600,42 @@ public partial class FileSystemService
         }
 
         file.IsAccurateType = true;
+    }
+
+    public static bool IsBrokenLink(string path)
+    {
+        try
+        {
+            FileInfo info = new(path);
+            if (info.LinkTarget == null || Directory.Exists(path))
+            {
+                return false;
+            }
+
+            FileSystemInfo? target = info.ResolveLinkTarget(true);
+            return target == null || !File.Exists(target.FullName);
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool IsLikelyFolderLink(string path)
+    {
+        try
+        {
+            string? target = new FileInfo(path).LinkTarget;
+            return target != null && Path.GetExtension(target.TrimEnd('/')).Length == 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsSymlinkPath(string path)

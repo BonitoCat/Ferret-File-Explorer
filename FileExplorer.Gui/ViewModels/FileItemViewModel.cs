@@ -2,43 +2,128 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
+using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Utilities;
+using FileExplorer.Gui.Controls;
 using FileExplorer.Gui.Services;
 
 namespace FileExplorer.Gui.ViewModels;
 
-public class FileItemViewModel : ViewModelBase
+public class FileItemViewModel : ViewModelBase, INamedItem
 {
     private bool _isCut;
     private Bitmap? _thumbnail;
     private IImage? _icon;
+    private FileItemDecoration? _decoration;
+    private FileMetadata? _metadata;
+    private static readonly IBrush DefaultBadgeBrush = new SolidColorBrush(Color.Parse("#607D8B"));
+    private static readonly IBrush GridNameBrush = Brushes.White;
 
     public required IFileSystemEntry Entry { get; init; }
     public required string Name { get; init; }
     public required string FullPath { get; init; }
     public required bool IsDirectory { get; init; }
     public bool IsSymlink { get; init; }
+    public bool IsBrokenLink { get; init; }
     public required string SizeString { get; init; }
     public required string TypeString { get; init; }
     public required string ModifiedString { get; init; }
+    public long FileSize { get; init; }
+    public DateTime ModifiedTime { get; init; }
     public required bool IsHidden { get; init; }
     public required bool IsAccessDenied { get; init; }
     public FileType FileType { get; init; }
     public string? MimeType { get; init; }
     public IImage? Icon
     {
-        get => _icon ?? Thumbnail ?? IconService.GetForEntry(IsDirectory, FileType, FullPath);
+        get
+        {
+            IImage? icon = _decoration?.Icon ?? _icon ?? Thumbnail ?? IconService.GetForEntry(IsDirectory, FileType, FullPath);
+            return DisplayOpacity < 1 ? IconService.GetRasterized(icon) : icon;
+        }
         init => _icon = value;
     }
+    public static bool LoadsMetadata { get; set; }
+
+    public string CreatedString => FormatTime(Metadata?.Created);
+    public string AccessedString => FormatTime(Metadata?.Accessed);
+    public string PermissionsString => Metadata?.Permissions ?? "";
+    public string OwnerString => Metadata?.Owner ?? "";
+    public string GroupString => Metadata?.Group ?? "";
+    public string MimeTypeString => IsDirectory ? "inode/directory" : MimeType ?? "";
+    public string LocationString => Path.GetDirectoryName(FullPath) ?? "";
+
+    private FileMetadata? Metadata => LoadsMetadata && !IsBrokenLink ? _metadata ??= FileMetadata.Read(FullPath) : null;
+
+    public void RefreshMetadata()
+    {
+        OnPropertyChanged(nameof(CreatedString));
+        OnPropertyChanged(nameof(AccessedString));
+        OnPropertyChanged(nameof(PermissionsString));
+        OnPropertyChanged(nameof(OwnerString));
+        OnPropertyChanged(nameof(GroupString));
+    }
+
+    private static string FormatTime(DateTime? time)
+    {
+        return time?.ToString("yyyy-MM-dd HH:mm") ?? "";
+    }
+
     public string IconSvg { get; init; } = "";
     public string IconColor { get; init; } = "";
 
-    public double DisplayOpacity => IsCut ? 0.5 : 1.0;
-    public bool HasThumbnail => Thumbnail != null;
+    public double DisplayOpacity => IsCut || IsBrokenLink ? 0.5 : 1.0;
+    public bool HasThumbnail => Thumbnail != null && _decoration?.Icon == null;
+
+    public FileItemDecoration? Decoration
+    {
+        get => _decoration;
+        set
+        {
+            if (!SetProperty(ref _decoration, value))
+            {
+                return;
+            }
+
+            OnPropertyChanged(nameof(Icon));
+            OnPropertyChanged(nameof(HasThumbnail));
+            OnPropertyChanged(nameof(NameForeground));
+            OnPropertyChanged(nameof(GridNameForeground));
+            OnPropertyChanged(nameof(HasNameForeground));
+            OnPropertyChanged(nameof(DecorationBackground));
+            OnPropertyChanged(nameof(IconBackground));
+            OnPropertyChanged(nameof(NameBackground));
+            OnPropertyChanged(nameof(DecorationTooltip));
+            OnPropertyChanged(nameof(HasBadge));
+            OnPropertyChanged(nameof(HasBadgeDot));
+            OnPropertyChanged(nameof(BadgeIcon));
+            OnPropertyChanged(nameof(BadgeText));
+            OnPropertyChanged(nameof(HasBadgeText));
+            OnPropertyChanged(nameof(BadgeBrush));
+            OnPropertyChanged(nameof(BadgeHorizontalAlignment));
+            OnPropertyChanged(nameof(BadgeVerticalAlignment));
+        }
+    }
+
+    public IBrush? NameForeground => _decoration?.Foreground;
+    public IBrush GridNameForeground => _decoration?.Foreground ?? GridNameBrush;
+    public bool HasNameForeground => _decoration?.Foreground != null;
+    public IBrush? DecorationBackground => _decoration?.Background;
+    public IBrush? IconBackground => _decoration?.IconBackground;
+    public IBrush? NameBackground => _decoration?.NameBackground;
+    public string? DecorationTooltip => _decoration?.Tooltip;
+    public bool HasBadge => _decoration?.HasBadge == true;
+    public bool HasBadgeDot => _decoration?.BadgeIcon != null || _decoration?.BadgeBackground != null;
+    public IImage? BadgeIcon => _decoration?.BadgeIcon;
+    public string? BadgeText => _decoration?.BadgeText;
+    public bool HasBadgeText => _decoration?.BadgeText != null;
+    public IBrush BadgeBrush => _decoration?.BadgeBackground ?? (HasBadgeText ? DefaultBadgeBrush : Brushes.Transparent);
+    public HorizontalAlignment BadgeHorizontalAlignment => _decoration?.BadgeHorizontalAlignment ?? HorizontalAlignment.Right;
+    public VerticalAlignment BadgeVerticalAlignment => _decoration?.BadgeVerticalAlignment ?? VerticalAlignment.Top;
 
     public bool IsCut
     {
@@ -48,6 +133,7 @@ public class FileItemViewModel : ViewModelBase
             if (SetProperty(ref _isCut, value))
             {
                 OnPropertyChanged(nameof(DisplayOpacity));
+                OnPropertyChanged(nameof(Icon));
             }
         }
     }
@@ -86,26 +172,31 @@ public class FileItemViewModel : ViewModelBase
     public static FileItemViewModel FromEntry(IFileSystemEntry entry, CancellationToken token)
     {
         bool isDir = entry is FolderEntry;
-        bool isAccessDenied = CheckRequiresElevatedAccess(entry, isDir) && !Environment.IsPrivilegedProcess && Environment.UserName != "root";
+        bool isBrokenLink = entry is FolderEntry { IsBrokenLink: true } or FileEntry { IsBrokenLink: true };
+        bool isAccessDenied = !isBrokenLink && CheckRequiresElevatedAccess(entry, isDir) && !Environment.IsPrivilegedProcess && Environment.UserName != "root";
 
         string sizeStr = "";
+        long fileSize = 0;
         string typeStr = LocalizationService.Get(isDir ? "FolderType" : "FileType");
         FileType fileType = FileType.Unknown;
 
         if (entry is FileEntry file)
         {
-            sizeStr = FormatFileSize(file.FileSize);
+            sizeStr = isBrokenLink ? "" : FormatFileSize(file.FileSize);
+            fileSize = file.FileSize;
             typeStr = LocalizationService.Get($"FileType{file.FileType}");
             fileType = file.FileType;
         }
 
         string modifiedStr = "";
+        DateTime modifiedTime = default;
         try
         {
             DateTime lastWrite = entry.LastWriteTime != default
                 ? entry.LastWriteTime
-                : (isDir ? Directory.GetLastWriteTime(entry.FullPath) : File.GetLastWriteTime(entry.FullPath));
+                : (isDir && !isBrokenLink ? Directory.GetLastWriteTime(entry.FullPath) : File.GetLastWriteTime(entry.FullPath));
             modifiedStr = lastWrite.ToString("yyyy-MM-dd HH:mm");
+            modifiedTime = lastWrite;
         }
         catch
         {
@@ -119,16 +210,19 @@ public class FileItemViewModel : ViewModelBase
             FullPath = entry.FullPath,
             IsDirectory = isDir,
             IsSymlink = entry.IsSymlink,
+            IsBrokenLink = isBrokenLink,
             FileType = fileType,
             SizeString = sizeStr,
             TypeString = typeStr,
             ModifiedString = modifiedStr,
+            FileSize = fileSize,
+            ModifiedTime = modifiedTime,
             IsHidden = entry.IsHidden,
             IsAccessDenied = isAccessDenied,
             MimeType = isDir ? null : FileTypeIconService.GetMimeType(entry.FullPath),
         };
 
-        if (!isDir && entry is FileEntry && (fileType == FileType.Image || ThumbnailService.CanThumbnail(item.MimeType)))
+        if (!isDir && !isBrokenLink && entry is FileEntry && (fileType == FileType.Image || ThumbnailService.CanThumbnail(item.MimeType)))
         {
             ThumbnailService.Request(item, entry.LastWriteTime, token);
         }

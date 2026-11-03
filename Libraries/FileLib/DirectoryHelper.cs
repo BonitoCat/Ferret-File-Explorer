@@ -2,6 +2,10 @@ namespace FileLib;
 
 public static class DirectoryHelper
 {
+    /// <summary>Returns the current user's home directory.</summary>
+    public static string GetUserDirPath() =>
+        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
     public static string GetAppDataDirPath(bool create = true) =>
         GetPath("XDG_DATA_HOME", ".local/share", Environment.SpecialFolder.LocalApplicationData, create);
 

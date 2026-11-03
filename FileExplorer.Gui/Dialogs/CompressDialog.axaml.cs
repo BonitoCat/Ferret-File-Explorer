@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using FileExplorer.Core.Services;
+using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Services;
 using static Avalonia.Interactivity.RoutingStrategies;
 
@@ -39,7 +40,7 @@ public partial class CompressDialog : Window
         if (sourcePaths.Count == 1)
         {
             string first = sourcePaths[0];
-            defaultBaseName = Directory.Exists(first) ? Path.GetFileName(first.TrimEnd('/')) : Path.GetFileNameWithoutExtension(first);
+            defaultBaseName = Directory.Exists(first) ? PathManager.GetName(first) : Path.GetFileNameWithoutExtension(first);
             if (string.IsNullOrEmpty(defaultBaseName))
             {
                 defaultBaseName = LocalizationService.Get("ArchiveDefaultName");
@@ -47,7 +48,7 @@ public partial class CompressDialog : Window
         }
         else if (!string.IsNullOrEmpty(currentDirectory))
         {
-            string dirName = Path.GetFileName(currentDirectory.TrimEnd('/'));
+            string dirName = PathManager.GetName(currentDirectory);
             if (!string.IsNullOrEmpty(dirName))
             {
                 defaultBaseName = dirName;

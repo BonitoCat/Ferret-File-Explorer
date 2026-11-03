@@ -30,6 +30,11 @@
             <Setter Property="BorderThickness" Value="1"/>
         </Style>
 
+        <Style Selector="TextBlock.name-decorated"
+               x:DataType="vm:FileItemViewModel">
+            <Setter Property="Foreground" Value="{Binding NameForeground}"/>
+        </Style>
+
         <Style Selector="Border.symlink-badge > Path">
             <Setter Property="Stroke" Value="#E0E0E0"/>
             <Setter Property="StrokeLineCap" Value="Round"/>
@@ -112,6 +117,55 @@
 
         <Style Selector="ListBox.file-list ListBoxItem:selected /template/ ContentPresenter">
             <Setter Property="Background" Value="{DynamicResource SelectionSubtleBrush}"/>
+        </Style>
+
+        <Style Selector="Button.operation-tab">
+            <Setter Property="Background" Value="#2B2B30"/>
+            <Setter Property="BorderBrush" Value="#38383E"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="10,3"/>
+        </Style>
+
+        <Style Selector="Button.operation-tab.selected">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.operation-tab.selected:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="{DynamicResource AccentSubtleBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <Style Selector="Button.addon-errors">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6,2"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.addon-status">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="6,1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+
+        <Style Selector="Button.addon-status.clickable">
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style Selector="Button.addon-status:not(.clickable):pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
+        <Style Selector="Border.sort-header">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <Style Selector="Border.sort-header:pointerover TextBlock">
+            <Setter Property="Foreground" Value="#CCCCCC"/>
         </Style>
 
         <Style Selector="Border.col-resize">
@@ -204,15 +258,34 @@
                             BorderThickness="0,0,0,1"
                             Padding="12,6"
                             IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsListView}">
-                        <Grid ColumnDefinitions="Auto,Auto,Auto,*">
+                        <Border.ContextMenu>
+                            <ContextMenu Opening="OnColumnMenuOpening"/>
+                        </Border.ContextMenu>
+
+                        <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*">
                             <Panel Grid.Column="0"
                                    Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
-                                <TextBlock Text="{markup:Translate Key=Name}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           VerticalAlignment="Center"
-                                           Margin="0,0,8,0"/>
+                                <Border Classes="sort-header"
+                                        Tag="Name"
+                                        Margin="0,0,8,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=Name}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedByName}"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border Tag="Name"
                                         Classes="col-resize"
@@ -223,14 +296,30 @@
                             </Panel>
 
                             <Panel Grid.Column="1"
-                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}">
-                                <TextBlock Text="{markup:Translate Key=Size}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           TextAlignment="Right"
-                                           Margin="0,0,16,0"
-                                           VerticalAlignment="Center"/>
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Size.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Size.IsVisible}">
+                                <Border Classes="sort-header"
+                                        Tag="Size"
+                                        Margin="0,0,16,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Right"
+                                                Spacing="4">
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedBySize}"/>
+
+                                        <TextBlock Text="{markup:Translate Key=Size}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border Tag="Size"
                                         Classes="col-resize"
@@ -241,13 +330,30 @@
                             </Panel>
 
                             <Panel Grid.Column="2"
-                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}">
-                                <TextBlock Text="{markup:Translate Key=Type}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           Margin="8,0,0,0"
-                                           VerticalAlignment="Center"/>
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Type.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Type.IsVisible}">
+                                <Border Classes="sort-header"
+                                        Tag="Type"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=Type}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedByType}"/>
+                                    </StackPanel>
+                                </Border>
 
                                 <Border Tag="Type"
                                         Classes="col-resize"
@@ -257,13 +363,220 @@
                                         PointerCaptureLost="OnColResizePointerCaptureLost"/>
                             </Panel>
 
-                            <Panel Grid.Column="3">
-                                <TextBlock Text="{markup:Translate Key=Modified}"
-                                           FontWeight="SemiBold"
-                                           Foreground="#888888"
-                                           FontSize="12"
-                                           Margin="8,0,0,0"
-                                           VerticalAlignment="Center"/>
+                            <Panel Grid.Column="3"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Modified.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Modified.IsVisible}">
+                                <Border Classes="sort-header"
+                                        Tag="Modified"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        Tapped="OnSortHeaderTapped">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=Modified}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+
+                                        <Image Source="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SortArrowIcon}"
+                                               Width="12"
+                                               Height="12"
+                                               VerticalAlignment="Center"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsSortedByModified}"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="Modified"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="4"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Created.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Created.IsVisible}">
+                                <Border Background="Transparent"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=ColumnCreated}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="Created"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="5"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Accessed.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Accessed.IsVisible}">
+                                <Border Background="Transparent"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=ColumnAccessed}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="Accessed"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="6"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Permissions.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Permissions.IsVisible}">
+                                <Border Background="Transparent"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=ColumnPermissions}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="Permissions"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="7"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Owner.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Owner.IsVisible}">
+                                <Border Background="Transparent"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=ColumnOwner}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="Owner"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="8"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Group.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Group.IsVisible}">
+                                <Border Background="Transparent"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=ColumnGroup}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="Group"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="9"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.MimeType.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.MimeType.IsVisible}">
+                                <Border Background="Transparent"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=ColumnMimeType}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="MimeType"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
+                            </Panel>
+
+                            <Panel Grid.Column="10"
+                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Location.Width}"
+                                   IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Location.IsVisible}">
+                                <Border Background="Transparent"
+                                        Margin="8,0,0,0"
+                                        HorizontalAlignment="Stretch">
+                                    <StackPanel Orientation="Horizontal"
+                                                HorizontalAlignment="Left"
+                                                Spacing="4">
+                                        <TextBlock Text="{markup:Translate Key=ColumnLocation}"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="#888888"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Tag="Location"
+                                        Classes="col-resize"
+                                        PointerPressed="OnColResizePointerPressed"
+                                        PointerMoved="OnColResizePointerMoved"
+                                        PointerReleased="OnColResizePointerReleased"
+                                        PointerCaptureLost="OnColResizePointerCaptureLost"/>
                             </Panel>
                         </Grid>
                     </Border>
@@ -280,14 +593,16 @@
                                           Tag="new"
                                           IsVisible="{Binding CanCreateNew}">
                                     <MenuItem Header="{markup:Translate Key=NewFolder}"
+                                              Tag="new-folder"
                                               Icon="{markup:Icon Key=folder-new}"
                                               Click="OnNewFolderClick"
-                                              InputGesture="Ctrl+Shift+N"/>
+                                              InputGesture="{markup:Keybind Id=NewFolder}"/>
 
                                     <MenuItem Header="{markup:Translate Key=NewFile}"
+                                              Tag="new-file"
                                               Icon="{markup:Icon Key=file-new}"
                                               Click="OnNewFileClick"
-                                              InputGesture="Ctrl+Alt+N"/>
+                                              InputGesture="{markup:Keybind Id=NewFile}"/>
                                 </MenuItem>
 
                                 <Separator IsVisible="{Binding CanCreateNew}"/>
@@ -327,40 +642,40 @@
                                           Icon="{markup:Icon Key=content-cut}"
                                           Tag="cut"
                                           Click="OnMenuCutClick"
-                                          InputGesture="Ctrl+X"
+                                          InputGesture="{markup:Keybind Id=Cut}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Copy}"
                                           Icon="{markup:Icon Key=content-copy}"
                                           Tag="copy"
                                           Click="OnMenuCopyClick"
-                                          InputGesture="Ctrl+C"
+                                          InputGesture="{markup:Keybind Id=Copy}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Paste}"
                                           Icon="{markup:Icon Key=content-paste}"
                                           Tag="paste"
                                           Click="OnMenuPasteClick"
-                                          InputGesture="Ctrl+V"/>
+                                          InputGesture="{markup:Keybind Id=Paste}"/>
 
                                 <MenuItem Header="{markup:Translate Key=PasteAsSymlink}"
                                           Icon="{markup:Icon Key=link}"
                                           Tag="paste-link"
                                           Click="OnMenuPasteAsSymlinkClick"
-                                          InputGesture="Ctrl+Shift+V"/>
+                                          InputGesture="{markup:Keybind Id=PasteSymlink}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Duplicate}"
                                           Icon="{markup:Icon Key=duplicate}"
                                           Tag="duplicate"
                                           Click="OnMenuDuplicateClick"
-                                          InputGesture="Ctrl+D"
+                                          InputGesture="{markup:Keybind Id=Duplicate}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Rename}"
                                           Icon="{markup:Icon Key=edit}"
                                           Tag="rename"
                                           Click="OnMenuRenameClick"
-                                          InputGesture="F2"
+                                          InputGesture="{markup:Keybind Id=Rename}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=Compress}"
@@ -381,14 +696,14 @@
                                           Icon="{markup:Icon Key=trash}"
                                           Tag="trash"
                                           Click="OnMenuTrashClick"
-                                          InputGesture="Delete"
+                                          InputGesture="{markup:Keybind Id=Trash}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <MenuItem Header="{markup:Translate Key=DeletePermanent}"
                                           Icon="{markup:Icon Key=delete-forever}"
                                           Tag="delete-permanent"
                                           Click="OnMenuDeletePermanentClick"
-                                          InputGesture="Shift+Delete"
+                                          InputGesture="{markup:Keybind Id=DeletePermanent}"
                                           IsVisible="{Binding IsItemSelected}"/>
 
                                 <Separator IsVisible="{Binding CanBookmarkSelection}"/>
@@ -417,14 +732,14 @@
                                           Icon="{markup:Icon Key=info}"
                                           Tag="properties"
                                           Click="OnMenuPropertiesClick"
-                                          InputGesture="Alt+Enter"/>
+                                          InputGesture="{markup:Keybind Id=Properties}"/>
                             </ContextMenu>
                         </Panel.ContextMenu>
 
                         <ProgressBar Height="2"
                                      VerticalAlignment="Top"
                                      IsIndeterminate="True"
-                                     IsVisible="{Binding IsLoading}"
+                                     IsVisible="{Binding ShowLoadingBar}"
                                      Background="Transparent"
                                      Foreground="{DynamicResource AccentBrush}"
                                      ZIndex="100"/>
@@ -444,17 +759,18 @@
                             <ListBox.ItemsPanel>
                                 <ItemsPanelTemplate>
                                     <controls:StretchWrapPanel ItemWidth="128"
-                                                               ItemHeight="136"/>
+                                                               ItemHeight="136"
+                                                               NameLines="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).GridNameLines}"/>
                                 </ItemsPanelTemplate>
                             </ListBox.ItemsPanel>
 
                             <ListBox.Styles>
                                 <Style Selector="ListBoxItem">
                                     <Setter Property="CornerRadius" Value="8"/>
-                                    <Setter Property="Padding" Value="4"/>
+                                    <Setter Property="Padding" Value="4,0"/>
                                     <Setter Property="Margin" Value="4"/>
                                     <Setter Property="HorizontalContentAlignment" Value="Center"/>
-                                    <Setter Property="VerticalContentAlignment" Value="Center"/>
+                                    <Setter Property="VerticalContentAlignment" Value="Stretch"/>
                                     <Setter Property="Background" Value="Transparent"/>
                                 </Style>
 
@@ -462,89 +778,182 @@
                                     <Setter Property="Background" Value="Transparent"/>
                                 </Style>
 
+                                <Style Selector="ListBoxItem:pressed:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+
                                 <Style Selector="ListBoxItem.hover:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
                                     <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}"/>
+                                </Style>
+
+                                <Style Selector="ListBoxItem:selected">
+                                    <Setter Property="ZIndex" Value="1"/>
+                                    <Setter Property="ClipToBounds" Value="False"/>
+                                </Style>
+
+                                <Style Selector="ListBoxItem:selected /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="ClipToBounds" Value="False"/>
                                 </Style>
                             </ListBox.Styles>
 
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:FileItemViewModel">
                                     <Border Width="120"
-                                            Height="128"
                                             CornerRadius="8"
                                             Opacity="{Binding DisplayOpacity}"
+                                            ToolTip.Tip="{Binding DecorationTooltip}"
                                             Classes.drop-target="{Binding IsDropTarget}">
-                                        <Grid RowDefinitions="80,*"
-                                              Margin="4">
-                                            <Panel Grid.Row="0"
-                                                   Classes="drop-zone"
-                                                   Background="Transparent"
-                                                   Width="76"
-                                                   Height="80"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center">
-                                                <Border Classes="hit-zone"
-                                                        Margin="0,10,0,0"
-                                                        IsHitTestVisible="False"/>
+                                        <Panel>
+                                            <Border CornerRadius="8"
+                                                    Background="{Binding DecorationBackground}"
+                                                    IsHitTestVisible="False"/>
 
-                                                <Image Source="{Binding Icon}"
-                                                       Width="68"
-                                                       Height="68"
-                                                       IsVisible="{Binding !HasThumbnail}"/>
+                                            <Grid RowDefinitions="80,*"
+                                                  Margin="4">
+                                                <Panel Grid.Row="0"
+                                                       Classes="drop-zone"
+                                                       Background="Transparent"
+                                                       Width="76"
+                                                       Height="80"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center">
+                                                    <Border Classes="hit-zone"
+                                                            Margin="0,10,0,0"
+                                                            IsHitTestVisible="False"/>
 
-                                                <Border CornerRadius="6"
-                                                        ClipToBounds="True"
-                                                        HorizontalAlignment="Center"
-                                                        VerticalAlignment="Center"
-                                                        IsVisible="{Binding HasThumbnail}">
-                                                    <Image Source="{Binding Thumbnail}"
-                                                           MaxWidth="68"
-                                                           MaxHeight="68"
-                                                           Stretch="Uniform"/>
-                                                </Border>
+                                                    <Border Width="76"
+                                                            Height="76"
+                                                            CornerRadius="8"
+                                                            Background="{Binding IconBackground}"
+                                                            IsHitTestVisible="False"/>
 
-                                                <Border Classes="symlink-badge"
-                                                        IsVisible="{Binding IsSymlink}"
-                                                        Width="22"
-                                                        Height="22"
-                                                        CornerRadius="11"
-                                                        Margin="0,0,2,4"
-                                                        HorizontalAlignment="Right"
-                                                        VerticalAlignment="Bottom">
-                                                    <Path Data="M0,8 L8,0 M2,0 L8,0 L8,6"
-                                                          StrokeThickness="1.8"
-                                                          HorizontalAlignment="Center"
-                                                          VerticalAlignment="Center"/>
-                                                </Border>
-                                            </Panel>
+                                                    <Image Source="{Binding Icon}"
+                                                           Width="68"
+                                                           Height="68"
+                                                           IsVisible="{Binding !HasThumbnail}"/>
 
-                                            <StackPanel Grid.Row="1"
-                                                        Spacing="2"
-                                                        HorizontalAlignment="Center">
-                                                <TextBlock Classes="hit-zone"
-                                                           Text="{Binding Name}"
-                                                           FontSize="13"
-                                                           Foreground="White"
-                                                           TextAlignment="Center"
-                                                           HorizontalAlignment="Center"
-                                                           TextWrapping="Wrap"
-                                                           MaxLines="2"
-                                                           TextTrimming="CharacterEllipsis"
-                                                           MaxWidth="110"/>
+                                                    <Border CornerRadius="6"
+                                                            ClipToBounds="True"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            IsVisible="{Binding HasThumbnail}">
+                                                        <controls:ThumbnailImage Source="{Binding Thumbnail}"
+                                                                                 MaxWidth="68"
+                                                                                 MaxHeight="68"
+                                                                                 Stretch="Uniform"/>
+                                                    </Border>
 
-                                                <Border Classes="hit-zone"
-                                                        Background="#D35400"
-                                                        CornerRadius="3"
-                                                        Padding="3,1"
-                                                        IsVisible="{Binding IsAccessDenied}"
-                                                        HorizontalAlignment="Center">
-                                                    <TextBlock Text="{markup:Translate Key=AccessDenied}"
-                                                               Foreground="White"
-                                                               FontSize="9"
-                                                               FontWeight="Bold"/>
-                                                </Border>
-                                            </StackPanel>
-                                        </Grid>
+                                                    <Border Classes="symlink-badge"
+                                                            IsVisible="{Binding IsSymlink}"
+                                                            Width="22"
+                                                            Height="22"
+                                                            CornerRadius="11"
+                                                            Margin="0,0,2,4"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Bottom">
+                                                        <Path Data="M0,8 L8,0 M2,0 L8,0 L8,6"
+                                                              StrokeThickness="1.8"
+                                                              HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"/>
+                                                    </Border>
+
+                                                    <Border Classes="addon-badge"
+                                                            IsVisible="{Binding HasBadge}"
+                                                            MinWidth="20"
+                                                            Height="20"
+                                                            CornerRadius="10"
+                                                            Margin="2,4"
+                                                            Background="{Binding BadgeBrush}"
+                                                            HorizontalAlignment="{Binding BadgeHorizontalAlignment}"
+                                                            VerticalAlignment="{Binding BadgeVerticalAlignment}"
+                                                            IsHitTestVisible="False">
+                                                        <StackPanel Orientation="Horizontal"
+                                                                    Spacing="2"
+                                                                    Margin="3,0"
+                                                                    HorizontalAlignment="Center"
+                                                                    VerticalAlignment="Center">
+                                                            <Image Source="{Binding BadgeIcon}"
+                                                                   Width="14"
+                                                                   Height="14"
+                                                                   IsVisible="{Binding BadgeIcon, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+
+                                                            <TextBlock Text="{Binding BadgeText}"
+                                                                       FontSize="10"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="White"
+                                                                       VerticalAlignment="Center"
+                                                                       IsVisible="{Binding HasBadgeText}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Panel>
+
+                                                <StackPanel Grid.Row="1"
+                                                            Spacing="2"
+                                                            HorizontalAlignment="Center">
+                                                    <Panel HorizontalAlignment="Center">
+                                                        <Border CornerRadius="4"
+                                                                Margin="-3,0"
+                                                                Background="{Binding NameBackground}"
+                                                                IsHitTestVisible="False"/>
+
+                                                        <TextBlock Classes="hit-zone"
+                                                                   Text="{Binding Name}"
+                                                                   FontSize="13"
+                                                                   Foreground="{Binding GridNameForeground}"
+                                                                   TextAlignment="Center"
+                                                                   HorizontalAlignment="Center"
+                                                                   TextWrapping="Wrap"
+                                                                   MaxLines="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).GridNameLines}"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   MaxWidth="110"/>
+
+                                                        <Canvas Width="0"
+                                                                Height="0"
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Top"
+                                                                IsHitTestVisible="False">
+                                                            <Canvas.IsVisible>
+                                                                <MultiBinding Converter="{x:Static controls:GridNameOverlayConverter.Instance}">
+                                                                    <Binding Path="$parent[ListBoxItem].IsSelected"/>
+
+                                                                    <Binding Path="$parent[ListBox].((vm:PaneViewModel)DataContext).SelectedItems.Count"/>
+
+                                                                    <Binding Path="Name"/>
+
+                                                                    <Binding Path="$parent[Window].((vm:MainWindowViewModel)DataContext).GridNameLines"/>
+
+                                                                    <Binding Path="$parent[ListBoxItem].FontFamily"/>
+                                                                </MultiBinding>
+                                                            </Canvas.IsVisible>
+
+                                                            <Border Canvas.Left="-60"
+                                                                    Background="{DynamicResource SelectionSubtleBrush}"
+                                                                    Width="120"
+                                                                    CornerRadius="0,0,8,8"
+                                                                    Padding="5,0,5,8">
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           FontSize="13"
+                                                                           Foreground="White"
+                                                                           TextAlignment="Center"
+                                                                           TextWrapping="Wrap"/>
+                                                            </Border>
+                                                        </Canvas>
+                                                    </Panel>
+
+                                                    <Border Classes="hit-zone"
+                                                            Background="#D35400"
+                                                            CornerRadius="3"
+                                                            Padding="3,1"
+                                                            IsVisible="{Binding IsAccessDenied}"
+                                                            HorizontalAlignment="Center">
+                                                        <TextBlock Text="{markup:Translate Key=AccessDenied}"
+                                                                   Foreground="White"
+                                                                   FontSize="9"
+                                                                   FontWeight="Bold"/>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Panel>
                                     </Border>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -568,12 +977,22 @@
                                     <Setter Property="Padding" Value="8,5"/>
                                     <Setter Property="Margin" Value="4,1"/>
                                 </Style>
+
+                                <Style Selector="ListBoxItem:pressed:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                </Style>
+
+                                <Style Selector="ListBoxItem:pressed:pointerover:not(:selected) /template/ ContentPresenter#PART_ContentPresenter">
+                                    <Setter Property="Background" Value="{DynamicResource SystemControlHighlightListLowBrush}"/>
+                                </Style>
                             </ListBox.Styles>
 
                             <ListBox.ItemTemplate>
                                 <DataTemplate x:DataType="vm:FileItemViewModel">
-                                    <Grid ColumnDefinitions="Auto,Auto,Auto,*"
+                                    <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*"
                                           Opacity="{Binding DisplayOpacity}"
+                                          Background="{Binding DecorationBackground}"
+                                          ToolTip.Tip="{Binding DecorationTooltip}"
                                           Classes.drop-target="{Binding IsDropTarget}">
                                         <Panel Grid.Column="0"
                                                Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColNameWidth}">
@@ -585,6 +1004,11 @@
                                                        Height="20"
                                                        Margin="0,0,8,0"
                                                        VerticalAlignment="Center">
+                                                    <Border CornerRadius="4"
+                                                            Margin="-1"
+                                                            Background="{Binding IconBackground}"
+                                                            IsHitTestVisible="False"/>
+
                                                     <Image Source="{Binding Icon}"
                                                            Width="18"
                                                            Height="18"
@@ -595,10 +1019,10 @@
                                                             HorizontalAlignment="Center"
                                                             VerticalAlignment="Center"
                                                             IsVisible="{Binding HasThumbnail}">
-                                                        <Image Source="{Binding Thumbnail}"
-                                                               MaxWidth="18"
-                                                               MaxHeight="18"
-                                                               Stretch="Uniform"/>
+                                                        <controls:ThumbnailImage Source="{Binding Thumbnail}"
+                                                                                 MaxWidth="18"
+                                                                                 MaxHeight="18"
+                                                                                 Stretch="Uniform"/>
                                                     </Border>
 
                                                     <Border Classes="symlink-badge"
@@ -613,6 +1037,20 @@
                                                               StrokeThickness="1.2"
                                                               HorizontalAlignment="Center"
                                                               VerticalAlignment="Center"/>
+                                                    </Border>
+
+                                                    <Border IsVisible="{Binding HasBadgeDot}"
+                                                            Width="10"
+                                                            Height="10"
+                                                            CornerRadius="5"
+                                                            Margin="-3"
+                                                            Background="{Binding BadgeBrush}"
+                                                            HorizontalAlignment="{Binding BadgeHorizontalAlignment}"
+                                                            VerticalAlignment="{Binding BadgeVerticalAlignment}"
+                                                            IsHitTestVisible="False">
+                                                        <Image Source="{Binding BadgeIcon}"
+                                                               Width="10"
+                                                               Height="10"/>
                                                     </Border>
                                                 </Panel>
 
@@ -639,39 +1077,150 @@
                                                                FontWeight="Bold"/>
                                                 </Border>
 
-                                                <TextBlock Text="{Binding Name}"
-                                                           VerticalAlignment="Center"
-                                                           FontSize="13"
-                                                           TextTrimming="CharacterEllipsis"/>
+                                                <Border DockPanel.Dock="Right"
+                                                        Background="{Binding BadgeBrush}"
+                                                        CornerRadius="4"
+                                                        Padding="4,1"
+                                                        IsVisible="{Binding HasBadgeText}"
+                                                        Margin="6,0,0,0">
+                                                    <TextBlock Text="{Binding BadgeText}"
+                                                               Foreground="White"
+                                                               FontSize="10"
+                                                               FontWeight="Bold"/>
+                                                </Border>
+
+                                                <Border CornerRadius="4"
+                                                        Background="{Binding NameBackground}"
+                                                        HorizontalAlignment="Left"
+                                                        VerticalAlignment="Center">
+                                                    <TextBlock Classes.name-decorated="{Binding HasNameForeground}"
+                                                               Text="{Binding Name}"
+                                                               VerticalAlignment="Center"
+                                                               FontSize="13"
+                                                               TextTrimming="CharacterEllipsis"/>
+                                                </Border>
                                             </DockPanel>
                                         </Panel>
 
-                                        <TextBlock Grid.Column="1"
-                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColSizeWidth}"
-                                                   Text="{Binding SizeString}"
-                                                   Foreground="#999999"
-                                                   VerticalAlignment="Center"
-                                                   TextAlignment="Right"
-                                                   Margin="0,0,16,0"
-                                                   FontSize="12"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                        <Panel Grid.Column="1"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Size.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Size.IsVisible}">
+                                            <TextBlock Text="{Binding SizeString}"
+                                                       Foreground="#999999"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Right"
+                                                       Margin="0,0,16,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
 
-                                        <TextBlock Grid.Column="2"
-                                                   Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ColTypeWidth}"
-                                                   Text="{Binding TypeString}"
-                                                   Foreground="#999999"
-                                                   VerticalAlignment="Center"
-                                                   Margin="8,0,0,0"
-                                                   FontSize="12"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                        <Panel Grid.Column="2"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Type.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Type.IsVisible}">
+                                            <TextBlock Text="{Binding TypeString}"
+                                                       Foreground="#999999"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
 
-                                        <TextBlock Grid.Column="3"
-                                                   Text="{Binding ModifiedString}"
-                                                   Foreground="#888888"
-                                                   VerticalAlignment="Center"
-                                                   Margin="8,0,0,0"
-                                                   FontSize="12"
-                                                   TextTrimming="CharacterEllipsis"/>
+                                        <Panel Grid.Column="3"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Modified.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Modified.IsVisible}">
+                                            <TextBlock Text="{Binding ModifiedString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
+
+                                        <Panel Grid.Column="4"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Created.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Created.IsVisible}">
+                                            <TextBlock Text="{Binding CreatedString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
+
+                                        <Panel Grid.Column="5"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Accessed.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Accessed.IsVisible}">
+                                            <TextBlock Text="{Binding AccessedString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
+
+                                        <Panel Grid.Column="6"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Permissions.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Permissions.IsVisible}">
+                                            <TextBlock Text="{Binding PermissionsString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
+
+                                        <Panel Grid.Column="7"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Owner.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Owner.IsVisible}">
+                                            <TextBlock Text="{Binding OwnerString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
+
+                                        <Panel Grid.Column="8"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Group.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Group.IsVisible}">
+                                            <TextBlock Text="{Binding GroupString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
+
+                                        <Panel Grid.Column="9"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.MimeType.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.MimeType.IsVisible}">
+                                            <TextBlock Text="{Binding MimeTypeString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
+
+                                        <Panel Grid.Column="10"
+                                               Width="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Location.Width}"
+                                               IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).Columns.Location.IsVisible}">
+                                            <TextBlock Text="{Binding LocationString}"
+                                                       Foreground="#888888"
+                                                       VerticalAlignment="Center"
+                                                       TextAlignment="Left"
+                                                       Margin="8,0,0,0"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Panel>
                                     </Grid>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
@@ -708,7 +1257,7 @@
                     <MenuItem Header="{markup:Translate Key=NewWindow}"
                               Icon="{markup:Icon Key=window}"
                               Click="OnMenuNewWindowClick"
-                              InputGesture="Ctrl+N"/>
+                              InputGesture="{markup:Keybind Id=NewWindow}"/>
 
                     <MenuItem Header="{markup:Translate Key=OpenAsRoot}"
                               Icon="{markup:Icon Key=shield}"
@@ -717,33 +1266,33 @@
                     <MenuItem Header="{markup:Translate Key=ConnectToServer}"
                               Icon="{markup:Icon Key=network}"
                               Click="OnMenuConnectToServerClick"
-                              InputGesture="Ctrl+K"/>
+                              InputGesture="{markup:Keybind Id=ConnectToServer}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=NewFolder}"
                               Icon="{markup:Icon Key=folder-new}"
                               Click="OnNewFolderClick"
-                              InputGesture="Ctrl+Shift+N"/>
+                              InputGesture="{markup:Keybind Id=NewFolder}"/>
                               
                     <MenuItem Header="{markup:Translate Key=NewFile}"
                               Icon="{markup:Icon Key=file-new}"
                               Click="OnNewFileClick"
-                              InputGesture="Ctrl+Alt+N"/>
+                              InputGesture="{markup:Keybind Id=NewFile}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=Properties}"
                               Icon="{markup:Icon Key=info}"
                               Click="OnMenuPropertiesClick"
-                              InputGesture="Alt+Enter"/>
+                              InputGesture="{markup:Keybind Id=Properties}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=Close}"
                               Icon="{markup:Icon Key=close}"
                               Click="OnMenuCloseClick"
-                              InputGesture="Ctrl+Q"/>
+                              InputGesture="{markup:Keybind Id=Quit}"/>
                     <MenuItem x:Name="QuitFerretMenuItem"
                               Header="{markup:Translate Key=QuitFerret}"
                               Click="OnQuitFerretClick"/>
@@ -752,44 +1301,58 @@
                 <!-- Edit Menu -->
                 <MenuItem Header="{markup:Translate Key=Edit}"
                           SubmenuOpened="OnEditMenuOpened">
+                    <MenuItem x:Name="EditUndoMenuItem"
+                              Header="{markup:Translate Key=UndoMenuEmpty}"
+                              Icon="{markup:Icon Key=undo}"
+                              Click="OnMenuUndoClick"
+                              InputGesture="{markup:Keybind Id=Undo}"/>
+
+                    <MenuItem x:Name="EditRedoMenuItem"
+                              Header="{markup:Translate Key=RedoMenuEmpty}"
+                              Icon="{markup:Icon Key=redo}"
+                              Click="OnMenuRedoClick"
+                              InputGesture="{markup:Keybind Id=Redo}"/>
+
+                    <Separator/>
+
                     <MenuItem Header="{markup:Translate Key=Cut}"
                               Icon="{markup:Icon Key=content-cut}"
                               Click="OnMenuCutClick"
-                              InputGesture="Ctrl+X"/>
+                              InputGesture="{markup:Keybind Id=Cut}"/>
 
                     <MenuItem Header="{markup:Translate Key=Copy}"
                               Icon="{markup:Icon Key=content-copy}"
                               Click="OnMenuCopyClick"
-                              InputGesture="Ctrl+C"/>
+                              InputGesture="{markup:Keybind Id=Copy}"/>
 
                     <MenuItem x:Name="EditPasteMenuItem"
                               Header="{markup:Translate Key=Paste}"
                               Icon="{markup:Icon Key=content-paste}"
                               Click="OnMenuPasteClick"
-                              InputGesture="Ctrl+V"/>
+                              InputGesture="{markup:Keybind Id=Paste}"/>
 
                     <MenuItem x:Name="EditPasteSymlinkMenuItem"
                               Header="{markup:Translate Key=PasteAsSymlink}"
                               Icon="{markup:Icon Key=link}"
                               Click="OnMenuPasteAsSymlinkClick"
-                              InputGesture="Ctrl+Shift+V"/>
+                              InputGesture="{markup:Keybind Id=PasteSymlink}"/>
 
                     <MenuItem Header="{markup:Translate Key=Duplicate}"
                               Icon="{markup:Icon Key=duplicate}"
                               Click="OnMenuDuplicateClick"
-                              InputGesture="Ctrl+D"/>
+                              InputGesture="{markup:Keybind Id=Duplicate}"/>
 
                     <MenuItem Header="{markup:Translate Key=Rename}"
                               Icon="{markup:Icon Key=edit}"
                               Click="OnMenuRenameClick"
-                              InputGesture="F2"/>
+                              InputGesture="{markup:Keybind Id=Rename}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=SelectAll}"
                               Icon="{markup:Icon Key=select-all}"
                               Click="OnSelectAllClick"
-                              InputGesture="Ctrl+A"/>
+                              InputGesture="{markup:Keybind Id=SelectAll}"/>
                 </MenuItem>
 
                 <!-- View Menu -->
@@ -798,19 +1361,24 @@
                     <MenuItem Header="{markup:Translate Key=Reload}"
                               Icon="{markup:Icon Key=refresh}"
                               Click="OnRefreshClick"
-                              InputGesture="F5"/>
+                              InputGesture="{markup:Keybind Id=Refresh}"/>
 
                     <MenuItem Header="{markup:Translate Key=ShowHidden}"
                               Icon="{markup:Icon Key=eye}"
                               Click="OnToggleHiddenClick"
-                              InputGesture="Ctrl+H"/>
+                              InputGesture="{markup:Keybind Id=ToggleHidden}"/>
 
                     <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=DualPane}"
                               Icon="{markup:Icon Key=split-pane}"
                               Click="OnToggleDualPaneClick"
-                              InputGesture="F3"/>
+                              InputGesture="{markup:Keybind Id=DualPane}"/>
+
+                    <MenuItem Header="{markup:Translate Key=AddPane}"
+                              Icon="{markup:Icon Key=add}"
+                              Click="OnAddPaneClick"
+                              IsEnabled="{Binding CanAddPane}"/>
 
                     <Separator/>
 
@@ -822,8 +1390,75 @@
                               Icon="{markup:Icon Key=view-list}"
                               Click="OnSetListViewClick"/>
 
-                    <Separator/>
+                    <MenuItem Header="{markup:Translate Key=SortBy}"
+                              Icon="{markup:Icon Key=sort}">
+                        <MenuItem x:Name="SortByNameMenuItem"
+                                  Header="{markup:Translate Key=Name}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Name"
+                                  Click="OnSortColumnClick"/>
 
+                        <MenuItem x:Name="SortBySizeMenuItem"
+                                  Header="{markup:Translate Key=Size}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Size"
+                                  Click="OnSortColumnClick"/>
+
+                        <MenuItem x:Name="SortByTypeMenuItem"
+                                  Header="{markup:Translate Key=Type}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Type"
+                                  Click="OnSortColumnClick"/>
+
+                        <MenuItem x:Name="SortByModifiedMenuItem"
+                                  Header="{markup:Translate Key=Modified}"
+                                  ToggleType="Radio"
+                                  GroupName="SortColumn"
+                                  Tag="Modified"
+                                  Click="OnSortColumnClick"/>
+
+                        <Separator/>
+
+                        <MenuItem x:Name="SortAscendingMenuItem"
+                                  Header="{markup:Translate Key=SortAscending}"
+                                  ToggleType="Radio"
+                                  GroupName="SortDirection"
+                                  Tag="false"
+                                  Click="OnSortDirectionClick"/>
+
+                        <MenuItem x:Name="SortDescendingMenuItem"
+                                  Header="{markup:Translate Key=SortDescending}"
+                                  ToggleType="Radio"
+                                  GroupName="SortDirection"
+                                  Tag="true"
+                                  Click="OnSortDirectionClick"/>
+                    </MenuItem>
+
+                    <MenuItem Header="{markup:Translate Key=GridFileNames}"
+                              Icon="{markup:Icon Key=view-grid}">
+                        <MenuItem x:Name="GridNamesTwoLinesMenuItem"
+                                  Header="{markup:Translate Key=GridFileNamesTwoLines}"
+                                  ToggleType="Radio"
+                                  Tag="2"
+                                  Click="OnGridNameLinesClick"/>
+
+                        <MenuItem x:Name="GridNamesThreeLinesMenuItem"
+                                  Header="{markup:Translate Key=GridFileNamesThreeLines}"
+                                  ToggleType="Radio"
+                                  Tag="3"
+                                  Click="OnGridNameLinesClick"/>
+
+                        <MenuItem x:Name="GridNamesFullMenuItem"
+                                  Header="{markup:Translate Key=GridFileNamesFull}"
+                                  ToggleType="Radio"
+                                  Tag="0"
+                                  Click="OnGridNameLinesClick"/>
+                    </MenuItem>
+
+                    <Separator/>
 
                     <MenuItem Header="{markup:Translate Key=ThemeColorsMenu}"
                               Icon="{markup:Icon Key=palette}"
@@ -844,17 +1479,17 @@
                     <MenuItem Header="{markup:Translate Key=Back}"
                               Icon="{markup:Icon Key=arrow-left}"
                               Click="OnBackClick"
-                              InputGesture="Alt+Left"/>
+                              InputGesture="{markup:Keybind Id=Back}"/>
 
                     <MenuItem Header="{markup:Translate Key=Forward}"
                               Icon="{markup:Icon Key=arrow-right}"
                               Click="OnForwardClick"
-                              InputGesture="Alt+Right"/>
+                              InputGesture="{markup:Keybind Id=Forward}"/>
 
                     <MenuItem Header="{markup:Translate Key=Up}"
                               Icon="{markup:Icon Key=arrow-up}"
                               Click="OnUpClick"
-                              InputGesture="Alt+Up"/>
+                              InputGesture="{markup:Keybind Id=Up}"/>
 
                     <Separator/>
 
@@ -869,7 +1504,7 @@
                     <MenuItem Header="{markup:Translate Key=Location}"
                               Icon="{markup:Icon Key=location}"
                               Click="OnTogglePathEditingClick"
-                              InputGesture="Ctrl+L"/>
+                              InputGesture="{markup:Keybind Id=Location}"/>
                 </MenuItem>
 
                 <!-- Addons Menu -->
@@ -900,6 +1535,10 @@
                     <MenuItem Header="{markup:Translate Key=ReloadAddons}"
                               Icon="{markup:Icon Key=refresh}"
                               Click="OnMenuReloadAddonsClick"/>
+
+                    <MenuItem Header="{markup:Translate Key=AddonProblems}"
+                              Icon="{markup:Icon Key=warning}"
+                              Click="OnAddonErrorsClick"/>
                 </MenuItem>
 
                 <!-- Help Menu -->
@@ -1382,6 +2021,9 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="0"
                                       MinWidth="{Binding SecondaryPaneMinWidth}"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="0"
+                                      MinWidth="{Binding TertiaryPaneMinWidth}"/>
                 </Grid.ColumnDefinitions>
 
                 <!-- Pane 1 (Primary Pane) -->
@@ -1401,6 +2043,17 @@
                                 Content="{Binding Pane2}"
                                 ContentTemplate="{StaticResource FilePaneTemplate}"
                                 IsVisible="{Binding IsDualPane}"/>
+
+                <GridSplitter Grid.Column="3"
+                              Width="4"
+                              Background="#282828"
+                              ResizeDirection="Columns"
+                              IsVisible="{Binding IsTriplePane}"/>
+
+                <ContentControl Grid.Column="4"
+                                Content="{Binding Pane3}"
+                                ContentTemplate="{StaticResource FilePaneTemplate}"
+                                IsVisible="{Binding IsTriplePane}"/>
             </Grid>
         </Grid>
 
@@ -1411,95 +2064,176 @@
                 BorderThickness="0,1,0,1"
                 Padding="16,10"
                 IsVisible="{Binding IsOperationInProgress}">
-            <Grid ColumnDefinitions="Auto,*,Auto"
-                  RowDefinitions="Auto,Auto,Auto">
+            <StackPanel Spacing="10">
 
-                <!-- Icon -->
-                <Panel Grid.Row="0"
-                       Grid.RowSpan="3"
-                       Grid.Column="0"
-                       Width="36"
-                       Height="36"
-                       Margin="0,0,14,0"
-                       VerticalAlignment="Center">
-                    <Image Source="{Binding OperationIcon}"
-                           Width="26"
-                           Height="26"/>
-                </Panel>
+                <Grid ColumnDefinitions="*,Auto"
+                      IsVisible="{Binding HasMultipleOperations}">
 
-                <!-- Top Row: Title and Speed/ETA -->
-                <Grid Grid.Row="0"
-                      Grid.Column="1"
-                      ColumnDefinitions="*,Auto"
-                      Margin="0,0,0,6">
-                    <TextBlock Grid.Column="0"
-                               Text="{Binding OperationTitle}"
-                               FontWeight="SemiBold"
-                               FontSize="13"
-                               Foreground="#FFFFFF"
-                               TextTrimming="CharacterEllipsis"/>
+                    <ScrollViewer Grid.Column="0"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding Operations}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"
+                                                Spacing="6"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
 
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding OperationSpeedAndEta}"
-                               FontSize="12"
-                               Foreground="{DynamicResource AccentLightBrush}"
-                               FontWeight="Medium"
-                               Margin="12,0,0,0"/>
-                </Grid>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:OperationProgressViewModel">
+                                    <Button Classes="operation-tab"
+                                            Classes.selected="{Binding IsSelected}"
+                                            Tag="{Binding}"
+                                            Click="OnOperationTabClick">
+                                        <StackPanel Orientation="Horizontal"
+                                                    Spacing="6">
 
-                <!-- Middle Row: Progress Bar -->
-                <ProgressBar Grid.Row="1"
-                             Grid.Column="1"
-                             Minimum="0"
-                             Maximum="100"
-                             Value="{Binding OperationPercent}"
-                             Height="6"
-                             CornerRadius="3"
-                             Background="#38383E"
-                             Foreground="{DynamicResource AccentBrush}"
-                             Margin="0,0,0,6"/>
+                                            <Image Source="{Binding Icon}"
+                                                   Width="12"
+                                                   Height="12"
+                                                   VerticalAlignment="Center"/>
 
-                <!-- Bottom Row: Count / Size and Current File -->
-                <Grid Grid.Row="2"
-                      Grid.Column="1"
-                      ColumnDefinitions="Auto,*,Auto">
-                    <TextBlock Grid.Column="0"
-                               Text="{Binding OperationItemsProgress}"
-                               FontSize="12"
-                               Foreground="#CCCCCC"/>
+                                            <TextBlock Text="{Binding Title}"
+                                                       FontSize="11"
+                                                       MaxWidth="180"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center"/>
 
-                    <TextBlock Grid.Column="2"
-                               Text="{Binding OperationCurrentFileName}"
-                               FontSize="12"
-                               Foreground="#88888E"
-                               TextTrimming="CharacterEllipsis"
-                               MaxWidth="300"/>
-                </Grid>
+                                            <TextBlock Text="{Binding PercentText}"
+                                                       FontSize="11"
+                                                       Foreground="#88888E"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
 
-                <!-- Cancel Button -->
-                <Button Grid.Row="0"
-                        Grid.RowSpan="3"
-                        Grid.Column="2"
-                        Click="OnCancelOperationClick"
-                        Background="Transparent"
-                        BorderBrush="#44444A"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="10,6"
-                        Margin="16,0,0,0"
-                        VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal"
-                                Spacing="6">
-                        <Image Source="{markup:Icon Key=close}"
-                               Width="12"
-                               Height="12"/>
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="4"
+                                Margin="12,0,0,0"
+                                VerticalAlignment="Center">
 
-                        <TextBlock Text="{markup:Translate Key=Cancel}"
-                                   FontSize="12"
-                                   Foreground="#EEEEEE"/>
+                        <Button Classes="crumb-scroll"
+                                Click="OnPreviousOperationClick"
+                                ToolTip.Tip="{markup:Translate Key=PreviousOperation}">
+                            <Image Source="{markup:Icon Key=arrow-left}"
+                                   Width="12"
+                                   Height="12"/>
+                        </Button>
+
+                        <TextBlock Text="{Binding OperationPosition}"
+                                   FontSize="11"
+                                   Foreground="#88888E"
+                                   VerticalAlignment="Center"/>
+
+                        <Button Classes="crumb-scroll"
+                                Click="OnNextOperationClick"
+                                ToolTip.Tip="{markup:Translate Key=NextOperation}">
+                            <Image Source="{markup:Icon Key=arrow-right}"
+                                   Width="12"
+                                   Height="12"/>
+                        </Button>
                     </StackPanel>
-                </Button>
-            </Grid>
+                </Grid>
+
+                <Grid DataContext="{Binding SelectedOperation}"
+                      x:DataType="vm:OperationProgressViewModel"
+                      ColumnDefinitions="Auto,*,Auto"
+                      RowDefinitions="Auto,Auto,Auto">
+
+                    <!-- Icon -->
+                    <Panel Grid.Row="0"
+                           Grid.RowSpan="3"
+                           Grid.Column="0"
+                           Width="36"
+                           Height="36"
+                           Margin="0,0,14,0"
+                           VerticalAlignment="Center">
+                        <Image Source="{Binding Icon}"
+                               Width="26"
+                               Height="26"/>
+                    </Panel>
+
+                    <!-- Top Row: Title and Status -->
+                    <Grid Grid.Row="0"
+                          Grid.Column="1"
+                          ColumnDefinitions="*,Auto"
+                          Margin="0,0,0,6">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Title}"
+                                   FontWeight="SemiBold"
+                                   FontSize="13"
+                                   Foreground="#FFFFFF"
+                                   TextTrimming="CharacterEllipsis"/>
+
+                        <TextBlock Grid.Column="1"
+                                   Text="{Binding Status}"
+                                   FontSize="12"
+                                   Foreground="{DynamicResource AccentLightBrush}"
+                                   FontWeight="Medium"
+                                   Margin="12,0,0,0"/>
+                    </Grid>
+
+                    <!-- Middle Row: Progress Bar -->
+                    <ProgressBar Grid.Row="1"
+                                 Grid.Column="1"
+                                 Minimum="0"
+                                 Maximum="{Binding Maximum}"
+                                 Value="{Binding Value}"
+                                 IsIndeterminate="{Binding IsIndeterminate}"
+                                 Height="6"
+                                 CornerRadius="3"
+                                 Background="#38383E"
+                                 Foreground="{DynamicResource AccentBrush}"
+                                 Margin="0,0,0,6"/>
+
+                    <!-- Bottom Row: Text and Current Item -->
+                    <Grid Grid.Row="2"
+                          Grid.Column="1"
+                          ColumnDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Text}"
+                                   FontSize="12"
+                                   Foreground="#CCCCCC"/>
+
+                        <TextBlock Grid.Column="2"
+                                   Text="{Binding Item}"
+                                   FontSize="12"
+                                   Foreground="#88888E"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="300"/>
+                    </Grid>
+
+                    <!-- Cancel Button -->
+                    <Button Grid.Row="0"
+                            Grid.RowSpan="3"
+                            Grid.Column="2"
+                            Click="OnCancelOperationClick"
+                            IsVisible="{Binding CanCancel}"
+                            Background="Transparent"
+                            BorderBrush="#44444A"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10,6"
+                            Margin="16,0,0,0"
+                            VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal"
+                                    Spacing="6">
+                            <Image Source="{markup:Icon Key=close}"
+                                   Width="12"
+                                   Height="12"/>
+
+                            <TextBlock Text="{markup:Translate Key=Cancel}"
+                                       FontSize="12"
+                                       Foreground="#EEEEEE"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+            </StackPanel>
         </Border>
 
         <!-- Picker Action Bar -->
@@ -1509,16 +2243,35 @@
                 BorderBrush="#2C2C2C"
                 BorderThickness="0,1,0,0"
                 Padding="16,10">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto">
 
-                <TextBlock Grid.Column="0"
+                <Button Grid.Column="0"
+                        Classes="addon-errors"
+                        Click="OnAddonErrorsClick"
+                        IsVisible="{Binding HasAddonErrors}"
+                        ToolTip.Tip="{markup:Translate Key=AddonErrorsTooltip}"
+                        Margin="0,0,10,0">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="4">
+                        <Image Source="{markup:Icon Key=warning}"
+                               Width="14"
+                               Height="14"/>
+
+                        <TextBlock Text="{Binding AddonErrorCount}"
+                                   FontSize="12"
+                                   Foreground="#E0A040"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
+                <TextBlock Grid.Column="1"
                            Text="{Binding PickerTargetLabel}"
                            VerticalAlignment="Center"
                            FontSize="13"
                            Foreground="#AAAAAA"
                            Margin="0,0,12,0"/>
 
-                <TextBox Grid.Column="1"
+                <TextBox Grid.Column="2"
                          x:Name="PickerNameTextBox"
                          Text="{Binding PickerSelectedName, Mode=TwoWay}"
                          KeyDown="OnPickerTextBoxKeyDown"
@@ -1527,7 +2280,7 @@
                          CornerRadius="6"
                          Margin="0,0,16,0"/>
 
-                <ComboBox Grid.Column="2"
+                <ComboBox Grid.Column="3"
                           ItemsSource="{Binding PickerFilters}"
                           SelectedItem="{Binding SelectedPickerFilter, Mode=TwoWay}"
                           IsVisible="{Binding HasPickerFilters}"
@@ -1544,7 +2297,7 @@
                     </ComboBox.ItemTemplate>
                 </ComboBox>
 
-                <Button Grid.Column="3"
+                <Button Grid.Column="4"
                         Content="{markup:Translate Key=Cancel}"
                         Click="OnPickerCancelClick"
                         Background="#333333"
@@ -1553,7 +2306,7 @@
                         Margin="0,0,8,0"
                         CornerRadius="6"/>
 
-                <Button Grid.Column="4"
+                <Button Grid.Column="5"
                         Content="{Binding PickerActionButtonText}"
                         Click="OnPickerConfirmClick"
                         Background="{DynamicResource AccentBrush}"
@@ -1571,12 +2324,68 @@
                 BorderBrush="#2A2A2A"
                 BorderThickness="0,1,0,0"
                 Padding="12,4">
-            <Grid ColumnDefinitions="*,Auto">
+            <Grid ColumnDefinitions="*,Auto,Auto">
                 <TextBlock Grid.Column="0"
                            Text="{Binding StatusText}"
                            Foreground="#888888"
                            FontSize="12"
                            VerticalAlignment="Center"/>
+
+                <ItemsControl Grid.Column="1"
+                              ItemsSource="{Binding AddonStatusItems}"
+                              VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="2"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AddonStatusItemViewModel">
+                            <Button Classes="addon-status"
+                                    Classes.clickable="{Binding IsClickable}"
+                                    Tag="{Binding}"
+                                    Click="OnAddonStatusItemClick"
+                                    ToolTip.Tip="{Binding Tooltip}"
+                                    ToolTip.ServiceEnabled="{Binding HasTooltip}">
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="5">
+                                    <Image Source="{Binding Icon}"
+                                           IsVisible="{Binding Icon, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                           Width="12"
+                                           Height="12"
+                                           VerticalAlignment="Center"/>
+
+                                    <TextBlock Text="{Binding Text}"
+                                               FontSize="12"
+                                               Foreground="#AAAAAA"
+                                               MaxWidth="260"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button Grid.Column="2"
+                        Classes="addon-errors"
+                        Click="OnAddonErrorsClick"
+                        IsVisible="{Binding HasAddonErrors}"
+                        ToolTip.Tip="{markup:Translate Key=AddonErrorsTooltip}">
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="4">
+                        <Image Source="{markup:Icon Key=warning}"
+                               Width="14"
+                               Height="14"/>
+
+                        <TextBlock Text="{Binding AddonErrorCount}"
+                                   FontSize="12"
+                                   Foreground="#E0A040"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
     </Grid>

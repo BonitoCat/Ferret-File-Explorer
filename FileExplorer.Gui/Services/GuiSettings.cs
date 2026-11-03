@@ -29,6 +29,30 @@ public static class GuiSettings
         set => SetBool("window_maximized", value);
     }
 
+    public static int GridNameLines
+    {
+        get => GetInt("grid_name_lines", 3);
+        set => SetString("grid_name_lines", value.ToString());
+    }
+
+    public static string? SortColumn
+    {
+        get => GetString("sort_column");
+        set => SetString("sort_column", value);
+    }
+
+    public static bool SortDescending
+    {
+        get => GetBool("sort_descending", false);
+        set => SetBool("sort_descending", value);
+    }
+
+    public static string? ListColumns
+    {
+        get => GetString("list_columns");
+        set => SetString("list_columns", value);
+    }
+
     public static string? PrimaryColor
     {
         get => GetString("primary_color");
@@ -70,6 +94,14 @@ public static class GuiSettings
             }
 
             Save(values);
+        }
+    }
+
+    private static int GetInt(string key, int fallback)
+    {
+        lock (SaveLock)
+        {
+            return Load().TryGetValue(key, out string? value) && int.TryParse(value, out int number) ? number : fallback;
         }
     }
 

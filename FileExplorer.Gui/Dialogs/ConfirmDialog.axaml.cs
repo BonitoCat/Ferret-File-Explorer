@@ -63,6 +63,11 @@ public partial class ConfirmDialog : Window
         }
     }
 
+    public void ShowAsInfo()
+    {
+        IconImage.Source = IconService.Get("info");
+    }
+
     private void OnConfirmClick(object? sender, RoutedEventArgs e)
     {
         Confirmed = true;

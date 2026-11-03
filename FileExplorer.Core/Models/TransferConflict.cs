@@ -22,3 +22,7 @@ public record TransferConflict(
 }
 
 public record ConflictResolution(ConflictAction Action, bool ApplyToAll = false);
+
+public record TransferStep(string Source, string Target, bool ReplaceExisting);
+
+public record TrashedItem(string OriginalPath, string TrashedPath);

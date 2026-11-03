@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Addons;
 
@@ -12,6 +14,7 @@ public sealed class Addon
     public const char TranslationPrefix = '$';
 
     private static readonly string[] TranslationDirNames = ["translations", "translation"];
+    private static readonly Regex TranslationTokenRegex = new(@"\$[A-Za-z_][A-Za-z0-9_]*", RegexOptions.Compiled);
 
     private static readonly IDeserializer ManifestDeserializer = new DeserializerBuilder()
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
@@ -26,6 +29,12 @@ public sealed class Addon
 
     private readonly Dictionary<string, Dictionary<string, string>> _translations = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<AddonAction> _actions = new();
+    private readonly Dictionary<AddonHook, string> _hooks = new();
+    private readonly List<AddonField> _settings = new();
+    private readonly List<AddonDependency> _dependencies = new();
+    private readonly List<AddonPlace> _places = new();
+    private readonly List<AddonDonation> _donations = new();
+    private readonly List<string> _invalidDonations = new();
 
     public string Id { get; internal set; }
     public string RootPath { get; }
@@ -33,6 +42,7 @@ public sealed class Addon
     public bool IsEnabled { get; internal set; } = true;
     public string? ErrorKey { get; private set; }
     public string? ErrorDetail { get; private set; }
+    public AddonMode Modes { get; private set; } = AddonMode.Explorer;
 
     public bool HasError => ErrorKey != null;
     public bool IsActive => IsEnabled && !HasError;
@@ -41,6 +51,13 @@ public sealed class Addon
     public string Author => Manifest.Author?.Trim() ?? "";
     public string? IconPath => ResolveExistingPath(Manifest.Icon);
     public IReadOnlyList<AddonAction> Actions => _actions;
+    public IReadOnlyDictionary<AddonHook, string> Hooks => _hooks;
+    public IReadOnlyList<AddonField> Settings => _settings;
+    public IReadOnlyList<AddonPlace> Places => _places;
+    public IReadOnlyList<AddonDependency> Dependencies => _dependencies;
+    public IReadOnlyList<AddonDonation> Donations => _donations;
+    public IReadOnlyList<string> InvalidDonations => _invalidDonations;
+    public string? ServicePath { get; private set; }
 
     private Addon(string rootPath, AddonManifest manifest)
     {
@@ -73,6 +90,13 @@ public sealed class Addon
 
         Addon addon = new(rootPath, manifest);
         addon.LoadTranslations();
+        addon.LoadModes();
+        addon.LoadHooks();
+        addon.LoadService();
+        addon.LoadSettings();
+        addon.LoadPlaces();
+        addon.LoadDependencies();
+        addon.LoadDonations();
         addon.LoadActions();
         return addon;
     }
@@ -121,6 +145,21 @@ public sealed class Addon
         }
 
         return key;
+    }
+
+    public string TranslateText(string? text, string languageCode)
+    {
+        if (string.IsNullOrEmpty(text) || !text.Contains(TranslationPrefix))
+        {
+            return text ?? "";
+        }
+
+        return TranslationTokenRegex.Replace(text, match => Translate(match.Value, languageCode));
+    }
+
+    public bool SupportsMode(AddonMode mode)
+    {
+        return (Modes & mode) != 0;
     }
 
     public string? ResolvePath(string? relativePath)
@@ -221,6 +260,194 @@ public sealed class Addon
         }
     }
 
+    private void LoadModes()
+    {
+        if (!TryParseModes(Manifest.Modes, AddonMode.Explorer, out AddonMode modes, out string? invalid))
+        {
+            SetError("AddonErrorUnknownMode", invalid);
+            return;
+        }
+
+        Modes = modes;
+    }
+
+    private void LoadHooks()
+    {
+        if (Manifest.Hooks == null)
+        {
+            return;
+        }
+
+        foreach (KeyValuePair<string, string> entry in Manifest.Hooks)
+        {
+            if (!TryParseHook(entry.Key, out AddonHook hook))
+            {
+                SetError("AddonErrorUnknownHook", entry.Key);
+                continue;
+            }
+
+            string? scriptPath = ResolvePath(entry.Value);
+            if (scriptPath == null)
+            {
+                continue;
+            }
+
+            if (!File.Exists(scriptPath))
+            {
+                SetError("AddonErrorScriptMissing", Path.GetRelativePath(RootPath, scriptPath));
+                continue;
+            }
+
+            _hooks[hook] = scriptPath;
+        }
+    }
+
+    private void LoadService()
+    {
+        string? scriptPath = ResolvePath(Manifest.Service);
+        if (scriptPath == null)
+        {
+            return;
+        }
+
+        if (!File.Exists(scriptPath))
+        {
+            SetError("AddonErrorScriptMissing", Path.GetRelativePath(RootPath, scriptPath));
+            return;
+        }
+
+        ServicePath = scriptPath;
+    }
+
+    private void LoadSettings()
+    {
+        foreach (AddonSettingManifest manifest in Manifest.Settings?.Where(s => s != null) ?? [])
+        {
+            string id = manifest.Id?.Trim() ?? "";
+            if (id.Length == 0)
+            {
+                SetError("AddonErrorSettingNoId", manifest.Title);
+                continue;
+            }
+
+            if (!AddonField.TryParseType(manifest.Type, out AddonFieldType type))
+            {
+                SetError("AddonErrorUnknownSettingType", manifest.Type);
+                continue;
+            }
+
+            List<(string Value, string Label)> parsedChoices = (manifest.Choices ?? new())
+                .Where(c => c.Trim().Length > 0)
+                .Select(AddonField.SplitChoice)
+                .ToList();
+            List<string> choices = parsedChoices.Select(c => c.Value).ToList();
+            if (type == AddonFieldType.Choice && choices.Count == 0)
+            {
+                SetError("AddonErrorSettingNoChoices", id);
+                continue;
+            }
+
+            if (_settings.Any(s => s.Id == id))
+            {
+                SetError("AddonErrorDuplicateSetting", id);
+                continue;
+            }
+
+            string label = string.IsNullOrWhiteSpace(manifest.Title) ? id : manifest.Title.Trim();
+            _settings.Add(new(id, label, manifest.Description?.Trim() ?? "", type, manifest.Default, choices, manifest.Min, manifest.Max, parsedChoices.Select(c => c.Label).ToList()));
+        }
+    }
+
+    private void LoadPlaces()
+    {
+        foreach (AddonPlaceManifest manifest in Manifest.Places?.Where(p => p != null) ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(manifest.Name) || string.IsNullOrWhiteSpace(manifest.Path))
+            {
+                SetError("AddonErrorPlaceIncomplete", manifest.Name ?? manifest.Path);
+                continue;
+            }
+
+            string section = string.IsNullOrWhiteSpace(manifest.Section) ? NameKey : manifest.Section.Trim();
+            _places.Add(new(section, manifest.Name.Trim(), ExpandHome(manifest.Path.Trim()), manifest.Icon?.Trim()));
+        }
+    }
+
+    private void LoadDependencies()
+    {
+        foreach (object? entry in Manifest.Dependencies ?? [])
+        {
+            if (entry is string command)
+            {
+                AddDependency(command, command, new Dictionary<string, string>());
+                continue;
+            }
+
+            if (entry is not IDictionary<object, object> map)
+            {
+                SetError("AddonErrorDependencyInvalid", entry?.ToString() ?? "");
+                continue;
+            }
+
+            Dictionary<string, string> values = map
+                .Where(e => e.Key is string && e.Value is string)
+                .ToDictionary(e => ((string) e.Key).Trim().ToLowerInvariant(), e => ((string) e.Value).Trim());
+            Dictionary<string, string> packages = values
+                .Where(e => AddonDependency.PackageManagers.Contains(e.Key) && e.Value.Length > 0)
+                .ToDictionary(e => e.Key, e => e.Value);
+            AddDependency(values.GetValueOrDefault("command", ""), values.GetValueOrDefault("package"), packages);
+        }
+    }
+
+    private void AddDependency(string command, string? package, IReadOnlyDictionary<string, string> packages)
+    {
+        command = command.Trim();
+        if (command.Length == 0)
+        {
+            SetError("AddonErrorDependencyNoCommand", package ?? "");
+            return;
+        }
+
+        if (_dependencies.Any(d => d.Command == command))
+        {
+            return;
+        }
+
+        _dependencies.Add(new(command, string.IsNullOrWhiteSpace(package) ? null : package.Trim(), packages));
+    }
+
+    private void LoadDonations()
+    {
+        List<object> entries = Manifest.Donate switch
+        {
+            null => [],
+            List<object> list => list,
+            _ => [Manifest.Donate],
+        };
+
+        foreach (object? entry in entries)
+        {
+            string url = entry?.ToString()?.Trim() ?? "";
+            if (!AddonDonation.TryParse(url, out AddonDonation? donation) || donation == null)
+            {
+                _invalidDonations.Add(url);
+                continue;
+            }
+
+            if (_donations.Any(d => d.Provider == donation.Provider))
+            {
+                continue;
+            }
+
+            _donations.Add(donation);
+        }
+    }
+
+    public static string ExpandHome(string path)
+    {
+        return PathManager.ExpandHome(path);
+    }
+
     private void LoadActions()
     {
         List<AddonActionManifest> manifests = Manifest.Actions.Where(a => a != null).ToList();
@@ -228,6 +455,8 @@ public sealed class Addon
         {
             manifests.Add(new() { Location = "addons-menu" });
         }
+
+        HashSet<string> groupIds = FindGroupIds(manifests);
 
         for (int i = 0; i < manifests.Count; i++)
         {
@@ -250,26 +479,51 @@ public sealed class Addon
                 continue;
             }
 
+            if (!TryParseModes(manifest.Modes, Modes, out AddonMode modes, out string? invalidMode))
+            {
+                SetError("AddonErrorUnknownMode", invalidMode);
+                continue;
+            }
+
+            if (!TryParseClipboard(manifest.Clipboard, out AddonClipboardContent clipboard, out string? invalidClipboard))
+            {
+                SetError("AddonErrorUnknownClipboard", invalidClipboard);
+                continue;
+            }
+
             if (!string.IsNullOrWhiteSpace(manifest.After) && !string.IsNullOrWhiteSpace(manifest.Before))
             {
                 SetError("AddonErrorBothAnchors", manifest.Id ?? i.ToString());
                 continue;
             }
 
-            AddonAction action = new(this, manifest, location, targets, separatorBefore, separatorAfter, i);
+            AddonAction action = new(this, manifest, location, targets, modes, clipboard, separatorBefore, separatorAfter, i);
+            action.IsGroup = groupIds.Contains(action.Id.ToLowerInvariant());
+            if (action.IsGroup && location == AddonLocation.PathBar)
+            {
+                SetError("AddonErrorGroupInPathBar", action.Id);
+                continue;
+            }
+
+            if (location == AddonLocation.Paste && (action.IsGroup || action.Parent != null))
+            {
+                SetError("AddonErrorPasteInMenu", action.Id);
+                continue;
+            }
+
             if (location == AddonLocation.PathBar && action.Keywords.Count == 0)
             {
                 SetError("AddonErrorNoKeywords", action.Id);
                 continue;
             }
 
-            if (action.Command == null && action.ScriptPath == null)
+            if (!action.IsGroup && action.Command == null && action.ScriptPath == null)
             {
                 SetError("AddonErrorNoScript", action.Id);
                 continue;
             }
 
-            if (action.ScriptPath != null && !File.Exists(action.ScriptPath))
+            if (!action.IsGroup && action.ScriptPath != null && !File.Exists(action.ScriptPath))
             {
                 SetError("AddonErrorScriptMissing", Path.GetRelativePath(RootPath, action.ScriptPath));
                 continue;
@@ -283,6 +537,99 @@ public sealed class Addon
 
             _actions.Add(action);
         }
+
+        ResolveParents();
+    }
+
+    private HashSet<string> FindGroupIds(List<AddonActionManifest> manifests)
+    {
+        HashSet<string> ids = manifests
+            .Where(m => !string.IsNullOrWhiteSpace(m.Id))
+            .Select(m => m.Id!.Trim().ToLowerInvariant())
+            .ToHashSet();
+        HashSet<string> groups = new();
+        foreach (AddonActionManifest manifest in manifests)
+        {
+            string? parent = GetOwnParentId(manifest.Parent?.Trim().ToLowerInvariant());
+            if (parent != null && ids.Contains(parent))
+            {
+                groups.Add(parent);
+            }
+        }
+
+        return groups;
+    }
+
+    private string? GetOwnParentId(string? parent)
+    {
+        if (string.IsNullOrEmpty(parent))
+        {
+            return null;
+        }
+
+        string prefix = Id.ToLowerInvariant() + "/";
+        if (parent.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return parent[prefix.Length..];
+        }
+
+        return parent.Contains('/') ? null : parent;
+    }
+
+    private void ResolveParents()
+    {
+        foreach (AddonAction action in _actions.Where(a => a.Parent != null))
+        {
+            string? ownId = GetOwnParentId(action.Parent);
+            if (ownId == null)
+            {
+                continue;
+            }
+
+            AddonAction? group = _actions.FirstOrDefault(a => a.IsGroup && string.Equals(a.Id, ownId, StringComparison.OrdinalIgnoreCase));
+            if (group != null)
+            {
+                action.Parent = group.Key.ToLowerInvariant();
+                action.Location = group.Location;
+                continue;
+            }
+
+            if (AddonAction.BuiltInParents.Contains(ownId))
+            {
+                action.Parent = ownId;
+                action.Location = AddonLocation.ContextMenu;
+                continue;
+            }
+
+            SetError("AddonErrorUnknownParent", action.Parent);
+            return;
+        }
+
+        AddonAction? looped = _actions.FirstOrDefault(HasParentLoop);
+        if (looped != null)
+        {
+            SetError("AddonErrorParentLoop", looped.Id);
+        }
+    }
+
+    private bool HasParentLoop(AddonAction action)
+    {
+        AddonAction? current = action;
+        for (int depth = 0; depth <= _actions.Count; depth++)
+        {
+            current = _actions.FirstOrDefault(a => string.Equals(a.Key, current.Parent, StringComparison.OrdinalIgnoreCase));
+            if (current == null)
+            {
+                return false;
+            }
+
+            if (current == action)
+            {
+                return true;
+            }
+        }
+
+        return true;
     }
 
     private static bool TryParseLocation(string? value, out AddonLocation location)
@@ -298,6 +645,9 @@ public sealed class Addon
                 return true;
             case "pathbar" or "path" or "locationbar":
                 location = AddonLocation.PathBar;
+                return true;
+            case "paste":
+                location = AddonLocation.Paste;
                 return true;
             default:
                 location = AddonLocation.ContextMenu;
@@ -334,6 +684,97 @@ public sealed class Addon
         }
 
         return true;
+    }
+
+    private static bool TryParseClipboard(List<string>? values, out AddonClipboardContent content, out string? invalid)
+    {
+        invalid = null;
+        if (values == null || values.Count == 0)
+        {
+            content = AddonClipboardContent.Any;
+            return true;
+        }
+
+        content = AddonClipboardContent.None;
+        foreach (string value in values)
+        {
+            AddonClipboardContent kind = Normalize(value) switch
+            {
+                "files" or "file" => AddonClipboardContent.Files,
+                "image" or "images" or "bitmap" => AddonClipboardContent.Image,
+                "text" => AddonClipboardContent.Text,
+                "any" or "all" => AddonClipboardContent.Any,
+                _ => AddonClipboardContent.None,
+            };
+            if (kind == AddonClipboardContent.None)
+            {
+                invalid = value;
+                return false;
+            }
+
+            content |= kind;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseModes(List<string>? values, AddonMode fallback, out AddonMode modes, out string? invalid)
+    {
+        invalid = null;
+        if (values == null || values.Count == 0)
+        {
+            modes = fallback;
+            return true;
+        }
+
+        modes = AddonMode.None;
+        foreach (string value in values)
+        {
+            AddonMode mode = Normalize(value) switch
+            {
+                "explorer" => AddonMode.Explorer,
+                "picker" or "pickers" => AddonMode.Picker,
+                "filepicker" or "openpicker" => AddonMode.FilePicker,
+                "folderpicker" => AddonMode.FolderPicker,
+                "savepicker" => AddonMode.SavePicker,
+                "all" => AddonMode.All,
+                _ => AddonMode.None,
+            };
+            if (mode == AddonMode.None)
+            {
+                invalid = value;
+                return false;
+            }
+
+            modes |= mode;
+        }
+
+        return true;
+    }
+
+    private static bool TryParseHook(string? value, out AddonHook hook)
+    {
+        switch (Normalize(value))
+        {
+            case "postinstall":
+                hook = AddonHook.PostInstall;
+                return true;
+            case "preuninstall":
+                hook = AddonHook.PreUninstall;
+                return true;
+            case "postload":
+                hook = AddonHook.PostLoad;
+                return true;
+            case "poststart":
+                hook = AddonHook.PostStart;
+                return true;
+            case "preclose":
+                hook = AddonHook.PreClose;
+                return true;
+            default:
+                hook = AddonHook.PostInstall;
+                return false;
+        }
     }
 
     private static bool TryParseSeparator(string? value, out bool before, out bool after)
