@@ -1,6 +1,6 @@
 <Project>
     <PropertyGroup>
-        <Version>4.0.0</Version>
+        <Version>4.1.0</Version>
         <!-- Allow framework-dependent builds to run on a newer installed runtime
              (for example .NET 10) when the targeted .NET 8 runtime is absent. -->
         <RollForward>LatestMajor</RollForward>
