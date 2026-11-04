@@ -1,5 +1,7 @@
 {
   "File": "File",
+  "Settings": "Settings",
+  "RunInBackground": "Run in background",
   "ShowTrayIcon": "Show tray icon",
   "QuitFerret": "Quit Ferret",
   "Edit": "Edit",

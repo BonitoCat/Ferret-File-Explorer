@@ -1,9 +1,25 @@
-# Local compatibility libraries
+# Original libraries as submodules
 
-Ferret includes the five libraries it needs in `Libraries/`. A fresh clone no
-longer needs FileLib, LoggerLib, SecretsLib, TuiLib or InputLib checkouts next
-to the repository. These are implementations of the APIs Ferret uses, rather
-than complete recreations of the original libraries.
+Ferret uses the original public libraries published by the upstream author:
+
+| Library | Submodule |
+| --- | --- |
+| FileLib | `libs/FileLib` |
+| LoggerLib | `libs/LoggerLib` |
+| SecretsLib | `libs/SecretsLib` |
+| TuiLib | `libs/TuiLib` |
+| InputLib | `libs/InputLib` |
+
+They are pinned to the same commits as upstream Ferret. A fresh clone must
+initialize them before building:
+
+```sh
+git clone --recurse-submodules https://github.com/anelkoo/Ferret-File-Explorer.git
+# or, in an existing clone:
+git submodule update --init --recursive
+```
+
+The fork's own test projects live in `Tests/` instead of inside the libraries.
 
 ## Build and verification
 
@@ -15,9 +31,9 @@ bash _builds/verify-libraries.sh
 ```
 
 The verification script targets Linux and needs Python 3 for the isolated
-credential-provider and pseudo-terminal checks. It does not use your real
-keyring or change your saved settings. Each C# check project can also be run
-individually on Windows; Linux-only checks explicitly report a skip.
+credential and pseudo-terminal checks. It does not use your real keyring or
+change your saved settings. Each C# check project can also be run individually
+on Windows; Linux-only checks explicitly report a skip.
 
 For isolated tests using a real keyring and GUI, install `dbus-x11`,
 `gnome-keyring`, `libsecret-tools`, `xvfb`, `xauth` and `xdotool`, then run
@@ -32,40 +48,44 @@ in [STARTUP.md](STARTUP.md).
 
 ## Paths and logs
 
-Absolute `XDG_DATA_HOME`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` values override
-the Linux defaults `~/.local/share`, `~/.config` and `~/.cache`. Relative values
-are ignored. Existing `fe` subdirectories and config migration are retained.
-Creating a file through FileLib does not truncate an existing file.
+`XDG_DATA_HOME`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` are honoured verbatim
+by FileLib, including relative values. The library does not create the returned
+directories; Ferret creates them through `AppPaths` where needed. The default
+Linux locations remain `~/.local/share`, `~/.config` and `~/.cache`, and the
+existing `fe` data directory and config migration are retained.
 
-Logs are serialized to `fe/logs` under the data directory. Retention removes
-only files matching the logger's own generated filename format. Logging failures
-do not interrupt file operations.
+`FileHelper.Create` truncates an existing file. Ferret only calls it after
+checking that the target does not exist, so saved data is not affected.
+
+LoggerLib writes to `fe/logs` under the data directory. Its retention limit
+caps the number of files left in that directory after a new log is created;
+unrelated files in the log directory can therefore be removed when retention
+is enabled. Logging failures do not interrupt file operations.
 
 ## Credentials
 
-Install `libsecret-tools` and use an unlocked Secret Service collection, such
-as GNOME Keyring or a compatible KDE service, to remember passwords across
-sessions. DEB packages recommend this dependency. Secret attributes are
-`application=org.fe.fileexplorer` and `key=<credential key>`.
+SecretsLib talks to the Secret Service directly through `libsecret`. Install
+`libsecret-tools` and use an unlocked collection, such as GNOME Keyring or a
+compatible KDE service, to remember passwords across sessions. DEB packages
+recommend this dependency. Entries use the schema name `org.fe.fileexplorer`
+and the attribute `key=<credential key>`.
 
-The provider runs without a shell, receives passwords over standard input,
-and has a five-second timeout per operation. If it is missing, locked or
-unresponsive, new passwords remain in memory for the current process only.
-They are never written to the old fallback format.
+When no usable provider is available, new passwords remain in memory for the
+current process only and are never written to the old fallback format.
 
 Existing `fe/.secrets` entries remain readable. Each entry is removed from the
 old file only after successful storage in the system keyring. Failed migration
 leaves the old entry intact. Rewrites are atomic and user-private on Linux.
-The old machine/user-derived encryption exists only to read legacy data; it
-is not used for new storage. Original-library keyring attributes are unknown,
-so some previously stored accounts may require signing in again.
+The old machine/user-derived encryption exists only to read legacy data; it is
+not used for new storage.
 
 ## Terminal behavior
 
-The terminal implementation preserves Ferret's existing controls and uses only
-foreground console input, with no global hooks or device permissions. `--tty`
-remains supported. A paused input reader hands ownership to text dialogs; exit
-restores cursor, echo and the alternate screen.
+InputLib and TuiLib provide the terminal input and rendering primitives.
+Ferret keeps its existing controls and uses foreground console input, with no
+global hooks or device permissions. `--tty` remains supported. A paused input
+reader hands ownership to text dialogs; exit restores cursor, echo and the
+alternate screen.
 
 Terminals cannot always distinguish Ctrl+Enter from Enter, Shift+Space from
 Space, left/right modifiers, or physical key releases. Use Ferret's existing
@@ -80,23 +100,14 @@ those results.
 
 ## Verification performed
 
-The replacement was verified with .NET SDK 10.0.401 on Windows and SDK 8.0.415
-on Ubuntu 26.04 x64:
+The current tree was checked with the .NET 8 SDK on Linux:
 
-- Full Release solution builds and all executable C# checks passed on both
-  hosts; platform-specific checks report skips on Windows.
-- Linux pseudo-terminal checks passed for navigation, split panes, persisted
-  sidebar visibility, repeated dialog handoff, Unicode paths/file creation,
-  tiny-window resizing, F10 exit and terminal-mode restoration.
-- The real Secret Service adapter passed store/lookup/delete against a separate
-  temporary GNOME keyring, including a password ending in a newline.
-- Both managed and published x64 GUI builds passed visible-window, directory
-  navigation, file creation and resident-quit checks in isolated Xvfb.
-- CLI, GUI and Portal were published for Linux x64 and ARM64. NativeAOT
-  launchers were built for both architectures with the target toolchain.
+- The full Release solution builds without errors.
+- The library, credentials and startup check projects pass.
+- The terminal smoke test passes navigation, split panes, sidebar visibility,
+  repeated dialog handoff, Unicode paths/file creation, tiny-window resizing,
+  F10 exit and terminal-mode restoration.
 
-ARM64 execution and installation into a real desktop are not verified by these
-checks. Network-server authentication, desktop associations and desktop-specific
-tray/focus behavior still need manual acceptance testing. Existing ImageSharp
-3.1.12 vulnerability warnings and unrelated application compiler warnings remain
-outside this replacement.
+Desktop GUI and tray checks additionally require a graphical session; run
+`bash _builds/verify-libraries.sh --desktop` on the target desktop. ARM64
+execution and installation into a real desktop are not covered by these checks.

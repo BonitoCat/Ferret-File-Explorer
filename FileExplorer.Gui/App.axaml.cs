@@ -51,6 +51,7 @@ public partial class App : Application
         });
 
         AppPaths.MigrateLegacyConfig();
+        BackgroundStartupService.Apply();
         ThemeService.Load();
         InputElement.KeyDownEvent.AddClassHandler<TextBox>(OnTextBoxKeyDown, RoutingStrategies.Tunnel);
 
@@ -89,12 +90,20 @@ public partial class App : Application
             {
                 Environment.SetEnvironmentVariable("DESKTOP_STARTUP_ID", null);
                 Environment.SetEnvironmentVariable("XDG_ACTIVATION_TOKEN", null);
-                desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 ResidentWindows = new ResidentWindowManager(desktop);
                 Program.ResidentServer.SetHandler(async request =>
                     await Dispatcher.UIThread.InvokeAsync(() => ResidentWindows.Handle(request)));
                 if (Program.InitialRequest != null) ResidentWindows.Handle(Program.InitialRequest);
                 ResidentWindows.SchedulePreparation();
+                if (!GuiSettings.RunInBackground && Program.InitialRequest == null)
+                {
+                    // A launcher always sends a request right after --resident. If that
+                    // handshake never arrives, do not leave an invisible process behind.
+                    DispatcherTimer.RunOnce(() =>
+                    {
+                        if (ResidentWindows is { HasOpenWindows: false }) ResidentWindows.Quit();
+                    }, TimeSpan.FromSeconds(30));
+                }
                 desktop.Exit += (_, _) => ResidentWindows.Dispose();
             }
             else

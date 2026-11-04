@@ -5,13 +5,22 @@ The full DEB packages start `ferret --background` at graphical login using
 Normal `ferret` and `fe-gui` calls open a new window through the resident process.
 The OS continues to manage Super+E and the default file-manager association.
 
-**View → Show tray icon** changes panel visibility immediately and saves it in
-`gui_settings` as `show_tray_icon`. It does not stop the background process or
-disable preloading. The default is enabled. GNOME installations without a tray
+**Settings → Run in background** is enabled by default. It controls both the
+login autostart entry and whether Ferret keeps running after the last window is
+closed. When it is enabled, Ferret writes a per-user autostart entry to
+`$XDG_CONFIG_HOME/autostart/ferret.desktop`; this also enables background
+startup for AppImage and other non-package installations. When it is disabled,
+Ferret writes `Hidden=true` to that file so a distro-wide autostart entry is
+masked, and closing the last window exits the process. A stale `--background`
+launch opens a normal window instead of leaving an invisible process behind.
+
+**Settings → Show tray icon** changes panel visibility immediately and saves it
+in `gui_settings` as `show_tray_icon`. It is only available while background
+mode is enabled. The default is enabled. GNOME installations without a tray
 extension can still use the background process and the normal launch command.
 **File → Quit Ferret**, the tray's Quit action, and `ferret --quit` exit Ferret.
-Closing a window only closes that window. A later normal launch starts the
-resident process again if necessary.
+Closing a window only closes that window while background mode is enabled; a
+later normal launch starts the resident process again if necessary.
 
 Explicit paths, relative paths (against the caller's directory), and network
 URLs are forwarded. Picker modes still run in separate processes and preserve
@@ -31,8 +40,10 @@ NativeAOT publishing must run on Linux.
 
 The DEBs install the small launcher as `/usr/bin/ferret` and `/usr/bin/fe-gui`,
 and the GUI as `/usr/lib/ferret/ferret-gui`. AppImage and direct GUI starts use
-the same resident logic but do not gain the DEB's native launcher or autostart
-entry. Headless CLI packages do not install background startup.
+the same resident logic. They do not ship the DEB's system-wide autostart file,
+but **Settings → Run in background** writes a per-user entry when it can resolve
+a stable launcher (the `APPIMAGE` path, a `ferret` executable on `PATH`, or a
+non-temporary GUI path). Headless CLI packages do not install background startup.
 
 ## Verification
 
@@ -57,6 +68,10 @@ On Cinnamon first, then KDE and GNOME:
    should reflect the changes without clearing and reloading its initial list.
 4. Toggle the tray in one window: other open windows must show the same setting;
    hiding it must preserve startup speed. Restart and confirm persistence.
+   Turn **Run in background** off, close every window and confirm the process
+   and tray disappear; relaunch and re-enable it, then confirm closing the last
+   window keeps the process ready. Check that the per-user autostart entry is
+   written or masked accordingly.
 5. Test explicit/relative paths with spaces, URLs, picker selection and cancel,
    and separate graphical sessions. Check focus and startup indicators under
    X11 and Wayland sessions using the existing Avalonia X11/XWayland backend.

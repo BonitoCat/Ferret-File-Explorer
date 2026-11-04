@@ -14,7 +14,7 @@ namespace FileExplorer.Gui.Services;
 internal sealed class ResidentWindowManager : IDisposable
 {
     private readonly IClassicDesktopStyleApplicationLifetime _desktop;
-    private readonly TrayIcon _tray;
+    private TrayIcon? _tray;
     private readonly List<MainWindow> _windows = new();
     private MainWindow? _prepared;
     private MainWindow? _active;
@@ -26,6 +26,60 @@ internal sealed class ResidentWindowManager : IDisposable
     public ResidentWindowManager(IClassicDesktopStyleApplicationLifetime desktop)
     {
         _desktop = desktop;
+        _desktop.ShutdownMode = GuiSettings.RunInBackground
+            ? ShutdownMode.OnExplicitShutdown
+            : ShutdownMode.OnLastWindowClose;
+        GuiSettings.TrayVisibilityChanged += UpdateTray;
+        GuiSettings.BackgroundModeChanged += OnBackgroundModeChanged;
+        UpdateTray();
+        if (GuiSettings.RunInBackground)
+        {
+            SchedulePreparation();
+        }
+    }
+
+    private void OnBackgroundModeChanged()
+    {
+        _desktop.ShutdownMode = GuiSettings.RunInBackground
+            ? ShutdownMode.OnExplicitShutdown
+            : ShutdownMode.OnLastWindowClose;
+        UpdateTray();
+        BackgroundStartupService.Apply();
+
+        if (GuiSettings.RunInBackground)
+        {
+            SchedulePreparation();
+            return;
+        }
+
+        if (_prepared != null)
+        {
+            MainWindow prepared = _prepared;
+            _prepared = null;
+            prepared.Close();
+        }
+    }
+
+    private void UpdateTray()
+    {
+        bool visible = GuiSettings.RunInBackground && GuiSettings.ShowTrayIcon;
+        if (!visible)
+        {
+            if (_tray != null)
+            {
+                TrayIcon.SetIcons(Application.Current!, new TrayIcons());
+                _tray.Dispose();
+                _tray = null;
+            }
+
+            return;
+        }
+
+        if (_tray != null)
+        {
+            return;
+        }
+
         NativeMenu menu = new();
         NativeMenuItem open = new(LocalizationService.Get("NewWindow"));
         open.Click += (_, _) => Open();
@@ -38,11 +92,7 @@ internal sealed class ResidentWindowManager : IDisposable
         _tray = new TrayIcon { Icon = new WindowIcon(icon), ToolTipText = "Ferret", Menu = menu };
         _tray.Clicked += (_, _) => Open();
         TrayIcon.SetIcons(Application.Current!, new TrayIcons { _tray });
-        GuiSettings.TrayVisibilityChanged += UpdateTray;
-        UpdateTray();
     }
-
-    private void UpdateTray() => _tray.IsVisible = GuiSettings.ShowTrayIcon;
 
     public void Handle(LaunchRequest request)
     {
@@ -51,9 +101,23 @@ internal sealed class ResidentWindowManager : IDisposable
             Dispatcher.UIThread.Post(Quit, DispatcherPriority.Background);
             return;
         }
-        if (request.Args.Contains("--background") || request.Args.Contains("--resident")) return;
+
+        bool background = request.Args.Contains("--background");
+        if (background || request.Args.Contains("--resident"))
+        {
+            if (!background || GuiSettings.RunInBackground)
+            {
+                return;
+            }
+
+            // A stale autostart entry must not leave a hidden process running after
+            // the user turned background mode off.
+        }
+
         Open(App.GetInitialPath(request.Args, request.WorkingDirectory), request.StartupId, request.ActivationToken);
     }
+
+    public bool HasOpenWindows => _windows.Any(window => window.IsVisible);
 
     public void Open(string? path = null, string? startupId = null, string? activationToken = null)
     {
@@ -83,12 +147,12 @@ internal sealed class ResidentWindowManager : IDisposable
 
     public void SchedulePreparation()
     {
-        if (_stopping || _prepared != null || _preparationScheduled) return;
+        if (_stopping || !GuiSettings.RunInBackground || _prepared != null || _preparationScheduled) return;
         _preparationScheduled = true;
         Dispatcher.UIThread.Post(() =>
         {
             _preparationScheduled = false;
-            if (_stopping || _prepared != null) return;
+            if (_stopping || !GuiSettings.RunInBackground || _prepared != null) return;
             _prepared = CreateWindow(null);
             _prepared.PrepareLayout();
         }, DispatcherPriority.ApplicationIdle);
@@ -144,7 +208,13 @@ internal sealed class ResidentWindowManager : IDisposable
         _disposed = true;
         _stopping = true;
         GuiSettings.TrayVisibilityChanged -= UpdateTray;
-        _tray.Dispose();
+        GuiSettings.BackgroundModeChanged -= OnBackgroundModeChanged;
+        if (_tray != null)
+        {
+            TrayIcon.SetIcons(Application.Current!, new TrayIcons());
+            _tray.Dispose();
+            _tray = null;
+        }
         foreach (MainWindow window in _windows.ToArray()) window.Close();
         GuiInstanceRegistry.Unregister(Environment.ProcessId);
     }

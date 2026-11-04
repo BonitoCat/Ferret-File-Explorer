@@ -8,16 +8,24 @@ Work in progress, report all issues in the issues tab
 
 ## Building from source
 
-The required compatibility libraries are included in this repository. Build with
-`dotnet build FileExplorer.sln -c Release -m:1`; see the
-[library and verification guide](_docs/LIBRARIES.md) for Linux tests and credential storage.
+The original FileLib, LoggerLib, SecretsLib, TuiLib and InputLib libraries are
+included as git submodules under `libs/`. Initialize them first:
+
+```sh
+git submodule update --init --recursive
+dotnet build FileExplorer.sln -c Release -m:1
+```
+
+See the [library and verification guide](_docs/LIBRARIES.md) for Linux tests and
+credential storage.
 
 ## Fast Linux startup
 
 The full Linux packages keep a prepared Home window in the background after
-login. Toggle the panel icon with **View → Show tray icon**; Ferret stays ready
-with the icon hidden too. Use **File → Quit Ferret** or `ferret --quit` to exit.
-See the [startup guide](_docs/STARTUP.md) for building and verification.
+login. Use **Settings → Run in background** to control this at login and when
+the last window is closed, and **Settings → Show tray icon** to show or hide
+the panel icon. Use **File → Quit Ferret** or `ferret --quit` to exit. See the
+[startup guide](_docs/STARTUP.md) for building and verification.
 
 ## Addons
 

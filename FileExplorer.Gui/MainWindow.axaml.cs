@@ -107,10 +107,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = new MainWindowViewModel(initialPath, pickerOptions);
-        TrayIconMenuItem.IsVisible = OperatingSystem.IsLinux() && pickerOptions == null;
+        SettingsMenuItem.IsVisible = OperatingSystem.IsLinux() && pickerOptions == null;
         QuitFerretMenuItem.IsVisible = pickerOptions == null;
-        UpdateTrayMenu();
-        GuiSettings.TrayVisibilityChanged += UpdateTrayMenu;
+        UpdateSettingsMenu();
+        GuiSettings.TrayVisibilityChanged += UpdateSettingsMenu;
+        GuiSettings.BackgroundModeChanged += UpdateSettingsMenu;
 
         if (pickerOptions != null)
         {
@@ -182,7 +183,8 @@ public partial class MainWindow : Window
         Closed += (s, e) =>
         {
             _closed = true;
-            GuiSettings.TrayVisibilityChanged -= UpdateTrayMenu;
+            GuiSettings.TrayVisibilityChanged -= UpdateSettingsMenu;
+            GuiSettings.BackgroundModeChanged -= UpdateSettingsMenu;
             AddonService.Instance.AddonsChanged -= OnAddonsChanged;
             ThemeService.ColorsChanged -= RefreshAllIcons;
             FileTypeIconService.Changed -= RefreshAllIcons;
@@ -614,11 +616,34 @@ public partial class MainWindow : Window
         GridNamesFullMenuItem.IsChecked = ViewModel.GridNameLines == 0;
     }
 
-    private void UpdateTrayMenu() => TrayIconMenuItem.IsChecked = GuiSettings.ShowTrayIcon;
+    private void UpdateSettingsMenu()
+    {
+        RunInBackgroundMenuItem.IsChecked = GuiSettings.RunInBackground;
+        TrayIconMenuItem.IsChecked = GuiSettings.ShowTrayIcon;
+        TrayIconMenuItem.IsEnabled = GuiSettings.RunInBackground;
+    }
+
+    private void OnSettingsMenuOpened(object? sender, RoutedEventArgs e)
+    {
+        UpdateSettingsMenu();
+    }
+
+    private void OnRunInBackgroundClick(object? sender, RoutedEventArgs e)
+    {
+        GuiSettings.RunInBackground = RunInBackgroundMenuItem.IsChecked;
+        UpdateSettingsMenu();
+    }
 
     private void OnTrayIconClick(object? sender, RoutedEventArgs e)
     {
+        if (!GuiSettings.RunInBackground)
+        {
+            UpdateSettingsMenu();
+            return;
+        }
+
         GuiSettings.ShowTrayIcon = TrayIconMenuItem.IsChecked;
+        UpdateSettingsMenu();
     }
 
     private void OnQuitFerretClick(object? sender, RoutedEventArgs e)
