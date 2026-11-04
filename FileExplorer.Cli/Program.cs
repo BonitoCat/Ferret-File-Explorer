@@ -292,7 +292,6 @@ public static class Program
         {
             while (!ExitEvent.IsSet)
             {
-                Listener.ThrowIfFaulted();
                 if (Console.WindowWidth != lastWidth || Console.WindowHeight != lastHeight || Sidebar.ShouldShow != lastSidebarShown)
                 {
                     lastWidth = Console.WindowWidth;

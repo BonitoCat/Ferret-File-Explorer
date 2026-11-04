@@ -19,9 +19,9 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\Libraries\FileLib\FileLib.csproj" />
-      <ProjectReference Include="..\Libraries\LoggerLib\LoggerLib.csproj" />
-      <ProjectReference Include="..\Libraries\SecretsLib\SecretsLib.csproj" />
+      <ProjectReference Include="..\libs\FileLib\FileLib\FileLib.csproj" />
+      <ProjectReference Include="..\libs\LoggerLib\LoggerLib\LoggerLib.csproj" />
+      <ProjectReference Include="..\libs\SecretsLib\SecretsLib\SecretsLib.csproj" />
     </ItemGroup>
 
 </Project>

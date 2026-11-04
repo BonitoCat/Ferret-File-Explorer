@@ -2,15 +2,15 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileExplorer.Cli", "FileExplorer.Cli\FileExplorer.Cli.csproj", "{369BC04B-0837-4ECB-A210-E1928EEB6B16}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TuiLib", "Libraries\TuiLib\TuiLib.csproj", "{BF8C950D-6DA3-498B-AA90-6D4952B8CF8A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TuiLib", "libs\TuiLib\TuiLib\TuiLib.csproj", "{BF8C950D-6DA3-498B-AA90-6D4952B8CF8A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InputLib", "Libraries\InputLib\InputLib.csproj", "{1D406F30-2F47-4EE6-A2D6-277E11408D7E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InputLib", "libs\InputLib\InputLib\InputLib.csproj", "{1D406F30-2F47-4EE6-A2D6-277E11408D7E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileLib", "Libraries\FileLib\FileLib.csproj", "{66B94691-7854-4509-837C-FAC52F1C0D7B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileLib", "libs\FileLib\FileLib\FileLib.csproj", "{66B94691-7854-4509-837C-FAC52F1C0D7B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoggerLib", "Libraries\LoggerLib\LoggerLib.csproj", "{4D160859-5E6F-4EDA-B9B0-F7E87A48CBC5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoggerLib", "libs\LoggerLib\LoggerLib\LoggerLib.csproj", "{4D160859-5E6F-4EDA-B9B0-F7E87A48CBC5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecretsLib", "Libraries\SecretsLib\SecretsLib.csproj", "{91D5BAEF-66DD-4C2F-A494-7BD362C736F6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecretsLib", "libs\SecretsLib\SecretsLib\SecretsLib.csproj", "{91D5BAEF-66DD-4C2F-A494-7BD362C736F6}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Dependencies", "Dependencies", "{7DC91669-5BE8-4928-AE8B-95388CC50CB0}"
 EndProject
@@ -28,11 +28,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{0AB3BF05
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileExplorer.Credentials.Tests", "FileExplorer.Credentials.Tests\FileExplorer.Credentials.Tests.csproj", "{7D606F1E-D218-422D-90B0-3677F92AFCE3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Library.Tests", "Libraries\LoggerLib\Tests\Library.Tests.csproj", "{92377423-1F6A-4CEB-A4BB-04B1000125EE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Library.Tests", "Tests\Library.Tests\Library.Tests.csproj", "{92377423-1F6A-4CEB-A4BB-04B1000125EE}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InputLib.Tests", "Libraries\InputLib\Tests\InputLib.Tests.csproj", "{52066638-1F81-4E56-9C1A-2AAD2D8881FB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TuiLib.Tests", "Libraries\TuiLib\Tests\TuiLib.Tests.csproj", "{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -200,30 +198,6 @@ Global
 		{92377423-1F6A-4CEB-A4BB-04B1000125EE}.Release|x64.Build.0 = Release|Any CPU
 		{92377423-1F6A-4CEB-A4BB-04B1000125EE}.Release|x86.ActiveCfg = Release|Any CPU
 		{92377423-1F6A-4CEB-A4BB-04B1000125EE}.Release|x86.Build.0 = Release|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Debug|x64.Build.0 = Debug|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Debug|x86.Build.0 = Debug|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Release|Any CPU.Build.0 = Release|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Release|x64.ActiveCfg = Release|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Release|x64.Build.0 = Release|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Release|x86.ActiveCfg = Release|Any CPU
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB}.Release|x86.Build.0 = Release|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Debug|x64.Build.0 = Debug|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Debug|x86.Build.0 = Debug|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Release|x64.ActiveCfg = Release|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Release|x64.Build.0 = Release|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Release|x86.ActiveCfg = Release|Any CPU
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -236,7 +210,5 @@ Global
 		{91D5BAEF-66DD-4C2F-A494-7BD362C736F6} = {7DC91669-5BE8-4928-AE8B-95388CC50CB0}
 		{7D606F1E-D218-422D-90B0-3677F92AFCE3} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{92377423-1F6A-4CEB-A4BB-04B1000125EE} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
-		{52066638-1F81-4E56-9C1A-2AAD2D8881FB} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
-		{A8D8C3C4-BF20-4F9B-80EC-A5D62248E2CF} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal

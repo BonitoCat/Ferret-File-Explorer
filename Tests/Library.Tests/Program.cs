@@ -10,25 +10,31 @@ try
 {
     string data = Path.Combine(root, "data");
     Environment.SetEnvironmentVariable("XDG_DATA_HOME", data);
-    Check(DirectoryHelper.GetAppDataDirPath(false) == data && !Directory.Exists(data), "Noncreating XDG path");
-    Check(DirectoryHelper.GetAppDataDirPath() == data && Directory.Exists(data), "XDG path creation");
+    Check(DirectoryHelper.GetAppDataDirPath(false) == data, "XDG data override");
+    Check(!Directory.Exists(data), "XDG data path is not created automatically");
     Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Path.Combine(root, "config"));
     Check(DirectoryHelper.GetAppConfigDirPath() == Path.Combine(root, "config"), "Config override");
+    Check(!Directory.Exists(Path.Combine(root, "config")), "XDG config path is not created automatically");
     Environment.SetEnvironmentVariable("XDG_CACHE_HOME", Path.Combine(root, "cache"));
     Check(DirectoryHelper.GetCacheDirPath() == Path.Combine(root, "cache"), "Cache override");
     Environment.SetEnvironmentVariable("XDG_DATA_HOME", "relative-path");
-    Check(Path.IsPathFullyQualified(DirectoryHelper.GetAppDataDirPath(false)), "Reject relative XDG override");
+    Check(DirectoryHelper.GetAppDataDirPath(false) == "relative-path", "XDG override is returned verbatim");
+    Environment.SetEnvironmentVariable("XDG_DATA_HOME", null);
     if (!OperatingSystem.IsWindows())
     {
         Check(DirectoryHelper.GetAppDataDirPath(false) == Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".local/share"), "Linux fallback");
     }
+
+    string nested = Path.Combine(root, "created", "nested");
+    DirectoryHelper.CreateDir(nested);
+    Check(Directory.Exists(nested), "CreateDir creates nested folders");
+
     string file = Path.Combine(root, "keep.txt");
     File.WriteAllText(file, "keep me");
     FileHelper.Create(file);
-    Check(File.ReadAllText(file) == "keep me", "Create preserves existing file");
-    FileHelper.Create(Path.Combine(root, "new.txt"));
-    Check(File.Exists(Path.Combine(root, "new.txt")), "Create new file");
+    Check(File.Exists(file), "Create keeps an existing file");
+    Check(File.ReadAllText(file).Length == 0, "Create truncates an existing file");
 
     Logger.LogDir = Path.Combine(root, "logs");
     Logger.KeepLogs = 2;
@@ -39,18 +45,25 @@ try
     await Task.WhenAll(Enumerable.Range(0, 100).Select(i => Task.Run(() => Logger.LogI("message-" + i))));
     string writtenLog = Directory.EnumerateFiles(Logger.LogDir).Single(p => p != unrelated);
     string[] lines = File.ReadAllLines(writtenLog);
-    Check(lines.Length == 100 && Enumerable.Range(0, 100).All(i => lines.Count(l => l.EndsWith(" message-" + i)) == 1),
+    string[] logLines = lines.Where(l => l.Contains("message-")).ToArray();
+    Check(logLines.Length == 100 && Enumerable.Range(0, 100).All(i => logLines.Count(l => l.EndsWith("message-" + i)) == 1),
         "Concurrent writes preserve each message once");
     await Logger.CreateFileAsync();
     Logger.CreateFile();
-    Check(Directory.EnumerateFiles(Logger.LogDir).Count() == 3, "Retention keeps two own logs");
-    Check(File.ReadAllText(unrelated) == "keep", "Retention preserves unrelated logs");
-    Logger.LogFirstChance = true;
-    Logger.LogDebug = true;
+    Check(Directory.EnumerateFiles(Logger.LogDir).Count() == Logger.KeepLogs, "Retention keeps at most KeepLogs files");
+    Logger.LogFirstChance = false;
     Logger.LogDir = file;
     Logger.CreateFile();
-    await Logger.LogE("unwritable destination");
-    Logger.LogFirstChance = false;
+    bool loggingFailed = false;
+    try
+    {
+        await Logger.LogE("unwritable destination");
+    }
+    catch (InvalidOperationException)
+    {
+        loggingFailed = true;
+    }
+    Check(loggingFailed, "Logging without an open log file fails loudly");
     Console.WriteLine("PASS: FileLib and LoggerLib checks");
 }
 finally

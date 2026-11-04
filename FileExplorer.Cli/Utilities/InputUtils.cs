@@ -321,7 +321,6 @@ public static class InputUtils
             finally
             {
                 Program.Listener.ClearKeyState();
-                Program.Listener.ClearConsumedKeys();
                 try { Program.Listener.PauseListening = wasListeningPaused; }
                 finally { Program.PauseRendering = wasRenderingPaused; }
             }

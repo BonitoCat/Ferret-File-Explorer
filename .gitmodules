@@ -1,0 +1,15 @@
+[submodule "libs/FileLib"]
+	path = libs/FileLib
+	url = https://github.com/BonitoCat/FileLib.git
+[submodule "libs/LoggerLib"]
+	path = libs/LoggerLib
+	url = https://github.com/BonitoCat/LoggerLib.git
+[submodule "libs/SecretsLib"]
+	path = libs/SecretsLib
+	url = https://github.com/BonitoCat/SecretsLib.git
+[submodule "libs/TuiLib"]
+	path = libs/TuiLib
+	url = https://github.com/BonitoCat/TuiLib.git
+[submodule "libs/InputLib"]
+	path = libs/InputLib
+	url = https://github.com/BonitoCat/InputLib.git

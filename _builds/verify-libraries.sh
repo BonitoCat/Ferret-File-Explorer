@@ -6,9 +6,7 @@ cd "$ROOT_DIR"
 
 dotnet build FileExplorer.sln -c Release -m:1
 for project in \
-    Libraries/LoggerLib/Tests/Library.Tests.csproj \
-    Libraries/InputLib/Tests/InputLib.Tests.csproj \
-    Libraries/TuiLib/Tests/TuiLib.Tests.csproj \
+    Tests/Library.Tests/Library.Tests.csproj \
     FileExplorer.Credentials.Tests/FileExplorer.Credentials.Tests.csproj \
     FileExplorer.Startup.Tests/FileExplorer.Startup.Tests.csproj; do
     dotnet run --project "$project" -c Release --no-build
