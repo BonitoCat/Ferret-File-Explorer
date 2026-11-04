@@ -2140,99 +2140,100 @@
                     </StackPanel>
                 </Grid>
 
-                <Grid DataContext="{Binding SelectedOperation}"
-                      x:DataType="vm:OperationProgressViewModel"
-                      ColumnDefinitions="Auto,*,Auto"
-                      RowDefinitions="Auto,Auto,Auto">
+                <Panel DataContext="{Binding SelectedOperation}">
+                    <Grid x:DataType="vm:OperationProgressViewModel"
+                          ColumnDefinitions="Auto,*,Auto"
+                          RowDefinitions="Auto,Auto,Auto">
 
-                    <!-- Icon -->
-                    <Panel Grid.Row="0"
-                           Grid.RowSpan="3"
-                           Grid.Column="0"
-                           Width="36"
-                           Height="36"
-                           Margin="0,0,14,0"
-                           VerticalAlignment="Center">
-                        <Image Source="{Binding Icon}"
-                               Width="26"
-                               Height="26"/>
-                    </Panel>
+                        <!-- Icon -->
+                        <Panel Grid.Row="0"
+                               Grid.RowSpan="3"
+                               Grid.Column="0"
+                               Width="36"
+                               Height="36"
+                               Margin="0,0,14,0"
+                               VerticalAlignment="Center">
+                            <Image Source="{Binding Icon}"
+                                   Width="26"
+                                   Height="26"/>
+                        </Panel>
 
-                    <!-- Top Row: Title and Status -->
-                    <Grid Grid.Row="0"
-                          Grid.Column="1"
-                          ColumnDefinitions="*,Auto"
-                          Margin="0,0,0,6">
-                        <TextBlock Grid.Column="0"
-                                   Text="{Binding Title}"
-                                   FontWeight="SemiBold"
-                                   FontSize="13"
-                                   Foreground="#FFFFFF"
-                                   TextTrimming="CharacterEllipsis"/>
+                        <!-- Top Row: Title and Status -->
+                        <Grid Grid.Row="0"
+                              Grid.Column="1"
+                              ColumnDefinitions="*,Auto"
+                              Margin="0,0,0,6">
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Title}"
+                                       FontWeight="SemiBold"
+                                       FontSize="13"
+                                       Foreground="#FFFFFF"
+                                       TextTrimming="CharacterEllipsis"/>
 
-                        <TextBlock Grid.Column="1"
-                                   Text="{Binding Status}"
-                                   FontSize="12"
-                                   Foreground="{DynamicResource AccentLightBrush}"
-                                   FontWeight="Medium"
-                                   Margin="12,0,0,0"/>
-                    </Grid>
-
-                    <!-- Middle Row: Progress Bar -->
-                    <ProgressBar Grid.Row="1"
-                                 Grid.Column="1"
-                                 Minimum="0"
-                                 Maximum="{Binding Maximum}"
-                                 Value="{Binding Value}"
-                                 IsIndeterminate="{Binding IsIndeterminate}"
-                                 Height="6"
-                                 CornerRadius="3"
-                                 Background="#38383E"
-                                 Foreground="{DynamicResource AccentBrush}"
-                                 Margin="0,0,0,6"/>
-
-                    <!-- Bottom Row: Text and Current Item -->
-                    <Grid Grid.Row="2"
-                          Grid.Column="1"
-                          ColumnDefinitions="Auto,*,Auto">
-                        <TextBlock Grid.Column="0"
-                                   Text="{Binding Text}"
-                                   FontSize="12"
-                                   Foreground="#CCCCCC"/>
-
-                        <TextBlock Grid.Column="2"
-                                   Text="{Binding Item}"
-                                   FontSize="12"
-                                   Foreground="#88888E"
-                                   TextTrimming="CharacterEllipsis"
-                                   MaxWidth="300"/>
-                    </Grid>
-
-                    <!-- Cancel Button -->
-                    <Button Grid.Row="0"
-                            Grid.RowSpan="3"
-                            Grid.Column="2"
-                            Click="OnCancelOperationClick"
-                            IsVisible="{Binding CanCancel}"
-                            Background="Transparent"
-                            BorderBrush="#44444A"
-                            BorderThickness="1"
-                            CornerRadius="6"
-                            Padding="10,6"
-                            Margin="16,0,0,0"
-                            VerticalAlignment="Center">
-                        <StackPanel Orientation="Horizontal"
-                                    Spacing="6">
-                            <Image Source="{markup:Icon Key=close}"
-                                   Width="12"
-                                   Height="12"/>
-
-                            <TextBlock Text="{markup:Translate Key=Cancel}"
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Status}"
                                        FontSize="12"
-                                       Foreground="#EEEEEE"/>
-                        </StackPanel>
-                    </Button>
-                </Grid>
+                                       Foreground="{DynamicResource AccentLightBrush}"
+                                       FontWeight="Medium"
+                                       Margin="12,0,0,0"/>
+                        </Grid>
+
+                        <!-- Middle Row: Progress Bar -->
+                        <ProgressBar Grid.Row="1"
+                                     Grid.Column="1"
+                                     Minimum="0"
+                                     Maximum="{Binding Maximum}"
+                                     Value="{Binding Value}"
+                                     IsIndeterminate="{Binding IsIndeterminate}"
+                                     Height="6"
+                                     CornerRadius="3"
+                                     Background="#38383E"
+                                     Foreground="{DynamicResource AccentBrush}"
+                                     Margin="0,0,0,6"/>
+
+                        <!-- Bottom Row: Text and Current Item -->
+                        <Grid Grid.Row="2"
+                              Grid.Column="1"
+                              ColumnDefinitions="Auto,*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding Text}"
+                                       FontSize="12"
+                                       Foreground="#CCCCCC"/>
+
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding Item}"
+                                       FontSize="12"
+                                       Foreground="#88888E"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxWidth="300"/>
+                        </Grid>
+
+                        <!-- Cancel Button -->
+                        <Button Grid.Row="0"
+                                Grid.RowSpan="3"
+                                Grid.Column="2"
+                                Click="OnCancelOperationClick"
+                                IsVisible="{Binding CanCancel}"
+                                Background="Transparent"
+                                BorderBrush="#44444A"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="10,6"
+                                Margin="16,0,0,0"
+                                VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="6">
+                                <Image Source="{markup:Icon Key=close}"
+                                       Width="12"
+                                       Height="12"/>
+
+                                <TextBlock Text="{markup:Translate Key=Cancel}"
+                                           FontSize="12"
+                                           Foreground="#EEEEEE"/>
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </Panel>
             </StackPanel>
         </Border>
 

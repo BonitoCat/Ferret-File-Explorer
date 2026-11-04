@@ -483,10 +483,14 @@ public class NetworkService
         if (process.ExitCode != 0)
         {
             string alreadyMounted = errorBuilder.ToString() + outputBuilder;
-            string? mounted = FindExistingMount(info);
-            if (mounted != null && alreadyMounted.Contains("already mounted", StringComparison.OrdinalIgnoreCase))
+            if (alreadyMounted.Contains("already mounted", StringComparison.OrdinalIgnoreCase))
             {
-                return (true, mounted, "", false);
+                // Virtual locations such as smb://server have no local FUSE mount path.
+                string? mounted = FindExistingMount(info);
+                if (!waitForMountPath || mounted != null)
+                {
+                    return (true, mounted ?? "", "", false);
+                }
             }
 
             string err = CleanGioError(errorBuilder.ToString());
