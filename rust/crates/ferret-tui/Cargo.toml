@@ -1,0 +1,18 @@
+[package]
+name = "ferret-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Ferret terminal file explorer (Rust port)"
+
+[[bin]]
+name = "ferret"
+path = "src/main.rs"
+
+[dependencies]
+ferret-core = { path = "../ferret-core" }
+ratatui = "0.29"
+crossterm = "0.28"
+unicode-width.workspace = true
+libc.workspace = true
