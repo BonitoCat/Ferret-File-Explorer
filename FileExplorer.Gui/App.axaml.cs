@@ -15,11 +15,14 @@ using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Services;
 using FileLib;
 using LoggerLib;
+using Avalonia.Threading;
 
 namespace FileExplorer.Gui;
 
 public partial class App : Application
 {
+    internal ResidentWindowManager? ResidentWindows { get; private set; }
+
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -48,6 +51,7 @@ public partial class App : Application
         });
 
         AppPaths.MigrateLegacyConfig();
+        BackgroundStartupService.Apply();
         ThemeService.Load();
         InputElement.KeyDownEvent.AddClassHandler<TextBox>(OnTextBoxKeyDown, RoutingStrategies.Tunnel);
 
@@ -82,8 +86,30 @@ public partial class App : Application
                 return;
             }
 
-            string? initialPath = GetInitialPath(desktop.Args);
-            desktop.MainWindow = new MainWindow(initialPath);
+            if (Program.ResidentServer != null)
+            {
+                Environment.SetEnvironmentVariable("DESKTOP_STARTUP_ID", null);
+                Environment.SetEnvironmentVariable("XDG_ACTIVATION_TOKEN", null);
+                ResidentWindows = new ResidentWindowManager(desktop);
+                Program.ResidentServer.SetHandler(async request =>
+                    await Dispatcher.UIThread.InvokeAsync(() => ResidentWindows.Handle(request)));
+                if (Program.InitialRequest != null) ResidentWindows.Handle(Program.InitialRequest);
+                ResidentWindows.SchedulePreparation();
+                if (!GuiSettings.RunInBackground && Program.InitialRequest == null)
+                {
+                    // A launcher always sends a request right after --resident. If that
+                    // handshake never arrives, do not leave an invisible process behind.
+                    DispatcherTimer.RunOnce(() =>
+                    {
+                        if (ResidentWindows is { HasOpenWindows: false }) ResidentWindows.Quit();
+                    }, TimeSpan.FromSeconds(30));
+                }
+                desktop.Exit += (_, _) => ResidentWindows.Dispose();
+            }
+            else
+            {
+                desktop.MainWindow = new MainWindow(GetInitialPath(desktop.Args));
+            }
         }
 
         base.OnFrameworkInitializationCompleted();
@@ -114,14 +140,29 @@ public partial class App : Application
         e.Handled = true;
     }
 
-    private static string? GetInitialPath(string[]? args)
+    internal static string? GetInitialPath(string[]? args, string? workingDirectory = null)
     {
-        if (args == null || args.Length == 0 || string.IsNullOrWhiteSpace(args[0]))
+        if (args == null || args.Length == 0)
         {
             return null;
         }
 
-        string location = LocationResolver.Resolve(args[0]);
+        string? argument = null;
+        for (int i = 0; i < args.Length; i++)
+        {
+            if ((args[i] == "--path" || args[i] == "-p") && i + 1 < args.Length)
+            {
+                argument = args[++i];
+                break;
+            }
+            if (!args[i].StartsWith("-", StringComparison.Ordinal))
+            {
+                argument = args[i];
+                break;
+            }
+        }
+        if (string.IsNullOrWhiteSpace(argument)) return null;
+        string location = LocationResolver.Resolve(argument);
         if (location.Contains("://", StringComparison.Ordinal))
         {
             return location;
@@ -129,7 +170,7 @@ public partial class App : Application
 
         try
         {
-            string resolved = Path.GetFullPath(location);
+            string resolved = Path.GetFullPath(location, workingDirectory ?? Environment.CurrentDirectory);
 
             if (Directory.Exists(resolved))
             {

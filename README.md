@@ -6,6 +6,27 @@ Now also with a GUI to go with it!
 
 Work in progress, report all issues in the issues tab
 
+## Building from source
+
+The original FileLib, LoggerLib, SecretsLib, TuiLib and InputLib libraries are
+included as git submodules under `libs/`. Initialize them first:
+
+```sh
+git submodule update --init --recursive
+dotnet build FileExplorer.sln -c Release -m:1
+```
+
+See the [library and verification guide](_docs/LIBRARIES.md) for Linux tests and
+credential storage.
+
+## Fast Linux startup
+
+The full Linux packages keep a prepared Home window in the background after
+login. Use **Settings → Run in background** to control this at login and when
+the last window is closed, and **Settings → Show tray icon** to show or hide
+the panel icon. Use **File → Quit Ferret** or `ferret --quit` to exit. See the
+[startup guide](_docs/STARTUP.md) for building and verification.
+
 ## Addons
 
 Add your own entries to the right-click and Addons menus, and your own commands to the path bar, that run scripts or programs, without rebuilding Ferret. Addon scripts can show progress bars, ask questions with forms and choices, run on install, start or close, keep running in the background and react to what you do, add items to the status bar and sections to the sidebar, have their own settings, and work inside Ferret's file picker too.

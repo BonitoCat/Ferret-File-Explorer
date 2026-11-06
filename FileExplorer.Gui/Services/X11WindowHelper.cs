@@ -126,9 +126,9 @@ public static class X11WindowHelper
         }
     }
 
-    public static void CompleteStartupNotification(IntPtr xid)
+    public static void CompleteStartupNotification(IntPtr xid, string? startupId = null)
     {
-        string? startupId = Environment.GetEnvironmentVariable("DESKTOP_STARTUP_ID");
+        startupId ??= Environment.GetEnvironmentVariable("DESKTOP_STARTUP_ID");
         Environment.SetEnvironmentVariable("DESKTOP_STARTUP_ID", null);
         if (!OperatingSystem.IsLinux() || xid == IntPtr.Zero || string.IsNullOrEmpty(startupId))
         {

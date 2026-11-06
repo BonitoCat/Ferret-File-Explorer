@@ -1,0 +1,6 @@
+_builds/build.sh text eol=lf
+_builds/verify-libraries.sh text eol=lf
+_tests/*.py text eol=lf
+_builds/**/*.desktop text eol=lf
+_builds/AppDir/AppRun text eol=lf
+_builds/fe-linux-*/DEBIAN/* text eol=lf

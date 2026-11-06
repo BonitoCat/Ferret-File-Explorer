@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["crates/ferret-core", "crates/ferret-tui", "crates/ferret-gui"]
+
+[workspace.package]
+version = "4.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.83"
+
+[workspace.dependencies]
+libc = "0.2"
+unicode-width = "0.2"

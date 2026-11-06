@@ -1,5 +1,9 @@
 {
   "File": "Datei",
+  "Settings": "Einstellungen",
+  "RunInBackground": "Im Hintergrund weiterlaufen",
+  "ShowTrayIcon": "Tray-Symbol anzeigen",
+  "QuitFerret": "Ferret beenden",
   "Edit": "Bearbeiten",
   "View": "Ansicht",
   "Go": "Gehe zu",

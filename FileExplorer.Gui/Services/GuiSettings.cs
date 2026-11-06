@@ -8,6 +8,39 @@ namespace FileExplorer.Gui.Services;
 
 public static class GuiSettings
 {
+    public static event Action? TrayVisibilityChanged;
+    public static event Action? BackgroundModeChanged;
+
+    public static bool RunInBackground
+    {
+        get => GetBool("run_in_background", true);
+        set
+        {
+            if (RunInBackground == value)
+            {
+                return;
+            }
+
+            SetBool("run_in_background", value);
+            BackgroundModeChanged?.Invoke();
+        }
+    }
+
+    public static bool ShowTrayIcon
+    {
+        get => GetBool("show_tray_icon", true);
+        set
+        {
+            if (ShowTrayIcon == value)
+            {
+                return;
+            }
+
+            SetBool("show_tray_icon", value);
+            TrayVisibilityChanged?.Invoke();
+        }
+    }
+
     private static readonly string SettingsFile = Path.Combine(AppPaths.DataDir, "gui_settings");
     private static readonly object SaveLock = new();
 

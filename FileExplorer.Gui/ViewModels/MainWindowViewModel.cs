@@ -661,7 +661,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         OnPropertyChanged(nameof(CanGoForward));
         OnPropertyChanged(nameof(CanGoUp));
         UpdateStatus();
-        GuiInstanceRegistry.Update(Environment.ProcessId, CurrentPath);
+        if (Program.ResidentServer == null) GuiInstanceRegistry.Update(Environment.ProcessId, CurrentPath);
     }
 
     private void OnActiveSelectedItemChanged()
@@ -1057,6 +1057,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void LoadPlaces()
     {
+        if (_disposed) return;
         _sidebarOrder.Reload();
         LoadSectionOrder();
 
@@ -1498,10 +1499,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             Dispatcher.UIThread.Post(() =>
             {
-                if (version != _placesVersion)
-                {
-                    return;
-                }
+                if (_disposed || version != _placesVersion) return;
+
 
                 SyncPlaces(Places
                     .Where(p => p.Category is PlaceCategory.Places or PlaceCategory.Addons)
@@ -1516,6 +1515,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private int _placesVersion;
     private readonly List<IDisposable> _deviceWatchers = new();
     private Process? _udisksMonitorProcess;
+    private volatile bool _disposed;
+    private readonly object _monitorLock = new();
 
     private static void ParseBlockDevices(JsonElement elem, List<PlaceItem> extraPlaces, HashSet<string> seenPaths, bool isVisible)
     {
@@ -1713,16 +1714,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private void DebouncedReloadPlaces()
     {
-        _reloadPlacesCts?.Cancel();
-        CancellationTokenSource cts = new();
-        _reloadPlacesCts = cts;
-
-        Task.Delay(300, cts.Token).ContinueWith(t =>
+        Dispatcher.UIThread.Post(() =>
         {
-            if (!t.IsCanceled)
+            if (_disposed) return;
+            _reloadPlacesCts?.Cancel();
+            _reloadPlacesCts?.Dispose();
+            CancellationTokenSource cts = new();
+            _reloadPlacesCts = cts;
+
+            Task.Delay(300, cts.Token).ContinueWith(t =>
             {
-                Dispatcher.UIThread.Post(LoadPlaces);
-            }
+                if (!t.IsCanceled) Dispatcher.UIThread.Post(LoadPlaces);
+            });
         });
     }
 
@@ -1757,12 +1760,18 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 psi.ArgumentList.Add("-c");
                 psi.ArgumentList.Add(UdisksMonitorScript);
 
-                _udisksMonitorProcess = new() { StartInfo = psi };
-                _udisksMonitorProcess.Start();
-
-                while (!_udisksMonitorProcess.HasExited)
+                Process monitor;
+                lock (_monitorLock)
                 {
-                    string? line = await _udisksMonitorProcess.StandardOutput.ReadLineAsync();
+                    if (_disposed) return;
+                    monitor = new() { StartInfo = psi };
+                    _udisksMonitorProcess = monitor;
+                    monitor.Start();
+                }
+
+                while (!_disposed && !monitor.HasExited)
+                {
+                    string? line = await monitor.StandardOutput.ReadLineAsync();
                     if (line is null)
                     {
                         break;
@@ -1818,6 +1827,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
             lock (_deviceWatchers)
             {
+                if (_disposed)
+                {
+                    watcher.Dispose();
+                    return;
+                }
                 _deviceWatchers.Add(watcher);
             }
         }
@@ -4144,6 +4158,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+        _reloadPlacesCts?.Cancel();
         _reloadPlacesCts?.Dispose();
         lock (_deviceWatchers)
         {
@@ -4155,16 +4171,17 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             _deviceWatchers.Clear();
         }
 
-        try
+        lock (_monitorLock)
         {
-            if (_udisksMonitorProcess != null && !_udisksMonitorProcess.HasExited)
+            try
             {
-                _udisksMonitorProcess.Kill(true);
+                if (_udisksMonitorProcess != null && !_udisksMonitorProcess.HasExited)
+                    _udisksMonitorProcess.Kill(true);
             }
+            catch { }
+            _udisksMonitorProcess?.Dispose();
+            _udisksMonitorProcess = null;
         }
-        catch { }
-        _udisksMonitorProcess?.Dispose();
-        _udisksMonitorProcess = null;
 
         Pane1.Dispose();
         Pane2.Dispose();

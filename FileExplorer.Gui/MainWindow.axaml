@@ -1293,6 +1293,9 @@
                               Icon="{markup:Icon Key=close}"
                               Click="OnMenuCloseClick"
                               InputGesture="{markup:Keybind Id=Quit}"/>
+                    <MenuItem x:Name="QuitFerretMenuItem"
+                              Header="{markup:Translate Key=QuitFerret}"
+                              Click="OnQuitFerretClick"/>
                 </MenuItem>
 
                 <!-- Edit Menu -->
@@ -1465,6 +1468,21 @@
                               Header="{markup:Translate Key=UseAsSystemPicker}"
                               ToggleType="CheckBox"
                               Click="OnSystemPickerClick"/>
+                </MenuItem>
+
+                <!-- Settings Menu -->
+                <MenuItem x:Name="SettingsMenuItem"
+                          Header="{markup:Translate Key=Settings}"
+                          SubmenuOpened="OnSettingsMenuOpened">
+                    <MenuItem x:Name="RunInBackgroundMenuItem"
+                              Header="{markup:Translate Key=RunInBackground}"
+                              ToggleType="CheckBox"
+                              Click="OnRunInBackgroundClick"/>
+
+                    <MenuItem x:Name="TrayIconMenuItem"
+                              Header="{markup:Translate Key=ShowTrayIcon}"
+                              ToggleType="CheckBox"
+                              Click="OnTrayIconClick"/>
                 </MenuItem>
 
                 <!-- Go Menu -->

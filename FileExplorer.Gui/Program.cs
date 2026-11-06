@@ -4,14 +4,18 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using Avalonia;
 using FileExplorer.Core.Services;
 using FileExplorer.Gui.Services;
+using FileExplorer.Startup;
 
 namespace FileExplorer.Gui;
 
 class Program
 {
+    internal static ResidentServer? ResidentServer { get; private set; }
+    internal static LaunchRequest? InitialRequest { get; private set; }
     private static readonly string[] DetachFlags = ["-d", "--detach"];
     private const string DetachScript = "if command -v setsid >/dev/null 2>&1; then exec setsid -f \"$0\" \"$@\" </dev/null >/dev/null 2>&1; fi; nohup \"$0\" \"$@\" </dev/null >/dev/null 2>&1 &";
 
@@ -27,6 +31,8 @@ class Program
                  {Process.GetCurrentProcess().ProcessName} [OPTIONS] [PATH]
                 
                 Options:
+                 --background                         Keep a prepared Home window in the background
+                 --quit                               Quit the background application
                  --file-picker, --file-selection      Open as a file picker
                  --folder-picker, --directory         Open as a folder picker
                  --save-picker, --save                Open as a save dialog
@@ -44,14 +50,45 @@ class Program
             return;
         }
 
-        if (args != null && args.Any(DetachFlags.Contains))
+        args ??= Array.Empty<string>();
+        if (args.Any(DetachFlags.Contains))
         {
             Environment.ExitCode = Detach(args.Where(a => !DetachFlags.Contains(a)).ToArray());
             return;
         }
 
+        if (OperatingSystem.IsLinux() && !LaunchRequest.IsPicker(args))
+        {
+            LaunchRequest request = new() { Args = args };
+            if (request.TrySendAsync().GetAwaiter().GetResult()) return;
+            if (args.Contains("--quit")) return;
+
+            Stopwatch startup = Stopwatch.StartNew();
+            while (startup.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                ResidentServer = Services.ResidentServer.TryCreate();
+                if (ResidentServer != null) break;
+                if (args.Contains("--resident")) return;
+                if (request.TrySendAsync(1000).GetAwaiter().GetResult()) return;
+                Thread.Sleep(25);
+            }
+
+            if (ResidentServer == null)
+            {
+                Console.Error.WriteLine("Ferret could not connect to the running session.");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            InitialRequest = args.Contains("--resident") ? null : request;
+        }
+
         StartupWarmup.Start();
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args ?? Array.Empty<string>());
+
+        using (ResidentServer)
+        {
+            BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        }
     }
 
     private static int Detach(string[] args)

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Ferret
+Comment=Keep a prepared file explorer window ready
+Exec=ferret --background
+TryExec=ferret
+Icon=fe-file-explorer
+Terminal=false
+NoDisplay=true

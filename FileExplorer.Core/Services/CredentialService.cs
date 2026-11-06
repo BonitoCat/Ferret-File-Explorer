@@ -45,7 +45,7 @@ public class CredentialService
         {
         }
 
-        StoreFallbackSecret(key, secret);
+        // Without an unlocked system keyring, new secrets live only in this session.
     }
 
     public string? GetCredential(string key)
@@ -88,6 +88,16 @@ public class CredentialService
             lock (_lock)
             {
                 _sessionCache[key] = fallback;
+            }
+
+            try
+            {
+                SecretsManager.StoreSecret(key, fallback);
+                RemoveFallbackSecret(key);
+            }
+            catch
+            {
+                // Retain the legacy entry until the keyring has accepted it.
             }
 
             return fallback;
@@ -177,16 +187,6 @@ public class CredentialService
             32);
     }
 
-    private void StoreFallbackSecret(string key, string secret)
-    {
-        lock (_lock)
-        {
-            Dictionary<string, string> dict = LoadFallbackFile();
-            dict[key] = Encrypt(secret);
-            SaveFallbackFile(dict);
-        }
-    }
-
     private string? GetFallbackSecret(string key)
     {
         lock (_lock)
@@ -248,35 +248,24 @@ public class CredentialService
         try
         {
             string json = JsonSerializer.Serialize(dict, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(_fallbackFilePath, json);
-
-            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            string temporaryPath = _fallbackFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
             {
-                File.SetUnixFileMode(_fallbackFilePath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                FileStreamOptions options = new() { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+                if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+                    options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+                using (StreamWriter writer = new(new FileStream(temporaryPath, options)))
+                    writer.Write(json);
+                File.Move(temporaryPath, _fallbackFilePath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
         }
         catch
         {
         }
-    }
-
-    private string Encrypt(string plainText)
-    {
-        using Aes aes = Aes.Create();
-        aes.Key = _derivedKey.Value;
-        aes.GenerateIV();
-
-        using MemoryStream ms = new();
-        ms.Write(aes.IV, 0, aes.IV.Length);
-
-        using (CryptoStream cs = new(ms, aes.CreateEncryptor(), CryptoStreamMode.Write))
-        {
-            byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-            cs.Write(plainBytes, 0, plainBytes.Length);
-            cs.FlushFinalBlock();
-        }
-
-        return Convert.ToBase64String(ms.ToArray());
     }
 
     private string Decrypt(string cipherText)

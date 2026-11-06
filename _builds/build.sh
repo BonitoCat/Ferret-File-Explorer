@@ -40,6 +40,13 @@ done
 CLI_PROJ="$ROOT_DIR/FileExplorer.Cli/FileExplorer.Cli.csproj"
 GUI_PROJ="$ROOT_DIR/FileExplorer.Gui/FileExplorer.Gui.csproj"
 PORTAL_PROJ="$ROOT_DIR/FileExplorer.Portal/FileExplorer.Portal.csproj"
+LAUNCHER_PROJ="$ROOT_DIR/FileExplorer.Launcher/FileExplorer.Launcher.csproj"
+
+# NativeAOT needs clang and zlib development headers on the Linux build host.
+# Cross-architecture publishing also needs the target compiler/sysroot.
+for arch in x64 arm64; do
+    dotnet publish "$LAUNCHER_PROJ" -c Release -r "linux-$arch" --self-contained true
+done
 
 CLI_CTRL_LEGACY="$ROOT_DIR/FileExplorer.Cli/builds/fe-linux-x64-full/DEBIAN/control"
 if [ -f "$CLI_CTRL_LEGACY" ]; then
@@ -113,16 +120,24 @@ echo "=========================================="
 echo "Assembling package trees..."
 echo "=========================================="
 
+for package in fe-linux-x64-full fe-linux-x64-headless fe-linux-arm64-full fe-linux-arm64-headless AppDir; do
+    mkdir -p "$SCRIPT_DIR/$package/usr/bin"
+done
+
 cp "$CLI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe"
-cp "$GUI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret"
-cp "$GUI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe-gui"
+mkdir -p "$SCRIPT_DIR/fe-linux-x64-full/usr/lib/ferret"
+cp "$GUI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/lib/ferret/ferret-gui"
+cp "$ROOT_DIR/FileExplorer.Launcher/bin/Release/net8.0/linux-x64/publish/ferret" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret"
+cp "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe-gui"
 cp "$PORTAL_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret-portal"
 
 cp "$CLI_BIN_X64" "$SCRIPT_DIR/fe-linux-x64-headless/usr/bin/fe"
 
 cp "$CLI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe"
-cp "$GUI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret"
-cp "$GUI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe-gui"
+mkdir -p "$SCRIPT_DIR/fe-linux-arm64-full/usr/lib/ferret"
+cp "$GUI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/lib/ferret/ferret-gui"
+cp "$ROOT_DIR/FileExplorer.Launcher/bin/Release/net8.0/linux-arm64/publish/ferret" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret"
+cp "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe-gui"
 cp "$PORTAL_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret-portal"
 
 cp "$CLI_BIN_ARM64" "$SCRIPT_DIR/fe-linux-arm64-headless/usr/bin/fe"
@@ -135,11 +150,13 @@ chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/fe-gui"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/bin/ferret-portal"
+chmod 755 "$SCRIPT_DIR/fe-linux-x64-full/usr/lib/ferret/ferret-gui"
 chmod 755 "$SCRIPT_DIR/fe-linux-x64-headless/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/fe-gui"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/bin/ferret-portal"
+chmod 755 "$SCRIPT_DIR/fe-linux-arm64-full/usr/lib/ferret/ferret-gui"
 chmod 755 "$SCRIPT_DIR/fe-linux-arm64-headless/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/AppDir/usr/bin/fe"
 chmod 755 "$SCRIPT_DIR/AppDir/usr/bin/ferret"

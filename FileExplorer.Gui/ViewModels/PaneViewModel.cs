@@ -34,6 +34,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     private CancellationTokenSource? _loadCts;
     private FileSystemWatcher? _watcher;
     private DispatcherTimer? _debounceTimer;
+    private volatile bool _disposed;
 
     public event Action<PaneViewModel>? BeforeLoad;
     public event Action<PaneViewModel>? ContentChanged;
@@ -295,7 +296,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     public void Load(string path, string? searchPattern = null)
     {
-        if (string.IsNullOrEmpty(path) || !IsNavigable(path))
+        if (_disposed || string.IsNullOrEmpty(path) || !IsNavigable(path))
         {
             return;
         }
@@ -566,7 +567,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     private void RefreshSilent()
     {
-        if (!IsOpen)
+        if (_disposed || !IsOpen)
         {
             return;
         }
@@ -599,6 +600,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
             {
                 foreach (IFileSystemEntry entry in _fileService.EnumerateFolderEntries(path, search, CancellationToken.None))
                 {
+                    if (_disposed) return;
                     if (!showHidden && entry.IsHidden)
                     {
                         continue;
@@ -627,7 +629,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
             Dispatcher.UIThread.Post(() =>
             {
-                if (_currentPath != path)
+                if (_disposed || _currentPath != path)
                 {
                     return;
                 }
@@ -787,6 +789,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     private void RemoveDeletedItem(FileSystemEventArgs e)
     {
+        if (_disposed) return;
         FileItemViewModel? item = Items.FirstOrDefault(i => string.Equals(i.FullPath, e.FullPath, StringComparison.OrdinalIgnoreCase) || string.Equals(i.Name, e.Name, StringComparison.OrdinalIgnoreCase));
         if (item == null)
         {
@@ -807,6 +810,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     {
         Dispatcher.UIThread.Post(() =>
         {
+            if (_disposed) return;
             _debounceTimer?.Stop();
             _debounceTimer = new()
             {
@@ -823,9 +827,12 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
         _watcher?.Dispose();
         _watcher = null;
         _debounceTimer?.Stop();
-        _loadCts?.Dispose();
     }
 }

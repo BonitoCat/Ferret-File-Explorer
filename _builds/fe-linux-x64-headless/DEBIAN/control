@@ -1,7 +1,8 @@
 Package: fe-linux-x64-headless
-Version: 3.1.1-pre-release-5
+Version: 4.1.0
 Section: utils
 Architecture: amd64
 Maintainer: BonitoCat
 Description: Advanced terminal file explorer (Headless / TUI only)
 Depends: wl-clipboard, xclip, libmagic1, libmagic-dev
+Recommends: libsecret-tools

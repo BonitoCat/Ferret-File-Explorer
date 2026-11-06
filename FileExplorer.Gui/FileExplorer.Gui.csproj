@@ -20,6 +20,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\FileExplorer.Core\FileExplorer.Core.csproj" />
+        <Compile Include="../FileExplorer.Startup/LaunchRequest.cs" Link="Services/LaunchRequest.cs" />
     </ItemGroup>
 
     <ItemGroup>
