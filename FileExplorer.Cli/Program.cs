@@ -78,7 +78,7 @@ public static class Program
            | Ctrl + S - Focus the sidebar, keeping the current pane as its target
            | Ctrl + Right Arrow / Escape / Ctrl + S (in the sidebar) - Return to the file pane
            | Enter / Arrow Right - Open selected directory / file
-           | Ctrl + Enter - Open selected file in nano
+           | Ctrl + Enter - Open selected file in $VISUAL or $EDITOR
            | Alt + O - Open selected file with… (optionally always use that app)
            | Type a name - Jump to the first matching item
            | Shift + Enter / Alt + Enter - Open properties of directory / file
@@ -158,17 +158,7 @@ public static class Program
                 case "-o":
                     if (OperatingSystem.IsLinux())
                     {
-                        Process proc = new()
-                        {
-                            StartInfo = new ProcessStartInfo
-                            {
-                                FileName = "nemo",
-                                Arguments = Environment.CurrentDirectory,
-                                UseShellExecute = false,
-                            },
-                        };
-                        
-                        proc.Start();
+                        _executionService.OpenInDefaultFileBrowser(Environment.CurrentDirectory);
                     }
                     
                     return;
@@ -595,7 +585,7 @@ public static class Program
         _keybinds.Add(new NavDownKeybind { Context = context, Keys = new() { Key.ArrowDown } });
         _keybinds.Add(new ExecuteKeybind(_executionService) { Context = context, Keys = new() { Key.Enter } });
         _keybinds.Add(new ExecuteKeybind(_executionService) { Context = context, Keys = new() { Key.ArrowRight } });
-        _keybinds.Add(new NanoKeybind { Context = context, Keys = new() { Key.Ctrl, Key.Enter } });
+        _keybinds.Add(new EditorKeybind { Context = context, Keys = new() { Key.Ctrl, Key.Enter } });
         _keybinds.Add(new NavigateUpKeybind { Context = context, Keys = new() { Key.ArrowLeft } });
         _keybinds.Add(new NavigateUpKeybind { Context = context, Keys = new() { Key.Escape } });
         _keybinds.Add(new NavigateUpKeybind { Context = context, Keys = new() { Key.Alt, Key.ArrowUp } });
@@ -632,7 +622,7 @@ public static class Program
         _keybinds.Add(new OpenWithKeybind { Context = context, Keys = new() { Key.Alt, Key.O } });
         _keybinds.Add(new MetadataKeybind { Context = context, Keys = new() { Key.Shift, Key.Enter } });
         _keybinds.Add(new PrivilegedKeybind { Context = context, Keys = new() { Key.Shift, Key.O } });
-        _keybinds.Add(new NemoKeybind { Context = context, Keys = new() { Key.Ctrl, Key.O } });
+        _keybinds.Add(new OpenInFileBrowserKeybind(_executionService) { Context = context, Keys = new() { Key.Ctrl, Key.O } });
         _keybinds.Add(new HelpKeybind { Context = context, Keys = new() { Key.F1 } });
         _keybinds.Add(new DirPathKeybind { Context = context, Keys = new() { Key.Ctrl, Key.L } });
         _keybinds.Add(new MultiSelectUpKeybind { Context = context, Keys = new() { Key.Shift, Key.ArrowUp } });

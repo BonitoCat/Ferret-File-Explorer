@@ -38,7 +38,7 @@ public static class TerminalUtils
         string[] terminals =
         [
             "gnome-terminal", "konsole", "xfce4-terminal",
-            "xterm", "lxterminal", "mate-terminal",
+            "lxterminal", "mate-terminal",
         ];
 
         foreach (string terminal in terminals)

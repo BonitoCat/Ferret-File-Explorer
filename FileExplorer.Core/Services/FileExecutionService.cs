@@ -209,7 +209,7 @@ public class FileExecutionService
             Process.Start(new ProcessStartInfo
             {
                 FileName = "xdg-open",
-                Arguments = $"\"{path}\"",
+                ArgumentList = { path },
                 UseShellExecute = false,
             });
         }
