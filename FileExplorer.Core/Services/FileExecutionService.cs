@@ -52,7 +52,7 @@ public class FileExecutionService
                     Arguments = $"open \"{file.FullPath}\"",
                     UseShellExecute = false,
                 };
-                gioPsi.EnvironmentVariables["DESKTOP_STARTUP_ID"] = $"fe-file-explorer_{Environment.ProcessId}_TIME{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+                StartupNotification.Apply(gioPsi);
                 Process.Start(gioPsi);
                 return;
             }
@@ -68,7 +68,7 @@ public class FileExecutionService
                     Arguments = $"\"{file.FullPath}\"",
                     UseShellExecute = false,
                 };
-                xdgPsi.EnvironmentVariables["DESKTOP_STARTUP_ID"] = $"fe-file-explorer_{Environment.ProcessId}_TIME{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+                StartupNotification.Apply(xdgPsi);
                 Process.Start(xdgPsi);
                 return;
             }
@@ -204,23 +204,33 @@ public class FileExecutionService
 
     public void OpenInDefaultFileBrowser(string path)
     {
-        if (OperatingSystem.IsLinux())
-        {
-            Process.Start(new ProcessStartInfo
-            {
-                FileName = "xdg-open",
-                Arguments = $"\"{path}\"",
-                UseShellExecute = false,
-            });
-        }
-        else
+        OpenInFileManager(path);
+    }
+
+    public static void OpenInFileManager(string path)
+    {
+        if (!OperatingSystem.IsLinux())
         {
             Process.Start(new ProcessStartInfo
             {
                 FileName = path,
                 UseShellExecute = true,
             });
+            return;
         }
+
+        ProcessStartInfo psi = new()
+        {
+            FileName = "sh",
+            UseShellExecute = false,
+        };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add("xdg-open \"$1\" </dev/null >/dev/null 2>&1");
+        psi.ArgumentList.Add("sh");
+        psi.ArgumentList.Add(path);
+        StartupNotification.Apply(psi);
+
+        Process.Start(psi);
     }
 
     public static void OpenWith(string program, string path)
@@ -241,11 +251,7 @@ public class FileExecutionService
         }
 
         psi.ArgumentList.Add(path);
-
-        if (OperatingSystem.IsLinux())
-        {
-            psi.EnvironmentVariables["DESKTOP_STARTUP_ID"] = $"ferret_{Environment.ProcessId}_TIME{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
-        }
+        StartupNotification.Apply(psi);
 
         Process.Start(psi);
     }

@@ -1,5 +1,6 @@
 using System;
 using Avalonia.Media;
+using FileExplorer.Gui.Services;
 
 namespace FileExplorer.Gui.ViewModels;
 
@@ -13,6 +14,7 @@ public class OperationProgressViewModel : ViewModelBase
     private double _maximum = 100;
     private bool _isIndeterminate;
     private bool _isSelected;
+    private bool _isCancelling;
     private IImage? _icon;
 
     public Action? CancelAction { get; set; }
@@ -26,7 +28,15 @@ public class OperationProgressViewModel : ViewModelBase
     public string Status
     {
         get => _status;
-        set => SetProperty(ref _status, value);
+        set
+        {
+            if (_isCancelling)
+            {
+                return;
+            }
+
+            SetProperty(ref _status, value);
+        }
     }
 
     public string Text
@@ -89,12 +99,21 @@ public class OperationProgressViewModel : ViewModelBase
         set => SetProperty(ref _icon, value);
     }
 
-    public bool CanCancel => CancelAction != null;
+    public bool CanCancel => CancelAction != null && !_isCancelling;
 
     public string PercentText => IsIndeterminate || Maximum <= 0 ? "" : $"{Math.Clamp(Value / Maximum * 100, 0, 100):0}%";
 
     public void Cancel()
     {
-        CancelAction?.Invoke();
+        if (CancelAction == null || _isCancelling)
+        {
+            return;
+        }
+
+        Status = LocalizationService.Get("Cancelling");
+        _isCancelling = true;
+        OnPropertyChanged(nameof(CanCancel));
+
+        CancelAction.Invoke();
     }
 }

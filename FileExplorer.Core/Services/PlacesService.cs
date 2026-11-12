@@ -105,7 +105,7 @@ public class PlacesService
         }
 
         HashSet<string> seen = new(StringComparer.Ordinal);
-        string? json = Run("lsblk", "-J -b -o NAME,PATH,LABEL,PARTLABEL,MOUNTPOINT,FSTYPE,SIZE,MODEL,RM,HOTPLUG,TYPE");
+        string? json = Run("lsblk", $"-J -b -o {BlockDeviceFilter.LsblkColumns}");
         if (!string.IsNullOrWhiteSpace(json))
         {
             try
@@ -138,6 +138,18 @@ public class PlacesService
             places.Add(new() { Kind = PlaceKind.Devices, Name = GetGvfsDisplayName(mount), Path = mount });
         }
 
+        foreach (KdeConnectDevice phone in KdeConnectService.GetDevices())
+        {
+            places.Add(new()
+            {
+                Kind = PlaceKind.Devices,
+                Name = string.IsNullOrEmpty(phone.Name) ? "Android Device" : phone.Name,
+                Path = phone.IsMounted ? KdeConnectService.GetBrowsePath(phone.MountPoint) : KdeConnectService.ToUri(phone.Id),
+                DevicePath = KdeConnectService.ToUri(phone.Id),
+                IsMounted = phone.IsMounted,
+            });
+        }
+
         return places;
     }
 
@@ -163,6 +175,11 @@ public class PlacesService
         long size = elem.TryGetProperty("size", out JsonElement sizeElem) && sizeElem.TryGetInt64(out long parsed) ? parsed : 0;
 
         if (type == "loop" || string.IsNullOrEmpty(path) || path.StartsWith("/dev/loop") || fsType is "squashfs" or "swap")
+        {
+            return;
+        }
+
+        if (!BlockDeviceFilter.ShouldList(elem))
         {
             return;
         }
@@ -256,6 +273,11 @@ public class PlacesService
 
     public static async Task<string?> MountDeviceAsync(string devicePath)
     {
+        if (KdeConnectService.IsDeviceUri(devicePath))
+        {
+            return await KdeConnectService.MountAsync(devicePath);
+        }
+
         string output = await Task.Run(() => Run("udisksctl", $"mount -b \"{devicePath}\"", true) ?? "");
         foreach (string marker in new[] { " at `", " at " })
         {

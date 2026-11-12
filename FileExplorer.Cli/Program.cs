@@ -156,21 +156,7 @@ public static class Program
                 
                 case "--open":
                 case "-o":
-                    if (OperatingSystem.IsLinux())
-                    {
-                        Process proc = new()
-                        {
-                            StartInfo = new ProcessStartInfo
-                            {
-                                FileName = "nemo",
-                                Arguments = Environment.CurrentDirectory,
-                                UseShellExecute = false,
-                            },
-                        };
-                        
-                        proc.Start();
-                    }
-                    
+                    FileExecutionService.OpenInFileManager(Environment.CurrentDirectory);
                     return;
 
                 case "--directory":

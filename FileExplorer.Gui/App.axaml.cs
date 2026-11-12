@@ -133,7 +133,7 @@ public partial class App : Application
 
             if (Directory.Exists(resolved))
             {
-                return resolved;
+                return KdeConnectService.IsMountRoot(resolved) ? KdeConnectService.GetBrowsePath(resolved) : resolved;
             }
 
             if (File.Exists(resolved))

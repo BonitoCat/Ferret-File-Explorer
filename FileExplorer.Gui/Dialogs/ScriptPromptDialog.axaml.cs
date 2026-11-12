@@ -2,6 +2,7 @@ using System.IO;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using FileExplorer.Gui.Services;
 using static Avalonia.Interactivity.RoutingStrategies;
 
 namespace FileExplorer.Gui.Dialogs;
@@ -19,6 +20,7 @@ public partial class ScriptPromptDialog : Window
     public ScriptPromptDialog()
     {
         InitializeComponent();
+        DialogButtonNavigation.Attach(this);
 
         Opened += (_, _) => RunButton.Focus();
 

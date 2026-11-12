@@ -57,6 +57,11 @@ public static class LocationResolver
             }
         }
 
+        if (KdeConnectService.IsDeviceUri(location))
+        {
+            return KdeConnectService.ResolveUri(location) ?? UserDirs.Home;
+        }
+
         if (location.StartsWith("file://", StringComparison.OrdinalIgnoreCase) && Uri.TryCreate(location, UriKind.Absolute, out Uri? fileUri) && fileUri.IsFile)
         {
             return fileUri.LocalPath;

@@ -26,6 +26,7 @@ public partial class AddonDependencyDialog : Window
     public AddonDependencyDialog()
     {
         InitializeComponent();
+        DialogButtonNavigation.Attach(this);
 
         Opened += (_, _) => (InstallButton.IsVisible ? InstallButton : SkipButton).Focus();
 

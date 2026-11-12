@@ -1627,11 +1627,19 @@ public partial class MainWindow : Window
         }
 
         CompressDialog dialog = new(paths, ViewModel.CurrentPath);
-        string? resultPath = await dialog.ShowDialog<string?>(this);
-        if (!string.IsNullOrEmpty(resultPath) && File.Exists(resultPath))
+        if (await dialog.ShowDialog<bool?>(this) != true)
         {
-            ViewModel.Refresh();
+            return;
         }
+
+        (bool success, string error) = await ViewModel.CompressItemsAsync(paths, dialog.ArchivePath, dialog.ArchiveFormat, dialog.Password);
+        if (success || string.IsNullOrEmpty(error))
+        {
+            return;
+        }
+
+        ConfirmDialog errDialog = new(LocalizationService.Get("Error"), error);
+        await errDialog.ShowDialog(this);
     }
     
     private void OnSidebarRemoveBookmarkClick(object? sender, RoutedEventArgs e)

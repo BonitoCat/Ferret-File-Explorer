@@ -1255,7 +1255,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     ProcessStartInfo psi = new()
                     {
                         FileName = "lsblk",
-                        Arguments = "-J -b -o NAME,PATH,LABEL,PARTLABEL,MOUNTPOINT,FSTYPE,SIZE,MODEL,RM,HOTPLUG,TYPE",
+                        Arguments = $"-J -b -o {BlockDeviceFilter.LsblkColumns}",
                         RedirectStandardOutput = true,
                         UseShellExecute = false,
                         CreateNoWindow = true,
@@ -1286,11 +1286,6 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 DriveInfo[] drives = DriveInfo.GetDrives();
                 foreach (DriveInfo drive in drives)
                 {
-                    if (!drive.IsReady)
-                    {
-                        continue;
-                    }
-
                     string mount = drive.RootDirectory.FullName;
                     if (seenPaths.Contains(mount) || mount == "/" || mount == "/boot" || mount.StartsWith("/boot/"))
                     {
@@ -1303,6 +1298,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     }
 
                     if (!mount.StartsWith("/media") && !mount.StartsWith("/run/media") && !mount.StartsWith("/mnt"))
+                    {
+                        continue;
+                    }
+
+                    if (!drive.IsReady)
                     {
                         continue;
                     }
@@ -1337,6 +1337,26 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 }
             }
             catch { }
+
+            foreach (KdeConnectDevice phone in KdeConnectService.GetDevices())
+            {
+                string phonePath = phone.IsMounted ? KdeConnectService.GetBrowsePath(phone.MountPoint) : KdeConnectService.ToUri(phone.Id);
+                if (!seenPaths.Add(phonePath))
+                {
+                    continue;
+                }
+
+                extraPlaces.Add(new()
+                {
+                    Name = string.IsNullOrEmpty(phone.Name) ? LocalizationService.Get("AndroidDevice") : phone.Name,
+                    Path = phonePath,
+                    DevicePath = KdeConnectService.ToUri(phone.Id),
+                    Icon = IconService.Get("phone") ?? IconService.Get("disk"),
+                    Category = PlaceCategory.Devices,
+                    IsMounted = phone.IsMounted,
+                    IsVisible = !devicesCollapsed,
+                });
+            }
 
             List<PlaceItem> localPlaces = extraPlaces.ToList();
             Dispatcher.UIThread.Post(() =>
@@ -1553,6 +1573,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return;
         }
 
+        if (!BlockDeviceFilter.ShouldList(elem))
+        {
+            return;
+        }
+
         string? label = elem.TryGetProperty("label", out JsonElement lblElem) ? lblElem.GetString() : null;
         string? partlabel = elem.TryGetProperty("partlabel", out JsonElement plblElem) ? plblElem.GetString() : null;
         string? model = elem.TryGetProperty("model", out JsonElement mdlElem) ? mdlElem.GetString() : null;
@@ -1648,6 +1673,15 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public async Task<string?> MountDeviceAsync(string devPath)
     {
+        if (KdeConnectService.IsDeviceUri(devPath))
+        {
+            string? phonePath = await KdeConnectService.MountAsync(devPath);
+            StatusText = phonePath == null
+                ? LocalizationService.Format("MountFailedWithError", LocalizationService.Get("PhoneMountFailed"))
+                : LocalizationService.Format("MountedAt", phonePath);
+            return phonePath;
+        }
+
         try
         {
             ProcessStartInfo psi = new()
@@ -1728,6 +1762,40 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     private const string UdisksMonitorScript = "udisksctl monitor & monitor=$!; read _; kill $monitor";
 
+    private static readonly TimeSpan PhonePollInterval = TimeSpan.FromSeconds(5);
+
+    private readonly CancellationTokenSource _phoneMonitorCts = new();
+
+    private async Task MonitorPhonesAsync(CancellationToken token)
+    {
+        string last = GetPhoneSignature();
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(PhonePollInterval, token);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            string current = GetPhoneSignature();
+            if (current == last)
+            {
+                continue;
+            }
+
+            last = current;
+            DebouncedReloadPlaces();
+        }
+    }
+
+    private static string GetPhoneSignature()
+    {
+        return string.Join('|', KdeConnectService.GetDevices().Select(phone => $"{phone.Id}:{phone.IsMounted}"));
+    }
+
     private void StartDeviceMonitoring()
     {
         if (!OperatingSystem.IsLinux())
@@ -1741,6 +1809,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             AddMountRootWatchers("/run/media");
             AddDeviceWatcher(GvfsPath.MountDirectory);
         });
+
+        _ = Task.Run(() => MonitorPhonesAsync(_phoneMonitorCts.Token));
 
         Task.Run(async () =>
         {
@@ -2040,6 +2110,50 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         return retryElevated && await TransferElevatedAsync(pathList, destinationDirectory, isCopy);
+    }
+
+    public async Task<(bool Success, string Error)> CompressItemsAsync(IReadOnlyList<string> paths, string destinationPath, string format, string? password)
+    {
+        using CancellationTokenSource cts = new();
+        CancellationToken token = cts.Token;
+
+        OperationProgressViewModel progressView = new()
+        {
+            Title = LocalizationService.Format("CompressTitle", PathManager.GetName(destinationPath)),
+            Status = LocalizationService.Get("Calculating"),
+            IsIndeterminate = true,
+            Icon = IconService.Get("archive"),
+            CancelAction = () => cts.Cancel(),
+        };
+        AddOperation(progressView);
+
+        Progress<FileTransferProgress> progress = new(p =>
+        {
+            progressView.IsIndeterminate = false;
+            progressView.Value = p.Percent;
+            progressView.Text = LocalizationService.Format("CompressProgress", FileUtils.FormatSize(p.TransferredBytes), FileUtils.FormatSize(p.TotalBytes));
+            progressView.Status = $"{FileUtils.FormatSpeed(p.BytesPerSecond)} — {FormatEta(p.EstimatedRemaining)}";
+            progressView.Item = p.CurrentItemName;
+        });
+
+        try
+        {
+            ArchiveService archiveService = new();
+            (bool success, string error) = await Task.Run(() => archiveService.CompressAsync(paths, destinationPath, format, password, token, progress), token);
+            StatusText = LocalizationService.Get(success ? "CompressCompleted" : "CompressionFailed");
+            return (success, error);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText = LocalizationService.Get("CompressCancelled");
+            return (false, "");
+        }
+        finally
+        {
+            progressView.CancelAction = null;
+            RemoveOperation(progressView);
+            Refresh();
+        }
     }
 
     private void RecordTransfer(List<TransferStep> steps, bool isCopy)
@@ -2820,6 +2934,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
 
     public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment = null)
     {
+        RunInTerminalAt(dir, command, environment, null);
+    }
+
+    public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment, IReadOnlyDictionary<string, string>? hiddenEnvironment)
+    {
         string quoted = string.Join(" ", command.Select(QuoteForShell));
         string exports = string.Concat((environment ?? new Dictionary<string, string>()).Select(v => $"export {v.Key}={QuoteForShell(v.Value)}; "));
         string shellScript = $"{exports}{quoted}; echo; read -n 1 -s -r -p \"[Process finished - press any key to close]\"";
@@ -2844,6 +2963,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 if (separator != null)
                 {
                     psi.ArgumentList.Add(separator);
+                }
+
+                foreach (KeyValuePair<string, string> variable in hiddenEnvironment ?? new Dictionary<string, string>())
+                {
+                    psi.Environment[variable.Key] = variable.Value;
                 }
 
                 psi.ArgumentList.Add("bash");
@@ -3105,7 +3229,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         List<TrashedItem> trashed = new();
         try
         {
-            await Task.Run(() => _operationService.Delete(paths, permanent, progress, token, trashed), token);
+            Task deletion = Task.Run(() => _operationService.Delete(paths, permanent, progress, token, trashed), token);
+            await (permanent ? deletion.WaitAsync(token) : deletion);
         }
         catch (OperationCanceledException)
         {
@@ -3723,6 +3848,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void OpenTerminal(string? workingDir = null, string? command = null)
     {
         string dir = workingDir ?? CurrentPath;
+        if (string.IsNullOrEmpty(command) && TryOpenRemoteTerminal(dir))
+        {
+            return;
+        }
+
         string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
 
         foreach (string candidate in candidates)
@@ -3753,6 +3883,32 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 continue;
             }
         }
+    }
+
+    private bool TryOpenRemoteTerminal(string dir)
+    {
+        if (!PathManager.IsRemote(dir))
+        {
+            return false;
+        }
+
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string? savedUri = FindSavedNetworkUri(dir);
+        string? password = savedUri == null ? null : GetNetworkPassword(savedUri);
+        RemoteTerminalSession? session = RemoteTerminalCommand.BuildSession(dir, password, program => IsProgramAvailable(program, home), out string? missingProgram);
+        if (session == null && missingProgram != null)
+        {
+            StatusText = LocalizationService.Format("RemoteTerminalClientMissing", missingProgram);
+        }
+
+        if (session == null)
+        {
+            return false;
+        }
+
+        RunInTerminalAt(home, session.Command, null, session.Environment);
+        Logger.LogI("Opened remote terminal session");
+        return true;
     }
 
     private List<BreadcrumbItem> BuildBreadcrumbs(string path)
@@ -4145,6 +4301,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void Dispose()
     {
         _reloadPlacesCts?.Dispose();
+        _phoneMonitorCts.Cancel();
         lock (_deviceWatchers)
         {
             foreach (IDisposable w in _deviceWatchers)

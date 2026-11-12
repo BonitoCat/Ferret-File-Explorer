@@ -52,7 +52,7 @@ public class FileOperationService
             else
             {
                 tracker.Report(PathManager.GetName(path));
-                MoveToTrash(path);
+                MoveToTrash(path, token);
                 tracker.Advance(PathManager.GetName(path));
             }
 
@@ -225,7 +225,7 @@ public class FileOperationService
         return failed;
     }
 
-    private static void MoveToTrash(string path)
+    private static void MoveToTrash(string path, CancellationToken token)
     {
         ProcessStartInfo psi = new()
         {
@@ -236,7 +236,18 @@ public class FileOperationService
         psi.ArgumentList.Add("--");
         psi.ArgumentList.Add(path);
 
-        Process.Start(psi)?.WaitForExit();
+        using Process? process = Process.Start(psi);
+        if (process == null)
+        {
+            return;
+        }
+
+        using CancellationTokenRegistration registration = token.Register(() => ProcessUtils.TryKillTree(process));
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            token.ThrowIfCancellationRequested();
+        }
     }
 
     public List<string> TrashForUndo(IEnumerable<string> paths, ICollection<TrashedItem> trashed)
