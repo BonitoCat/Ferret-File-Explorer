@@ -2823,7 +2823,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         string quoted = string.Join(" ", command.Select(QuoteForShell));
         string exports = string.Concat((environment ?? new Dictionary<string, string>()).Select(v => $"export {v.Key}={QuoteForShell(v.Value)}; "));
         string shellScript = $"{exports}{quoted}; echo; read -n 1 -s -r -p \"[Process finished - press any key to close]\"";
-        string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal"];
+        string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
 
         foreach (string candidate in candidates)
         {
@@ -3723,7 +3723,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public void OpenTerminal(string? workingDir = null, string? command = null)
     {
         string dir = workingDir ?? CurrentPath;
-        string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal"];
+        string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
 
         foreach (string candidate in candidates)
         {
