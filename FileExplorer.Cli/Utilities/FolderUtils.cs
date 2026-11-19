@@ -196,6 +196,11 @@ public class FolderUtils
 
     public static void OnFolderClick(EntryContext context, EntryListItem entry)
     {
+        if (entry.Entry is FolderEntry { IsBrokenLink: true })
+        {
+            return;
+        }
+
         if (RequiresElevatedAccess(entry.Entry.FullPath) && !Environment.IsPrivilegedProcess && Environment.UserName != "root")
         {
             return;

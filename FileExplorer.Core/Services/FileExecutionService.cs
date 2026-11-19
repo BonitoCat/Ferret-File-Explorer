@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Utilities;
@@ -99,7 +100,7 @@ public class FileExecutionService
 
         if (OperatingSystem.IsLinux())
         {
-            return !IsLinuxGuiBinary(path);
+            return !IsLinuxGuiProgram(path);
         }
 
         if (OperatingSystem.IsMacOS())
@@ -140,6 +141,114 @@ public class FileExecutionService
         {
             return -1;
         }
+    }
+
+    private static readonly string[] GuiLibraryMarkers =
+    [
+        "libX11.so",
+        "libxcb.so",
+        "libwayland-client.so",
+        "libgtk-",
+        "libQt5",
+        "libQt6",
+        "libSDL2",
+        "libSDL3",
+        "libglfw",
+        "Avalonia.X11",
+        "Avalonia.Desktop",
+        "GtkSharp",
+    ];
+
+    private static bool IsLinuxGuiProgram(string path)
+    {
+        if (IsAppImage(path))
+        {
+            return true;
+        }
+
+        if (IsLinuxGuiBinary(path))
+        {
+            return true;
+        }
+
+        if (FileContainsGuiMarker(path))
+        {
+            return true;
+        }
+
+        string? dir = Path.GetDirectoryName(path);
+        if (dir == null)
+        {
+            return false;
+        }
+
+        string baseName = Path.Combine(dir, Path.GetFileNameWithoutExtension(path));
+        return FileContainsGuiMarker(baseName + ".deps.json") || FileContainsGuiMarker(baseName + ".dll");
+    }
+
+    private static bool IsAppImage(string path)
+    {
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            Span<byte> header = stackalloc byte[11];
+            if (stream.Read(header) < 11)
+            {
+                return false;
+            }
+
+            return header[8] == 'A' && header[9] == 'I' && (header[10] == 1 || header[10] == 2);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool FileContainsGuiMarker(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        byte[][] markers = GuiLibraryMarkers.Select(m => Encoding.ASCII.GetBytes(m)).ToArray();
+        int overlap = markers.Max(m => m.Length) - 1;
+        byte[] buffer = new byte[1024 * 1024 + overlap];
+
+        try
+        {
+            using FileStream stream = File.OpenRead(path);
+            int carried = 0;
+
+            while (true)
+            {
+                int read = stream.Read(buffer, carried, buffer.Length - carried);
+                if (read <= 0)
+                {
+                    break;
+                }
+
+                int length = carried + read;
+                ReadOnlySpan<byte> chunk = buffer.AsSpan(0, length);
+                foreach (byte[] marker in markers)
+                {
+                    if (chunk.IndexOf(marker) >= 0)
+                    {
+                        return true;
+                    }
+                }
+
+                carried = Math.Min(overlap, length);
+                Array.Copy(buffer, length - carried, buffer, 0, carried);
+            }
+        }
+        catch
+        {
+            return false;
+        }
+
+        return false;
     }
 
     private static bool IsLinuxGuiBinary(string path)

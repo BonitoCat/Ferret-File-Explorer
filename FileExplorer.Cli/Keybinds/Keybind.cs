@@ -111,6 +111,11 @@ public class ExecuteKeybind : Keybind
         {
             if (selected.Entry is FolderEntry folder)
             {
+                if (folder.IsBrokenLink)
+                {
+                    return;
+                }
+
                 if (FolderUtils.RequiresElevatedAccess(folder.FullPath) && !Environment.IsPrivilegedProcess && Environment.UserName != "root")
                 {
                     return;

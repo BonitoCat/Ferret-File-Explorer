@@ -578,7 +578,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             startPath = "/";
         }
 
-        _executionService.OnOpenTerminalForExecutable = path => RunInTerminal(path, [path]);
+        _executionService.OnOpenTerminalForExecutable = path => RunInTerminal(path, [path], false);
 
         LoadPlaces();
         StartDeviceMonitoring();
@@ -2927,9 +2927,9 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
     }
 
-    public void RunInTerminal(string path, string[] command)
+    public void RunInTerminal(string path, string[] command, bool keepOpenOnSuccess = true)
     {
-        RunInTerminalAt(PathManager.GetParent(path), command);
+        RunInTerminalAt(PathManager.GetParent(path), command, null, null, keepOpenOnSuccess);
     }
 
     public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment = null)
@@ -2937,11 +2937,14 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         RunInTerminalAt(dir, command, environment, null);
     }
 
-    public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment, IReadOnlyDictionary<string, string>? hiddenEnvironment)
+    public void RunInTerminalAt(string dir, IReadOnlyList<string> command, IReadOnlyDictionary<string, string>? environment, IReadOnlyDictionary<string, string>? hiddenEnvironment, bool keepOpenOnSuccess = true)
     {
         string quoted = string.Join(" ", command.Select(QuoteForShell));
         string exports = string.Concat((environment ?? new Dictionary<string, string>()).Select(v => $"export {v.Key}={QuoteForShell(v.Value)}; "));
-        string shellScript = $"{exports}{quoted}; echo; read -n 1 -s -r -p \"[Process finished - press any key to close]\"";
+        string pause = keepOpenOnSuccess
+            ? "echo; read -n 1 -s -r -p \"[Process finished - press any key to close]\""
+            : "status=$?; if [ $status -ne 0 ]; then echo; read -n 1 -s -r -p \"[Process exited with code $status - press any key to close]\"; fi";
+        string shellScript = $"{exports}{quoted}; {pause}";
         string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
 
         foreach (string candidate in candidates)
