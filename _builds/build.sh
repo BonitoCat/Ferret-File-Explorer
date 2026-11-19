@@ -187,6 +187,7 @@ for target in x64 arm64; do
             CARCH="$ARCH_PACKAGE_ARCH" \
             PKGDEST="$OUTPUT_DIR" \
             PKGEXT=".pkg.tar.zst" \
+            PACMAN=true \
                 makepkg --nodeps --force --cleanbuild --clean
         )
     done
