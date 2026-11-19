@@ -79,7 +79,7 @@ public partial class SmbShareDialog : Window
 
     private void ShowUnavailable(SmbShareAvailability availability, string detail)
     {
-        bool needsRelogin = availability == SmbShareAvailability.NotPermitted && SmbShareService.IsInUsershareGroup();
+        bool needsRelogin = availability == SmbShareAvailability.NotPermitted && SmbShareService.IsInUsershareGroup() && !SmbShareService.IsUsershareGroupActive();
         bool canSetup = SmbShareService.CanSetup && !needsRelogin;
 
         UnavailableText.Text = (availability, needsRelogin, canSetup) switch

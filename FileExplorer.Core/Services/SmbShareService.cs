@@ -26,6 +26,7 @@ public sealed class SmbShareService
 
     private const string UsershareDir = "/var/lib/samba/usershares";
     private const string UsershareGroup = "sambashare";
+    private const string SmbConf = "/etc/samba/smb.conf";
     private const int PkexecDismissed = 126;
     private const int PkexecNotAuthorized = 127;
     private const string WriteAcl = "S-1-1-0:F";
@@ -112,6 +113,26 @@ public sealed class SmbShareService
         }
     }
 
+    public static bool IsUsershareGroupActive()
+    {
+        try
+        {
+            string? line = File.ReadLines("/etc/group").FirstOrDefault(l => l.StartsWith(UsershareGroup + ":", StringComparison.Ordinal));
+            string? gid = line?.Split(':').ElementAtOrDefault(2);
+            if (string.IsNullOrEmpty(gid))
+            {
+                return false;
+            }
+
+            string? groups = File.ReadLines("/proc/self/status").FirstOrDefault(l => l.StartsWith("Groups:", StringComparison.Ordinal));
+            return groups != null && groups["Groups:".Length..].Split(' ', '\t', StringSplitOptions.RemoveEmptyEntries).Contains(gid);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<(SmbSetupResult Result, string Detail)> SetupAsync(bool install, CancellationToken token = default)
     {
         string? installCommand = install ? GetInstallCommand() : "true";
@@ -128,7 +149,12 @@ public sealed class SmbShareService
             $"usermod -aG {UsershareGroup} {Quote(Environment.UserName)}",
             $"mkdir -p {UsershareDir}",
             $"chgrp {UsershareGroup} {UsershareDir}",
-            $"chmod 1770 {UsershareDir}");
+            $"chmod 1770 {UsershareDir}",
+            "mkdir -p /etc/samba",
+            $"[ -f {SmbConf} ] || printf '[global]\\n' > {SmbConf}",
+            $"grep -qiE '^[[:space:]]*usershare max shares' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   usershare max shares = 100|' {SmbConf}",
+            $"grep -qiE '^[[:space:]]*usershare path' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   usershare path = {UsershareDir}|' {SmbConf}",
+            "systemctl enable --now smb.service 2>/dev/null || systemctl enable --now smbd.service 2>/dev/null || true");
 
         return await RunElevatedAsync(pkexec, script, token);
     }
