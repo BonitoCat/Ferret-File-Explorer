@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 
@@ -316,7 +317,7 @@ public class CmdKeybind : Keybind
     }
 }
 
-public class NanoKeybind : Keybind
+public class EditorKeybind : Keybind
 {
     public override void OnKeyDown(KeyDownEventArgs e)
     {
@@ -331,6 +332,18 @@ public class NanoKeybind : Keybind
             return;
         }
 
+        string? editor = Environment.GetEnvironmentVariable("VISUAL");
+        if (string.IsNullOrWhiteSpace(editor))
+        {
+            editor = Environment.GetEnvironmentVariable("EDITOR");
+        }
+
+        if (string.IsNullOrWhiteSpace(editor))
+        {
+            Program.Sidebar.StatusText = "Set VISUAL or EDITOR to open files in your editor.";
+            return;
+        }
+
         Program.PauseRendering = true;
         InputListener.EnableEcho();
         if (Context.Listener != null)
@@ -341,29 +354,45 @@ public class NanoKeybind : Keybind
         TerminalHelper.EndSession();
         Console.Clear();
 
-        Process proc = new()
+        try
         {
-            StartInfo = new()
+            // Allow arguments in the editor setting and pass the file path separately.
+            using Process proc = new()
             {
-                FileName = "nano",
-                Arguments = $"\"{selected.Entry.FullPath}\"",
-                UseShellExecute = false,
-            },
-        };
+                StartInfo = new()
+                {
+                    FileName = "bash",
+                    ArgumentList = { "-c", $"{editor} \"$1\"", "ferret-editor", selected.Entry.FullPath },
+                    UseShellExecute = false,
+                },
+            };
 
-        proc.Start();
-        proc.WaitForExit();
+            proc.Start();
+            proc.WaitForExit();
 
-        TerminalHelper.BeginSession();
-        InputListener.DisableEcho();
-        Console.Clear();
-
-        if (Context.Listener != null)
+            if (proc.ExitCode != 0)
+            {
+                Program.Sidebar.StatusText = $"Editor exited with status {proc.ExitCode}.";
+            }
+        }
+        catch (Win32Exception ex)
         {
-            Context.Listener.PauseListening = false;
+            Program.Sidebar.StatusText = $"Could not start editor: {ex.Message}";
+        }
+        finally
+        {
+            TerminalHelper.BeginSession();
+            InputListener.DisableEcho();
+            Console.Clear();
+
+            if (Context.Listener != null)
+            {
+                Context.Listener.PauseListening = false;
+            }
+
+            Program.PauseRendering = false;
         }
 
-        Program.PauseRendering = false;
         FolderUtils.LoadFolderContent(Context, Context.Cwd, Context.SearchPattern);
     }
 }
@@ -676,7 +705,7 @@ public class PrivilegedKeybind : Keybind
     }
 }
 
-public class NemoKeybind : Keybind
+public class OpenInFileBrowserKeybind(FileExecutionService executionService) : Keybind
 {
     public override void OnKeyDown(KeyDownEventArgs e)
     {

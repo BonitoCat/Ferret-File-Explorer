@@ -13,7 +13,7 @@ depends=(
     'glibc' 'gcc-libs' 'zlib' 'openssl' 'icu' 'krb5' 'libunwind' 'ca-certificates'
     # File metadata, associations, clipboard, shell commands and CLI tools.
     'bash' 'coreutils' 'util-linux' 'file' 'glib2' 'shared-mime-info' 'xdg-utils'
-    'wl-clipboard' 'xclip' 'which' 'nano' 'sudo'
+    'wl-clipboard' 'xclip' 'which' 'sudo'
     # GIO remote filesystems, SMB, WebDAV, discovery, and the SFTP client.
     'gvfs' 'gvfs-smb' 'gvfs-dnssd' 'gvfs-wsdd' 'openssh'
     # Removable drives, elevated file operations and saved credentials.
@@ -21,7 +21,7 @@ depends=(
     # All compression formats exposed by ArchiveService.
     '7zip' 'tar' 'gzip' 'bzip2' 'xz' 'zstd'
     # Desktop keyring, notifications, local SMB sharing and application launchers.
-    'org.freedesktop.secrets' 'libnotify' 'samba' 'iproute2' 'nemo' 'xterm'
+    'org.freedesktop.secrets' 'libnotify' 'samba' 'iproute2'
 )
 provides=('ferret-cli')
 conflicts=('ferret-headless')
