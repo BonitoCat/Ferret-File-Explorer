@@ -14,6 +14,12 @@ See the [Addon guide](_docs/ADDONS.md) for all options, and [examples/addons](ex
 
 If you want to publish your addon on the official Addon-Store, then check out the [addons repo](https://github.com/BonitoCat/Ferret-Addons).
 
+## Folder rules
+
+Drop a `.ferret` file into a folder to choose what gets left out when you copy or move it (like a `.gitignore`), and which items next to it get copied along.
+
+See the [folder rules guide](_docs/FERRET_FILES.md) for the format and examples.
+
 ## Support
 
 If you like Ferret, you can [buy me a coffee on Ko-fi](https://ko-fi.com/bonitocat) ☕
