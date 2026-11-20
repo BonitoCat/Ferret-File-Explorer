@@ -54,7 +54,7 @@ public class FileExecutionService
                     UseShellExecute = false,
                 };
                 StartupNotification.Apply(gioPsi);
-                ProcessUtils.StartDetached(gioPsi);
+                ProcessUtils.StartDetached(gioPsi, GetLaunchAppId(file.FullPath));
                 return;
             }
             catch
@@ -70,7 +70,7 @@ public class FileExecutionService
                     UseShellExecute = false,
                 };
                 StartupNotification.Apply(xdgPsi);
-                ProcessUtils.StartDetached(xdgPsi);
+                ProcessUtils.StartDetached(xdgPsi, GetLaunchAppId(file.FullPath));
                 return;
             }
             catch
@@ -339,7 +339,7 @@ public class FileExecutionService
         psi.ArgumentList.Add(path);
         StartupNotification.Apply(psi);
 
-        ProcessUtils.StartDetached(psi);
+        ProcessUtils.StartDetached(psi, MimeService.GetDefaultApplication("inode/directory"));
     }
 
     public static void OpenWith(string program, string path)
@@ -362,7 +362,17 @@ public class FileExecutionService
         psi.ArgumentList.Add(path);
         StartupNotification.Apply(psi);
 
-        ProcessUtils.StartDetached(psi);
+        ProcessUtils.StartDetached(psi, program.EndsWith(".desktop", StringComparison.Ordinal) ? program : null);
+    }
+
+    private static string? GetLaunchAppId(string path)
+    {
+        if (path.EndsWith(".desktop", StringComparison.Ordinal))
+        {
+            return Path.GetFileName(path);
+        }
+
+        return MimeService.GetDefaultApplication(MimeService.GetMimeType(path));
     }
 
     public static void OpenAsRoot(string path)

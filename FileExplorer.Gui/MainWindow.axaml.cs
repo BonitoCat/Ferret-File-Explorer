@@ -3584,7 +3584,7 @@ public partial class MainWindow : Window
             {
                 FileName = procPath,
                 UseShellExecute = false,
-            });
+            }, "fe-file-explorer");
         }
     }
 

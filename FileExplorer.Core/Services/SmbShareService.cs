@@ -103,6 +103,11 @@ public sealed class SmbShareService
         return (SmbShareAvailability.Available, "");
     }
 
+    public static bool IsGuestsNotAllowedError(string? error)
+    {
+        return error != null && error.Contains("usershare allow guests", StringComparison.OrdinalIgnoreCase);
+    }
+
     public static bool CanSetup => OperatingSystem.IsLinux() && FindExecutable("pkexec") != null && GetInstallCommand() != null;
 
     public static bool IsInUsershareGroup()
@@ -160,7 +165,10 @@ public sealed class SmbShareService
             $"[ -f {SmbConf} ] || printf '[global]\\n' > {SmbConf}",
             $"grep -qiE '^[[:space:]]*usershare max shares' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   usershare max shares = 100|' {SmbConf}",
             $"grep -qiE '^[[:space:]]*usershare path' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   usershare path = {UsershareDir}|' {SmbConf}",
-            "systemctl enable --now smb.service 2>/dev/null || systemctl enable --now smbd.service 2>/dev/null || true");
+            $"grep -qiE '^[[:space:]]*usershare allow guests' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   usershare allow guests = yes|' {SmbConf}",
+            $"grep -qiE '^[[:space:]]*map to guest' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   map to guest = bad user|' {SmbConf}",
+            "systemctl enable --now smb.service 2>/dev/null || systemctl enable --now smbd.service 2>/dev/null || true",
+            "smbcontrol smbd reload-config 2>/dev/null || true");
 
         return await RunElevatedAsync(pkexec, script, token);
     }

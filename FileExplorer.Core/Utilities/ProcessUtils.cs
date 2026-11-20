@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 
 namespace FileExplorer.Core.Utilities;
 
@@ -16,7 +17,7 @@ public static class ProcessUtils
         }
     }
 
-    public static Process? StartDetached(ProcessStartInfo psi)
+    public static Process? StartDetached(ProcessStartInfo psi, string? appId = null)
     {
         if (!OperatingSystem.IsLinux() || psi.UseShellExecute)
         {
@@ -34,7 +35,8 @@ public static class ProcessUtils
         string? systemdRun = HasUserSystemd() ? FindExecutable("systemd-run") : null;
         if (systemdRun != null)
         {
-            prefix.AddRange([systemdRun, "--user", "--scope", "--quiet", "--collect", "--"]);
+            string unit = $"app-ferret-{EscapeUnitPart(appId ?? Path.GetFileName(executable))}-{Guid.NewGuid():N}.scope";
+            prefix.AddRange([systemdRun, "--user", "--scope", "--quiet", "--collect", $"--unit={unit}", "--"]);
         }
 
         prefix.AddRange([setsid, "-f", executable]);
@@ -78,6 +80,27 @@ public static class ProcessUtils
         }
 
         return null;
+    }
+
+    private static string EscapeUnitPart(string value)
+    {
+        string name = value.EndsWith(".desktop", StringComparison.Ordinal) ? value[..^".desktop".Length] : value;
+        StringBuilder builder = new();
+        foreach (char c in name)
+        {
+            if (char.IsAsciiLetterOrDigit(c) || c is '_' or '.')
+            {
+                builder.Append(c);
+                continue;
+            }
+
+            foreach (byte b in Encoding.UTF8.GetBytes(c.ToString()))
+            {
+                builder.Append($"\\x{b:x2}");
+            }
+        }
+
+        return builder.Length == 0 ? "unknown" : builder.ToString();
     }
 
     private static string QuoteArgument(string value)

@@ -182,20 +182,19 @@ public partial class SmbShareDialog : Window
         string comment = (CommentTextBox.Text ?? "").Trim();
         bool guestOk = GuestCheckBox.IsChecked == true;
         string? previousName = _existing?.Name;
-        string? error;
-        if (elevate)
+        (bool cancelled, string? error) = await ApplyShareAsync(name, comment, writable, guestOk, previousName, elevate, missing.Value);
+        if (!cancelled && guestOk && SmbShareService.IsGuestsNotAllowedError(error) && SmbShareService.CanSetup)
         {
-            ElevatedResult result = await SmbShareService.SetShareElevatedAsync(name, _path, comment, writable, guestOk, previousName, missing != UnixFileMode.None);
-            if (result.Status == ElevatedStatus.Cancelled)
+            (SmbSetupResult setupResult, _) = await _shareService.SetupAsync(false);
+            if (setupResult == SmbSetupResult.Success)
             {
-                return;
+                (cancelled, error) = await ApplyShareAsync(name, comment, writable, guestOk, previousName, elevate, missing.Value);
             }
-
-            error = result.IsSuccess ? null : result.Error;
         }
-        else
+
+        if (cancelled)
         {
-            error = await Task.Run(() => _shareService.SetShare(name, _path, comment, writable, guestOk, previousName));
+            return;
         }
 
         if (error != null)
@@ -275,6 +274,22 @@ public partial class SmbShareDialog : Window
 
         Logger.LogI("Stopped sharing folder via SMB");
         Close(await DisconnectAsync(name, LocalizationService.Get("FolderUnshared")));
+    }
+
+    private async Task<(bool Cancelled, string? Error)> ApplyShareAsync(string name, string comment, bool writable, bool guestOk, string? previousName, bool elevate, UnixFileMode missing)
+    {
+        if (!elevate)
+        {
+            return (false, await Task.Run(() => _shareService.SetShare(name, _path, comment, writable, guestOk, previousName)));
+        }
+
+        ElevatedResult result = await SmbShareService.SetShareElevatedAsync(name, _path, comment, writable, guestOk, previousName, missing != UnixFileMode.None);
+        if (result.Status == ElevatedStatus.Cancelled)
+        {
+            return (true, null);
+        }
+
+        return (false, result.IsSuccess ? null : result.Error);
     }
 
     private async Task<bool> ConfirmElevationAsync()
