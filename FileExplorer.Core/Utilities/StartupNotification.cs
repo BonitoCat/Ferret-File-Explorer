@@ -51,10 +51,12 @@ public static class StartupNotification
         if (id == null)
         {
             psi.EnvironmentVariables.Remove("DESKTOP_STARTUP_ID");
+            psi.EnvironmentVariables.Remove("XDG_ACTIVATION_TOKEN");
             return;
         }
 
         psi.EnvironmentVariables["DESKTOP_STARTUP_ID"] = id;
+        psi.EnvironmentVariables["XDG_ACTIVATION_TOKEN"] = id;
     }
 
     public static string? CreateId()

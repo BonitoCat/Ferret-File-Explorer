@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Models;
+using FileExplorer.Core.Rules;
 using FileExplorer.Core.Utilities;
 using FileLib;
 using LoggerLib;
@@ -661,7 +662,8 @@ public class FileOperationService
         Func<TransferConflict, Task<ConflictResolution>>? resolveConflict,
         ICollection<TransferStep>? steps,
         IProgress<FileTransferProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool applyFolderRules = false)
     {
         List<string> targets = new();
         if (string.IsNullOrEmpty(destDir) || !Directory.Exists(destDir))
@@ -826,7 +828,8 @@ public class FileOperationService
             }
             else if (Directory.Exists(path))
             {
-                await TransferDirectoryRecursiveAsync(path, destPath, mode, buffer, () => transferredBytes, v => transferredBytes = v, () => transferredItems, v => transferredItems = v, ReportProgress, conflicts, cancellationToken);
+                FolderRuleSet? rules = applyFolderRules ? FolderRuleSet.Create(path) : null;
+                await TransferDirectoryRecursiveAsync(path, destPath, mode, buffer, () => transferredBytes, v => transferredBytes = v, () => transferredItems, v => transferredItems = v, ReportProgress, conflicts, cancellationToken, rules);
             }
         }
 
@@ -972,11 +975,12 @@ public class FileOperationService
         Action<int> setItems,
         Action<string> reportProgress,
         ConflictState conflicts,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        FolderRuleSet? rules = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (mode == ClipboardMode.Cut && !PathExists(destDir))
+        if (mode == ClipboardMode.Cut && rules == null && !PathExists(destDir))
         {
             try
             {
@@ -1025,6 +1029,12 @@ public class FileOperationService
         foreach (string subDir in Directory.GetDirectories(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (rules != null && rules.IsExcluded(subDir, true))
+            {
+                complete = false;
+                continue;
+            }
+
             string subDest = Path.Combine(destDir, Path.GetFileName(subDir));
             if (PathExists(subDest) && !Directory.Exists(subDest))
             {
@@ -1038,12 +1048,18 @@ public class FileOperationService
                 subDest = ApplyConflictAction(action, subDir, subDest);
             }
 
-            complete &= await TransferDirectoryRecursiveAsync(subDir, subDest, mode, buffer, getBytes, setBytes, getItems, setItems, reportProgress, conflicts, cancellationToken);
+            complete &= await TransferDirectoryRecursiveAsync(subDir, subDest, mode, buffer, getBytes, setBytes, getItems, setItems, reportProgress, conflicts, cancellationToken, rules);
         }
 
         foreach (string file in Directory.GetFiles(sourceDir))
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (rules != null && rules.IsExcluded(file, false))
+            {
+                complete = false;
+                continue;
+            }
+
             string fileDest = Path.Combine(destDir, Path.GetFileName(file));
             if (PathExists(fileDest))
             {

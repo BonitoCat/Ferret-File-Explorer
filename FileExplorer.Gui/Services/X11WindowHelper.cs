@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FileExplorer.Gui.Services;
 
@@ -12,6 +15,11 @@ public static class X11WindowHelper
     private const long PropertyChangeMask = 1L << 22;
     private const int XEventSize = 192;
     private const int ClientMessageDataSize = 20;
+    private const long SubstructureNotifyMask = 1L << 19;
+    private const long SubstructureRedirectMask = 1L << 20;
+    private const int PagerSourceIndication = 2;
+    private const int NewWindowPollIntervalMs = 100;
+    private const int NewWindowTimeoutMs = 5000;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct XClassHint
@@ -53,6 +61,27 @@ public static class X11WindowHelper
 
     [DllImport(LibX11)]
     private static extern IntPtr XDefaultRootWindow(IntPtr display);
+
+    [DllImport(LibX11)]
+    private static extern int XGetWindowProperty(
+        IntPtr display,
+        IntPtr window,
+        IntPtr property,
+        IntPtr long_offset,
+        IntPtr long_length,
+        bool delete,
+        IntPtr req_type,
+        out IntPtr actual_type_return,
+        out int actual_format_return,
+        out IntPtr nitems_return,
+        out IntPtr bytes_after_return,
+        out IntPtr prop_return);
+
+    [DllImport(LibX11)]
+    private static extern int XFree(IntPtr data);
+
+    [DllImport(LibX11)]
+    private static extern int XFlush(IntPtr display);
 
     [DllImport(LibX11)]
     private static extern int XSendEvent(IntPtr display, IntPtr window, bool propagate, IntPtr event_mask, IntPtr event_send);
@@ -130,6 +159,7 @@ public static class X11WindowHelper
     {
         string? startupId = Environment.GetEnvironmentVariable("DESKTOP_STARTUP_ID");
         Environment.SetEnvironmentVariable("DESKTOP_STARTUP_ID", null);
+        Environment.SetEnvironmentVariable("XDG_ACTIVATION_TOKEN", null);
         if (!OperatingSystem.IsLinux() || xid == IntPtr.Zero || string.IsNullOrEmpty(startupId))
         {
             return;
@@ -226,6 +256,127 @@ public static class X11WindowHelper
         finally
         {
             XCloseDisplay(display);
+        }
+    }
+
+    public static HashSet<IntPtr> GetClientWindows()
+    {
+        HashSet<IntPtr> windows = new();
+        if (!OperatingSystem.IsLinux())
+        {
+            return windows;
+        }
+
+        IntPtr display = XOpenDisplay(null);
+        if (display == IntPtr.Zero)
+        {
+            return windows;
+        }
+
+        try
+        {
+            ReadClientWindows(display, windows);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            XCloseDisplay(display);
+        }
+
+        return windows;
+    }
+
+    public static void ActivateNextNewWindow(HashSet<IntPtr> existingWindows)
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            return;
+        }
+
+        Task.Run(() =>
+        {
+            IntPtr display = XOpenDisplay(null);
+            if (display == IntPtr.Zero)
+            {
+                return;
+            }
+
+            try
+            {
+                for (int waited = 0; waited < NewWindowTimeoutMs; waited += NewWindowPollIntervalMs)
+                {
+                    Thread.Sleep(NewWindowPollIntervalMs);
+
+                    HashSet<IntPtr> current = new();
+                    ReadClientWindows(display, current);
+                    current.ExceptWith(existingWindows);
+                    foreach (IntPtr window in current)
+                    {
+                        SendActivateRequest(display, window);
+                        return;
+                    }
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                XCloseDisplay(display);
+            }
+        });
+    }
+
+    private static void ReadClientWindows(IntPtr display, HashSet<IntPtr> windows)
+    {
+        IntPtr clientListAtom = XInternAtom(display, "_NET_CLIENT_LIST", false);
+        int status = XGetWindowProperty(display, XDefaultRootWindow(display), clientListAtom, IntPtr.Zero, new IntPtr(4096), false, IntPtr.Zero, out _, out int format, out IntPtr count, out _, out IntPtr data);
+        if (status != 0 || data == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
+            if (format != 32)
+            {
+                return;
+            }
+
+            for (int i = 0; i < (int) count; i++)
+            {
+                windows.Add(Marshal.ReadIntPtr(data, i * IntPtr.Size));
+            }
+        }
+        finally
+        {
+            XFree(data);
+        }
+    }
+
+    private static void SendActivateRequest(IntPtr display, IntPtr window)
+    {
+        IntPtr activeWindowAtom = XInternAtom(display, "_NET_ACTIVE_WINDOW", false);
+        IntPtr xEvent = Marshal.AllocHGlobal(XEventSize);
+        try
+        {
+            Marshal.Copy(new byte[XEventSize], 0, xEvent, XEventSize);
+            Marshal.WriteInt32(xEvent, 0, ClientMessage);
+            Marshal.WriteInt32(xEvent, 16, 1);
+            Marshal.WriteIntPtr(xEvent, 24, display);
+            Marshal.WriteIntPtr(xEvent, 32, window);
+            Marshal.WriteIntPtr(xEvent, 40, activeWindowAtom);
+            Marshal.WriteInt32(xEvent, 48, 32);
+            Marshal.WriteInt64(xEvent, 56, PagerSourceIndication);
+
+            XSendEvent(display, XDefaultRootWindow(display), false, new IntPtr(SubstructureRedirectMask | SubstructureNotifyMask), xEvent);
+            XFlush(display);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(xEvent);
         }
     }
 }

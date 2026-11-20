@@ -18,28 +18,6 @@ public static class BlockDeviceFilter
 
     public static bool ShouldList(JsonElement device)
     {
-        if (device.TryGetProperty("parttype", out JsonElement partType) && partType.GetString() is { } type && SystemPartitionTypes.Contains(type))
-        {
-            return false;
-        }
-
-        bool isMounted = device.TryGetProperty("mountpoint", out JsonElement mountPoint) && !string.IsNullOrEmpty(mountPoint.GetString());
-        return isMounted || IsTrue(device, "rm") || IsTrue(device, "hotplug");
-    }
-
-    private static bool IsTrue(JsonElement device, string property)
-    {
-        if (!device.TryGetProperty(property, out JsonElement value))
-        {
-            return false;
-        }
-
-        return value.ValueKind switch
-        {
-            JsonValueKind.True => true,
-            JsonValueKind.Number => value.TryGetInt32(out int number) && number != 0,
-            JsonValueKind.String => value.GetString() is "1" or "true",
-            _ => false,
-        };
+        return !(device.TryGetProperty("parttype", out JsonElement partType) && partType.GetString() is { } type && SystemPartitionTypes.Contains(type));
     }
 }

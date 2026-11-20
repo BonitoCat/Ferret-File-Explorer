@@ -133,6 +133,7 @@ public partial class MainWindow : Window
         ViewModel.TransferCompleted += OnTransferCompleted;
         ViewModel.ConflictResolver = ResolveConflictAsync;
         ViewModel.ElevationConfirm = ConfirmElevationAsync;
+        ViewModel.BringConfirm = ConfirmBringAsync;
         ThemeService.ColorsChanged += RefreshAllIcons;
         FileTypeIconService.Changed += RefreshAllIcons;
         InitializeAddons();
@@ -2550,12 +2551,13 @@ public partial class MainWindow : Window
             return DragDropEffects.Link;
         }
 
-        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        bool skipRules = IsSkipRulesModifier(e.KeyModifiers);
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control) && !skipRules)
         {
             return DragDropEffects.Copy;
         }
 
-        bool isMove = e.KeyModifiers.HasFlag(KeyModifiers.Shift) || paths.All(path => FileUtils.AreOnSameFileSystem(path, targetDir));
+        bool isMove = (e.KeyModifiers.HasFlag(KeyModifiers.Shift) && !skipRules) || paths.All(path => FileUtils.AreOnSameFileSystem(path, targetDir));
         if (!isMove)
         {
             return DragDropEffects.Copy;
@@ -2648,7 +2650,12 @@ public partial class MainWindow : Window
         HighlightDropTarget(e.GetPosition(this));
     }
 
-    public void HandleFilesDropped(List<string> paths, Point? windowPosition = null, bool isCopy = false)
+    private static bool IsSkipRulesModifier(KeyModifiers modifiers)
+    {
+        return modifiers.HasFlag(KeyModifiers.Control) && modifiers.HasFlag(KeyModifiers.Shift);
+    }
+
+    public void HandleFilesDropped(List<string> paths, Point? windowPosition = null, bool isCopy = false, bool applyRules = true)
     {
         if (paths.Count == 0)
         {
@@ -2664,7 +2671,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        ViewModel.TransferItemsTo(paths, targetDir, isCopy);
+        ViewModel.TransferItemsTo(paths, targetDir, isCopy, applyRules);
     }
 
     public async void HandleFilesLinked(List<string> paths, Point? windowPosition = null)
@@ -2741,7 +2748,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        HandleFilesDropped(paths, e.GetPosition(this), effect == DragDropEffects.Copy);
+        HandleFilesDropped(paths, e.GetPosition(this), effect == DragDropEffects.Copy, !IsSkipRulesModifier(e.KeyModifiers));
     }
 
     private void OnCancelOperationClick(object? sender, RoutedEventArgs e)
@@ -3117,6 +3124,17 @@ public partial class MainWindow : Window
             LocalizationService.Get("ElevationTitle"),
             message,
             LocalizationService.Get("ContinueAsAdmin"),
+            true,
+            false);
+        return await dialog.ShowDialog<bool?>(this) == true;
+    }
+
+    private async Task<bool> ConfirmBringAsync(string message)
+    {
+        ConfirmDialog dialog = new(
+            LocalizationService.Get("BringTitle"),
+            message,
+            LocalizationService.Get("BringContinue"),
             true,
             false);
         return await dialog.ShowDialog<bool?>(this) == true;
@@ -3562,7 +3580,7 @@ public partial class MainWindow : Window
         string? procPath = Environment.ProcessPath;
         if (!string.IsNullOrEmpty(procPath))
         {
-            Process.Start(new ProcessStartInfo
+            ProcessUtils.StartDetached(new ProcessStartInfo
             {
                 FileName = procPath,
                 UseShellExecute = false,

@@ -17,6 +17,7 @@ using FileExplorer.Core.Addons;
 using FileExplorer.Core.Entries;
 using FileExplorer.Core.Interfaces;
 using FileExplorer.Core.Models;
+using FileExplorer.Core.Rules;
 using FileExplorer.Core.Services;
 using FileExplorer.Core.States;
 using FileExplorer.Core.Utilities;
@@ -58,6 +59,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     public FileUndoService UndoHistory => _undoHistory ??= new(_operationService);
     public Func<TransferConflict, Task<ConflictResolution>>? ConflictResolver { get; set; }
     public Func<string, Task<bool>>? ElevationConfirm { get; set; }
+    public Func<string, Task<bool>>? BringConfirm { get; set; }
     private bool _isPathEditing;
     private PaneViewModel _activePane;
     private OperationProgressViewModel? _selectedOperation;
@@ -1991,12 +1993,12 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         SelectedOperation?.Cancel();
     }
 
-    public void TransferItemsTo(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
+    public void TransferItemsTo(IEnumerable<string> paths, string destinationDirectory, bool isCopy, bool applyRules = true)
     {
-        _ = TransferItemsToAsync(paths, destinationDirectory, isCopy);
+        _ = TransferItemsToAsync(paths, destinationDirectory, isCopy, applyRules);
     }
 
-    public async Task<bool> TransferItemsToAsync(IEnumerable<string> paths, string destinationDirectory, bool isCopy)
+    public async Task<bool> TransferItemsToAsync(IEnumerable<string> paths, string destinationDirectory, bool isCopy, bool applyRules = true)
     {
         if (string.IsNullOrEmpty(destinationDirectory) || !Directory.Exists(destinationDirectory))
         {
@@ -2038,6 +2040,78 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             return false;
         }
 
+        List<BringItem> bring = applyRules ? await Task.Run(() => FerretBring.Plan(pathList, destinationDirectory)) : new();
+        if (bring.Count > 0 && !await ConfirmBringAsync(bring))
+        {
+            return false;
+        }
+
+        if (!await TransferPathsAsync(pathList, destinationDirectory, isCopy, applyRules))
+        {
+            return false;
+        }
+
+        foreach (BringItem item in bring)
+        {
+            await BringAlongAsync(item);
+        }
+
+        return true;
+    }
+
+    private async Task<bool> ConfirmBringAsync(List<BringItem> items)
+    {
+        string list = string.Join("\n", items.Select(item =>
+            $"• {item.Source} → {item.Target}" + (item.NeedsElevation ? LocalizationService.Get("BringNeedsAdmin") : "")));
+        return BringConfirm != null && await BringConfirm(LocalizationService.Format("BringConfirm", list));
+    }
+
+    private async Task BringAlongAsync(BringItem item)
+    {
+        string parent = Path.GetDirectoryName(item.Target) ?? "/";
+        if (!item.NeedsElevation)
+        {
+            try
+            {
+                Directory.CreateDirectory(parent);
+                await TransferPathsAsync([item.Source], parent, true, true);
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
+        }
+
+        string message = LocalizationService.Format("ElevateBring", $"“{PathManager.GetName(item.Source)}”", parent);
+        if (!await ConfirmElevationAsync(message))
+        {
+            return;
+        }
+
+        List<TransferStep> steps;
+        try
+        {
+            steps = await _operationService.PlanTransferAsync(parent, ClipboardMode.Copy, [item.Source], ConflictResolver);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or IOException)
+        {
+            return;
+        }
+
+        ElevatedScript script = new ElevatedScript().CreateFolder(parent);
+        foreach (TransferStep step in steps)
+        {
+            script.Transfer(step, true);
+        }
+
+        if (steps.Count > 0 && await RunElevatedScriptAsync(script))
+        {
+            StatusText = LocalizationService.Get("CopyCompleted");
+        }
+    }
+
+    private async Task<bool> TransferPathsAsync(List<string> pathList, string destinationDirectory, bool isCopy, bool applyRules)
+    {
         if (ElevatedFileService.NeedsElevation(destinationDirectory) || (!isCopy && ElevatedFileService.NeedsElevation(pathList)))
         {
             return await TransferElevatedAsync(pathList, destinationDirectory, isCopy);
@@ -2079,7 +2153,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         {
             ClipboardMode mode = isCopy ? ClipboardMode.Copy : ClipboardMode.Cut;
             List<TransferStep> steps = new();
-            List<string> targets = await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, steps, progress, token), token);
+            List<string> targets = await Task.Run(() => _operationService.TransferAsync(destinationDirectory, mode, pathList, ConflictResolver, steps, progress, token, applyRules), token);
             RecordTransfer(steps, isCopy);
             progressView.Status = LocalizationService.Get("FinishingTransfer");
             progressView.Item = "";
@@ -2159,6 +2233,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
     private void RecordTransfer(List<TransferStep> steps, bool isCopy)
     {
         if (steps.Count == 0 || steps.Any(step => step.ReplaceExisting))
+        {
+            return;
+        }
+
+        if (!isCopy && steps.Any(step => EntryExists(step.Source)))
         {
             return;
         }
@@ -2900,7 +2979,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 psi.ArgumentList.Add(arg);
             }
 
-            Process.Start(psi);
+            ProcessUtils.StartDetached(psi);
         }
         catch (Exception ex)
         {
@@ -2919,7 +2998,8 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             };
             psi.ArgumentList.Add("open");
             psi.ArgumentList.Add(path);
-            Process.Start(psi);
+            StartupNotification.Apply(psi);
+            ProcessUtils.StartDetached(psi);
         }
         catch (Exception ex)
         {
@@ -2946,6 +3026,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
             : "status=$?; if [ $status -ne 0 ]; then echo; read -n 1 -s -r -p \"[Process exited with code $status - press any key to close]\"; fi";
         string shellScript = $"{exports}{quoted}; {pause}";
         string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
+        HashSet<IntPtr> existingWindows = X11WindowHelper.GetClientWindows();
 
         foreach (string candidate in candidates)
         {
@@ -2976,9 +3057,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                 psi.ArgumentList.Add("bash");
                 psi.ArgumentList.Add("-c");
                 psi.ArgumentList.Add(shellScript);
+                StartupNotification.Apply(psi);
 
-                if (Process.Start(psi) != null)
+                if (ProcessUtils.StartDetached(psi) != null)
                 {
+                    X11WindowHelper.ActivateNextNewWindow(existingWindows);
                     return;
                 }
             }
@@ -3857,6 +3940,7 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
         }
 
         string[] candidates = ["x-terminal-emulator", "gnome-terminal", "kitty", "alacritty", "konsole", "xfce4-terminal", "xterm"];
+        HashSet<IntPtr> existingWindows = X11WindowHelper.GetClientWindows();
 
         foreach (string candidate in candidates)
         {
@@ -3874,9 +3958,11 @@ public class MainWindowViewModel : ViewModelBase, IDisposable
                     psi.Arguments = candidate == "gnome-terminal" ? $"-- {command}" : $"-e {command}";
                 }
 
-                Process? proc = Process.Start(psi);
+                StartupNotification.Apply(psi);
+                Process? proc = ProcessUtils.StartDetached(psi);
                 if (proc != null)
                 {
+                    X11WindowHelper.ActivateNextNewWindow(existingWindows);
                     Logger.LogI("Opened terminal");
                     return;
                 }

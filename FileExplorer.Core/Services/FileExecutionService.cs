@@ -33,7 +33,7 @@ public class FileExecutionService
             }
             else
             {
-                Process.Start(new ProcessStartInfo
+                ProcessUtils.StartDetached(new ProcessStartInfo
                 {
                     FileName = file.FullPath,
                     UseShellExecute = false,
@@ -54,7 +54,7 @@ public class FileExecutionService
                     UseShellExecute = false,
                 };
                 StartupNotification.Apply(gioPsi);
-                Process.Start(gioPsi);
+                ProcessUtils.StartDetached(gioPsi);
                 return;
             }
             catch
@@ -70,7 +70,7 @@ public class FileExecutionService
                     UseShellExecute = false,
                 };
                 StartupNotification.Apply(xdgPsi);
-                Process.Start(xdgPsi);
+                ProcessUtils.StartDetached(xdgPsi);
                 return;
             }
             catch
@@ -339,7 +339,7 @@ public class FileExecutionService
         psi.ArgumentList.Add(path);
         StartupNotification.Apply(psi);
 
-        Process.Start(psi);
+        ProcessUtils.StartDetached(psi);
     }
 
     public static void OpenWith(string program, string path)
@@ -362,7 +362,7 @@ public class FileExecutionService
         psi.ArgumentList.Add(path);
         StartupNotification.Apply(psi);
 
-        Process.Start(psi);
+        ProcessUtils.StartDetached(psi);
     }
 
     public static void OpenAsRoot(string path)
