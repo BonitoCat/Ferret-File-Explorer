@@ -17,6 +17,7 @@ public partial class AboutDialog : Window
         NameText.Text = AppInfo.Name;
         VersionText.Text = LocalizationService.Format("AboutVersion", AppInfo.Version);
         RuntimeText.Text = $"{AppInfo.Name} {AppInfo.Version}\n{AppInfo.RuntimeDescription}";
+        DonateIcon.Source = IconService.Get("donate-kofi");
 
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -38,6 +39,11 @@ public partial class AboutDialog : Window
     private async void OnReportBugClick(object? sender, RoutedEventArgs e)
     {
         await Launcher.LaunchUriAsync(new Uri(AppInfo.IssuesUrl));
+    }
+
+    private async void OnDonateClick(object? sender, RoutedEventArgs e)
+    {
+        await Launcher.LaunchUriAsync(new Uri(AppInfo.DonationUrl));
     }
 
     private void OnCloseClick(object? sender, RoutedEventArgs e)

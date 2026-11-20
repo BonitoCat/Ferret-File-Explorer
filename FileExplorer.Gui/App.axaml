@@ -119,5 +119,10 @@
         <Style Selector="ScrollBar /template/ Thumb:pressed /template/ Border">
             <Setter Property="Background" Value="#FFFFFF"/>
         </Style>
+
+        <Style Selector="MenuItem:empty /template/ Path#PART_ChevronPath">
+            <Setter Property="IsVisible" Value="True"/>
+            <Setter Property="Opacity" Value="0"/>
+        </Style>
     </Application.Styles>
 </Application>

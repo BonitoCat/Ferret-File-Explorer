@@ -91,6 +91,13 @@ public partial class App : Application
 
     private static void OnTextBoxKeyDown(TextBox textBox, KeyEventArgs e)
     {
+        if (e.Key == Key.V && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift))
+        {
+            textBox.Paste();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key != Key.Left || e.KeyModifiers != KeyModifiers.None)
         {
             return;
@@ -126,7 +133,7 @@ public partial class App : Application
 
             if (Directory.Exists(resolved))
             {
-                return resolved;
+                return KdeConnectService.IsMountRoot(resolved) ? KdeConnectService.GetBrowsePath(resolved) : resolved;
             }
 
             if (File.Exists(resolved))

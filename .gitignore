@@ -55,5 +55,15 @@ nunit-*.xml
 
 # Rider
 .idea
+*.DotSettings.user
 _builds/fe-linux-x64/usr/local/bin/
 _builds/output
+_builds/arch-build/
+
+# Preserve package directories while ignoring generated executables.
+!_builds/fe-linux-*/usr/bin/
+_builds/fe-linux-*/usr/bin/*
+!_builds/fe-linux-*/usr/bin/.gitkeep
+!_builds/AppDir/usr/bin/
+_builds/AppDir/usr/bin/*
+!_builds/AppDir/usr/bin/.gitkeep

@@ -4,7 +4,9 @@
         x:Class="FileExplorer.Gui.Dialogs.ConfirmDialog"
         Title="{markup:Translate Key=ConfirmDeletionTitle}"
         Width="420"
-        Height="170"
+        MinHeight="170"
+        MaxHeight="640"
+        SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         Background="#242426"
@@ -13,23 +15,29 @@
     <Grid RowDefinitions="*,Auto"
           Margin="20">
 
-        <StackPanel Grid.Row="0"
-                    Orientation="Horizontal"
-                    Spacing="14"
-                    VerticalAlignment="Center">
+        <Grid Grid.Row="0"
+              ColumnDefinitions="Auto,*"
+              ColumnSpacing="14"
+              VerticalAlignment="Center">
 
-            <Image Source="{markup:Icon Key=warning}"
+            <Image x:Name="IconImage"
+                   Grid.Column="0"
+                   Source="{markup:Icon Key=warning}"
                    Width="32"
                    Height="32"
                    VerticalAlignment="Center"/>
 
-            <TextBlock x:Name="MessageText"
-                       Text="{markup:Translate Key=ConfirmDeleteItem}"
-                       TextWrapping="Wrap"
-                       FontSize="13"
-                       MaxWidth="320"
-                       VerticalAlignment="Center"/>
-        </StackPanel>
+            <ScrollViewer Grid.Column="1"
+                          MaxHeight="480"
+                          VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="MessageText"
+                           Text="{markup:Translate Key=ConfirmDeleteItem}"
+                           TextWrapping="Wrap"
+                           FontSize="13"
+                           Margin="0,0,12,0"
+                           VerticalAlignment="Center"/>
+            </ScrollViewer>
+        </Grid>
 
         <StackPanel Grid.Row="1"
                     Orientation="Horizontal"

@@ -16,6 +16,7 @@ public partial class ConflictDialog : Window
     public ConflictDialog()
     {
         InitializeComponent();
+        DialogButtonNavigation.Attach(this);
 
         AddHandler(KeyDownEvent, (_, e) =>
         {
@@ -35,7 +36,7 @@ public partial class ConflictDialog : Window
         string destinationFolder = Path.GetFileName(Path.GetDirectoryName(conflict.DestinationPath) ?? "");
         if (string.IsNullOrEmpty(destinationFolder))
         {
-            destinationFolder = Path.GetDirectoryName(conflict.DestinationPath) ?? "/";
+            destinationFolder = PathManager.GetParent(conflict.DestinationPath);
         }
 
         if (conflict.CanMerge)

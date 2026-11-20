@@ -134,20 +134,21 @@ public sealed class NetworkBrowseService
         NetworkCredentials? credentials = GetCredentials(uri);
         if (credentials != null)
         {
-            NetworkMountResult login = await _networkService.MountLocationAsync(info with
+            NetworkConnectionInfo authenticatedInfo = info with
             {
                 Username = credentials.Username,
                 Domain = credentials.Domain,
                 Password = credentials.Password,
                 Anonymous = false,
-            }, token);
+            };
+            NetworkMountResult login = await _networkService.MountLocationAsync(authenticatedInfo, token);
             if (login.NeedsCredentials)
             {
                 ForgetCredentials(uri);
                 return new(new(), login.ErrorMessage, true, true);
             }
 
-            return ToResult(await ListEntriesAsync(uri, token), login.Success ? null : login.ErrorMessage);
+            return ToResult(await ListEntriesAsync(authenticatedInfo.BuildUri(), token), login.Success ? null : login.ErrorMessage);
         }
 
         string? anonymousError = await EnsureMountedAsync(uri, token);

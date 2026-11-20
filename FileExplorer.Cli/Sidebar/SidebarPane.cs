@@ -137,7 +137,11 @@ public sealed class SidebarPane
         List<SidebarEntry> entries = new();
         foreach (PlaceKind kind in _order.GetSectionOrder())
         {
-            string title = SectionTitles[kind];
+            if (!SectionTitles.TryGetValue(kind, out string? title))
+            {
+                continue;
+            }
+
             List<PlaceInfo> section = _order.Sort(kind, places.Where(p => p.Kind == kind), SidebarOrderService.GetKey);
             if (section.Count == 0 && kind != PlaceKind.Network)
             {

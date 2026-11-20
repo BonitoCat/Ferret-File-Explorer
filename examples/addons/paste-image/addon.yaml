@@ -1,0 +1,20 @@
+id: paste-image
+name: Paste Image
+description: Ctrl+V with an image or a copied image file on the clipboard asks for a file name and format and saves the image into the open folder.
+version: 1.0.0
+author: BonitoCat
+
+dependencies:
+  - command: convert
+    apt: imagemagick
+    dnf: ImageMagick
+    pacman: imagemagick
+    zypper: ImageMagick
+
+actions:
+  - id: paste-image
+    location: paste
+    clipboard: [image, files]
+    extensions: [png, jpg, jpeg, webp, gif, bmp, tif, tiff]
+    multiple: false
+    script: scripts/paste.sh

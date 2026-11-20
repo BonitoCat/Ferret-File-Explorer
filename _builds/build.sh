@@ -6,8 +6,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 OUTPUT_DIR="$SCRIPT_DIR/output"
 
-mkdir -p "$OUTPUT_DIR"
-
 CONTROL_X64_FULL="$SCRIPT_DIR/fe-linux-x64-full/DEBIAN/control"
 CONTROL_X64_HEADLESS="$SCRIPT_DIR/fe-linux-x64-headless/DEBIAN/control"
 CONTROL_ARM64_FULL="$SCRIPT_DIR/fe-linux-arm64-full/DEBIAN/control"
@@ -21,13 +19,16 @@ echo "Current version: $CURRENT_VERSION"
 if [ -n "$1" ]; then
     NEW_VERSION="$1"
 else
-    read -p "Enter new version number (leave empty to keep $CURRENT_VERSION): " NEW_VERSION
+    read -e -i "$CURRENT_VERSION" -p "Enter new version number: " NEW_VERSION
     if [ -z "$NEW_VERSION" ]; then
         NEW_VERSION="$CURRENT_VERSION"
     fi
 fi
 
 echo "Building version: $NEW_VERSION"
+
+mkdir -p "$OUTPUT_DIR"
+find "$OUTPUT_DIR" -mindepth 1 -delete
 
 sed -i "s|<Version>.*</Version>|<Version>$NEW_VERSION</Version>|" "$VERSION_PROPS"
 
@@ -156,10 +157,42 @@ echo "=========================================="
 echo "Building .deb packages..."
 echo "=========================================="
 
-dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-x64-full" "$OUTPUT_DIR/ferret-linux-x64-full.deb"
-dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-x64-headless" "$OUTPUT_DIR/ferret-linux-x64-headless.deb"
-dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-full" "$OUTPUT_DIR/ferret-linux-arm64-full.deb"
-dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-headless" "$OUTPUT_DIR/ferret-linux-arm64-headless.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-x64-full" "$OUTPUT_DIR/ferret-$NEW_VERSION-linux-x64-full.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-x64-headless" "$OUTPUT_DIR/ferret-$NEW_VERSION-linux-x64-headless.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-full" "$OUTPUT_DIR/ferret-$NEW_VERSION-linux-arm64-full.deb"
+dpkg-deb --root-owner-group --build "$SCRIPT_DIR/fe-linux-arm64-headless" "$OUTPUT_DIR/ferret-$NEW_VERSION-linux-arm64-headless.deb"
+
+echo "=========================================="
+echo "Building Arch packages..."
+echo "=========================================="
+
+for target in x64 arm64; do
+    if [ "$target" = "x64" ]; then
+        ARCH_PACKAGE_ARCH="x86_64"
+    else
+        ARCH_PACKAGE_ARCH="aarch64"
+    fi
+
+    for variant in full headless; do
+        echo ">> Arch $ARCH_PACKAGE_ARCH $variant"
+        ARCH_BUILD_DIR="$SCRIPT_DIR/arch-build/$target-$variant"
+        mkdir -p "$ARCH_BUILD_DIR"
+        cp "$SCRIPT_DIR/arch/PKGBUILD" "$ARCH_BUILD_DIR/PKGBUILD"
+
+        (
+            cd "$ARCH_BUILD_DIR"
+            FERRET_VERSION="$NEW_VERSION" \
+            FERRET_VARIANT="$variant" \
+            FERRET_PACKAGE_TREE="$SCRIPT_DIR/fe-linux-$target-$variant" \
+            FERRET_LICENSE="$ROOT_DIR/LICENSE" \
+            CARCH="$ARCH_PACKAGE_ARCH" \
+            PKGDEST="$OUTPUT_DIR" \
+            PKGEXT=".pkg.tar.zst" \
+            PACMAN=true \
+                makepkg --nodeps --force --cleanbuild --clean
+        )
+    done
+done
 
 APPIMAGETOOL="$SCRIPT_DIR/appimagetool-x86_64.AppImage"
 if [ -f "$APPIMAGETOOL" ]; then

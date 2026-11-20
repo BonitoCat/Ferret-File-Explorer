@@ -22,7 +22,7 @@ public class DragPreviewWindow : Window
 
     public DragPreviewWindow(IWindowImpl? impl = null) : base(impl ?? PlatformManager.CreateWindow())
     {
-        SystemDecorations = SystemDecorations.None;
+        WindowDecorations = WindowDecorations.None;
         ShowInTaskbar = false;
         Topmost = true;
         CanResize = false;

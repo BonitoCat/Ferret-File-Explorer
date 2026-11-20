@@ -8,6 +8,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Services;
 
@@ -153,27 +154,7 @@ public class NetworkService
 
     public static HashSet<string> GetGvfsMounts()
     {
-        HashSet<string> mounts = new(StringComparer.OrdinalIgnoreCase);
-        string gvfsDir = $"/run/user/{GetUserId()}/gvfs";
-
-        if (!Directory.Exists(gvfsDir))
-        {
-            return mounts;
-        }
-
-        try
-        {
-            string[] directories = Directory.GetDirectories(gvfsDir);
-            foreach (string dir in directories)
-            {
-                mounts.Add(dir);
-            }
-        }
-        catch
-        {
-        }
-
-        return mounts;
+        return new(GvfsPath.GetMountRoots(), StringComparer.OrdinalIgnoreCase);
     }
 
     public async Task<(bool Success, string MountPath, string ErrorMessage)> MountAsync(NetworkConnectionInfo info, CancellationToken cancellationToken = default)
@@ -502,10 +483,14 @@ public class NetworkService
         if (process.ExitCode != 0)
         {
             string alreadyMounted = errorBuilder.ToString() + outputBuilder;
-            string? mounted = FindExistingMount(info);
-            if (mounted != null && alreadyMounted.Contains("already mounted", StringComparison.OrdinalIgnoreCase))
+            if (alreadyMounted.Contains("already mounted", StringComparison.OrdinalIgnoreCase))
             {
-                return (true, mounted, "", false);
+                // Virtual locations such as smb://server have no local FUSE mount path.
+                string? mounted = FindExistingMount(info);
+                if (!waitForMountPath || mounted != null)
+                {
+                    return (true, mounted ?? "", "", false);
+                }
             }
 
             string err = CleanGioError(errorBuilder.ToString());
@@ -560,7 +545,7 @@ public class NetworkService
             return (true, newMount, "", false);
         }
 
-        string gvfsRoot = $"/run/user/{GetUserId()}/gvfs";
+        string gvfsRoot = GvfsPath.MountDirectory;
         return (true, gvfsRoot, "", false);
     }
 

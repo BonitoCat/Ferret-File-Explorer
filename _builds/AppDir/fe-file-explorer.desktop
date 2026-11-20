@@ -11,3 +11,46 @@ StartupWMClass=fe-file-explorer
 Categories=System;Utility;FileManager;
 MimeType=inode/directory;
 Keywords=files;folder;explorer;browser;manager;
+Actions=new-window;open-home;open-documents;open-downloads;open-computer;open-network;open-trash;
+
+[Desktop Action new-window]
+Name=New Window
+Name[de]=Neues Fenster
+Icon=folder-new
+Exec=AppRun %U
+
+[Desktop Action open-home]
+Name=Home
+Name[de]=Persönlicher Ordner
+Icon=user-home
+Exec=AppRun xdg:home
+
+[Desktop Action open-documents]
+Name=Documents
+Name[de]=Dokumente
+Icon=folder-documents
+Exec=AppRun xdg:documents
+
+[Desktop Action open-downloads]
+Name=Downloads
+Name[de]=Downloads
+Icon=folder-download
+Exec=AppRun xdg:downloads
+
+[Desktop Action open-computer]
+Name=Computer
+Name[de]=Rechner
+Icon=computer
+Exec=AppRun computer:///
+
+[Desktop Action open-network]
+Name=Network
+Name[de]=Netzwerk
+Icon=network-workgroup
+Exec=AppRun network:///
+
+[Desktop Action open-trash]
+Name=Trash
+Name[de]=Papierkorb
+Icon=user-trash
+Exec=AppRun trash:///

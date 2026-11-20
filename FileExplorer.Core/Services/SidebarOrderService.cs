@@ -11,7 +11,7 @@ public sealed class SidebarOrderService
         public Dictionary<string, List<string>> Items { get; set; } = new();
     }
 
-    public static readonly PlaceKind[] DefaultSectionOrder = [PlaceKind.Places, PlaceKind.Bookmarks, PlaceKind.Devices, PlaceKind.Network];
+    public static readonly PlaceKind[] DefaultSectionOrder = [PlaceKind.Places, PlaceKind.Bookmarks, PlaceKind.Devices, PlaceKind.Network, PlaceKind.Addons];
 
     private readonly object _lock = new();
     private readonly string _filePath;

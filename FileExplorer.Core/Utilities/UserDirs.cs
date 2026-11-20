@@ -11,6 +11,7 @@ public static class UserDirs
     public static string Music => Get("MUSIC", "Music");
     public static string Pictures => Get("PICTURES", "Pictures");
     public static string Videos => Get("VIDEOS", "Videos");
+    public static string Templates => Get("TEMPLATES", "Templates");
 
     private static string Get(string key, string fallbackName)
     {

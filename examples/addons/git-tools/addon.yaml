@@ -1,19 +1,86 @@
 id: git-tools
 name: $AddonName
 description: $AddonDescription
-version: 1.0.0
+version: 1.1.0
 author: BonitoCat
+icon: icon.svg
 script: scripts/git.sh
+service: scripts/status.sh
+
+settings:
+  - id: colors
+    title: $SettingColors
+    type: bool
+    default: true
+
+  - id: badges
+    title: $SettingBadges
+    type: bool
+    default: true
+
+  - id: badge_letters
+    title: $SettingBadgeLetters
+    description: $SettingBadgeLettersHint
+    type: bool
+    default: true
+
+  - id: badge_corner
+    title: $SettingBadgeCorner
+    type: choice
+    choices: [top-right=$CornerTopRight, top-left=$CornerTopLeft, bottom-right=$CornerBottomRight, bottom-left=$CornerBottomLeft]
+    default: top-right
+
+  - id: tint
+    title: $SettingTint
+    type: bool
+    default: false
+
+  - id: folders
+    title: $SettingFolders
+    description: $SettingFoldersHint
+    type: bool
+    default: true
+
+  - id: untracked
+    title: $SettingUntracked
+    type: bool
+    default: true
+
+  - id: ignored
+    title: $SettingIgnored
+    type: bool
+    default: true
 
 actions:
-  - id: status
-    title: $GitStatus
-    location: addons-menu
-    shortcut: Ctrl+Alt+G
+  - id: git
+    title: Git
+    icon: icon.svg
+    location: context-menu
+    targets: [file, folder, background]
 
   - id: init
     title: $GitInit
-    location: context-menu
+    parent: git
     targets: [folder, background]
     multiple: false
     confirm: $GitInitConfirm
+
+  - id: add
+    title: $GitAdd
+    parent: git
+    targets: [file, folder]
+    tags: [untracked, modified]
+
+  - id: unstage
+    title: $GitUnstage
+    parent: git
+    targets: [file, folder]
+    tags: [staged]
+
+  - id: discard
+    title: $GitDiscard
+    parent: git
+    targets: [file, folder]
+    tags: [modified]
+    separator: before
+    confirm: $GitDiscardConfirm

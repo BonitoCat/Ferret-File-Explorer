@@ -135,8 +135,8 @@ public static class Program
     
     public static void Main(string[] args)
     {
-        string? _startDir = null;
-        bool _forceTtyInput = false;
+        string? startDir = null;
+        bool forceTtyInput = false;
 
         for (int i = 0; i < args.Length; i += 2)
         {
@@ -156,28 +156,14 @@ public static class Program
                 
                 case "--open":
                 case "-o":
-                    if (OperatingSystem.IsLinux())
-                    {
-                        Process proc = new()
-                        {
-                            StartInfo = new ProcessStartInfo
-                            {
-                                FileName = "nemo",
-                                Arguments = Environment.CurrentDirectory,
-                                UseShellExecute = false,
-                            },
-                        };
-                        
-                        proc.Start();
-                    }
-                    
+                    FileExecutionService.OpenInFileManager(Environment.CurrentDirectory);
                     return;
 
                 case "--directory":
                 case "-d":
                     if (args.Length > i + 1)
                     {
-                        _startDir = args[i + 1];
+                        startDir = args[i + 1];
                     }
                     else
                     {
@@ -187,7 +173,7 @@ public static class Program
                 
                 case "--tty":
                 case "-t":
-                    _forceTtyInput = true;
+                    forceTtyInput = true;
                     i--;
                 break;
             }
@@ -207,14 +193,14 @@ public static class Program
                 mountTask.Wait();
                 if (mountTask.Result.Success && Directory.Exists(mountTask.Result.MountPath))
                 {
-                    _startDir = mountTask.Result.MountPath;
+                    startDir = mountTask.Result.MountPath;
                 }
             }
         }
 
-        if (_startDir != null && Directory.Exists(_startDir))
+        if (startDir != null && Directory.Exists(startDir))
         {
-            Directory.SetCurrentDirectory(_startDir);
+            Directory.SetCurrentDirectory(startDir);
         }
 
         AppPaths.MigrateLegacyConfig();
@@ -232,7 +218,7 @@ public static class Program
         }
 
         InputListener.DisableEcho();
-        if (_forceTtyInput)
+        if (forceTtyInput)
         {
             Listener = new TtyInputListener();
         }

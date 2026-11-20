@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using FileExplorer.Core.Utilities;
 
 namespace FileExplorer.Core.Services;
 
@@ -25,11 +26,16 @@ public sealed class SmbShareService
 
     private const string UsershareDir = "/var/lib/samba/usershares";
     private const string UsershareGroup = "sambashare";
+    private const string SmbConf = "/etc/samba/smb.conf";
     private const int PkexecDismissed = 126;
     private const int PkexecNotAuthorized = 127;
     private const string WriteAcl = "S-1-1-0:F";
     private const string ReadAcl = "S-1-1-0:R";
     private const string ShareNameSuffix = "-share";
+
+    private static readonly object OwnedSync = new();
+
+    private static string OwnedSharesPath => Path.Combine(AppPaths.DataDir, "smb_shares.txt");
 
     private static readonly char[] InvalidNameChars = ['%', '<', '>', '*', '?', '|', '/', '\\', '+', '=', ';', ':', '"', ',', '[', ']'];
 
@@ -40,7 +46,7 @@ public sealed class SmbShareService
 
     public static string SuggestName(string path)
     {
-        string name = Path.GetFileName(path.TrimEnd('/'));
+        string name = PathManager.GetName(path);
         foreach (char invalid in InvalidNameChars)
         {
             name = name.Replace(invalid, '_');
@@ -82,9 +88,11 @@ public sealed class SmbShareService
             return (SmbShareAvailability.NotInstalled, "");
         }
 
+        RemoveOrphanedShares();
+
         (int exitCode, string output, string error) = Run("usershare", "info");
         string message = output + "\n" + error;
-        if (exitCode != 0 || message.Contains("cannot open usershare directory", StringComparison.OrdinalIgnoreCase))
+        if (!IsUsershareInfoOk(exitCode, error) || message.Contains("cannot open usershare directory", StringComparison.OrdinalIgnoreCase))
         {
             string detail = message
                 .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -111,6 +119,26 @@ public sealed class SmbShareService
         }
     }
 
+    public static bool IsUsershareGroupActive()
+    {
+        try
+        {
+            string? line = File.ReadLines("/etc/group").FirstOrDefault(l => l.StartsWith(UsershareGroup + ":", StringComparison.Ordinal));
+            string? gid = line?.Split(':').ElementAtOrDefault(2);
+            if (string.IsNullOrEmpty(gid))
+            {
+                return false;
+            }
+
+            string? groups = File.ReadLines("/proc/self/status").FirstOrDefault(l => l.StartsWith("Groups:", StringComparison.Ordinal));
+            return groups != null && groups["Groups:".Length..].Split(' ', '\t', StringSplitOptions.RemoveEmptyEntries).Contains(gid);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<(SmbSetupResult Result, string Detail)> SetupAsync(bool install, CancellationToken token = default)
     {
         string? installCommand = install ? GetInstallCommand() : "true";
@@ -127,7 +155,12 @@ public sealed class SmbShareService
             $"usermod -aG {UsershareGroup} {Quote(Environment.UserName)}",
             $"mkdir -p {UsershareDir}",
             $"chgrp {UsershareGroup} {UsershareDir}",
-            $"chmod 1770 {UsershareDir}");
+            $"chmod 1770 {UsershareDir}",
+            "mkdir -p /etc/samba",
+            $"[ -f {SmbConf} ] || printf '[global]\\n' > {SmbConf}",
+            $"grep -qiE '^[[:space:]]*usershare max shares' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   usershare max shares = 100|' {SmbConf}",
+            $"grep -qiE '^[[:space:]]*usershare path' {SmbConf} || sed -i '0,/^\\[global\\]/s||[global]\\n   usershare path = {UsershareDir}|' {SmbConf}",
+            "systemctl enable --now smb.service 2>/dev/null || systemctl enable --now smbd.service 2>/dev/null || true");
 
         return await RunElevatedAsync(pkexec, script, token);
     }
@@ -369,8 +402,19 @@ public sealed class SmbShareService
 
     public List<SmbShareInfo> GetShares()
     {
-        (int exitCode, string output, _) = Run("usershare", "info");
-        return exitCode == 0 ? Parse(output) : new();
+        (int exitCode, string output, string error) = Run("usershare", "info", "--long");
+        return IsUsershareInfoOk(exitCode, error) ? Parse(output) : new();
+    }
+
+    private static bool IsUsershareInfoOk(int exitCode, string error)
+    {
+        if (exitCode == 0)
+        {
+            return true;
+        }
+
+        string[] lines = error.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return lines.Length > 0 && lines.All(l => l.StartsWith("info_fn:", StringComparison.Ordinal));
     }
 
     public SmbShareInfo? GetShareForPath(string path)
@@ -400,13 +444,111 @@ public sealed class SmbShareService
             writable ? WriteAcl : ReadAcl,
             guestOk ? "guest_ok=y" : "guest_ok=n");
 
-        return exitCode == 0 ? null : FirstLine(string.IsNullOrWhiteSpace(error) ? output : error);
+        if (exitCode != 0)
+        {
+            return FirstLine(string.IsNullOrWhiteSpace(error) ? output : error);
+        }
+
+        UpdateOwnedShares(names => names.Add(name.ToLowerInvariant()));
+        return null;
+    }
+
+    public static bool NeedsElevation(string path)
+    {
+        return ElevatedFileService.IsAvailable && UnixStat.Load(path) is UnixStat stat && stat.Uid != UnixStat.CurrentUid;
+    }
+
+    public static Task<ElevatedResult> SetShareElevatedAsync(string name, string path, string comment, bool writable, bool guestOk, string? previousName, bool addPermissions)
+    {
+        string normalized = NormalizePath(path);
+        ElevatedScript script = new();
+        if (previousName != null && !string.Equals(previousName, name, StringComparison.OrdinalIgnoreCase))
+        {
+            script.Add("net usershare delete {0} || true", previousName);
+        }
+
+        if (addPermissions)
+        {
+            script.Add(writable ? "chmod o+rwx -- {0}" : "chmod o+rx -- {0}", normalized);
+        }
+
+        script.Add("net usershare add {0} {1} {2} {3} {4}", name, normalized, comment, writable ? WriteAcl : ReadAcl, guestOk ? "guest_ok=y" : "guest_ok=n")
+            .Add("chown --reference={0} -- {1}", normalized, Path.Combine(UsershareDir, name.ToLowerInvariant()));
+        return ElevatedFileService.RunAsync(script);
+    }
+
+    public static Task<ElevatedResult> RemoveShareElevatedAsync(string name)
+    {
+        return ElevatedFileService.RunAsync(new ElevatedScript().Add("net usershare delete {0}", name));
     }
 
     public string? RemoveShare(string name)
     {
         (int exitCode, string output, string error) = Run("usershare", "delete", name);
-        return exitCode == 0 ? null : FirstLine(string.IsNullOrWhiteSpace(error) ? output : error);
+        if (exitCode != 0)
+        {
+            return FirstLine(string.IsNullOrWhiteSpace(error) ? output : error);
+        }
+
+        UpdateOwnedShares(names => names.Remove(name.ToLowerInvariant()));
+        return null;
+    }
+
+    private static void RemoveOrphanedShares()
+    {
+        UpdateOwnedShares(names => names.RemoveWhere(IsOrphaned));
+    }
+
+    private static bool IsOrphaned(string name)
+    {
+        string file = Path.Combine(UsershareDir, name);
+        if (!File.Exists(file))
+        {
+            return true;
+        }
+
+        string? path = ReadUsharePath(file);
+        if (path == null || Directory.Exists(path))
+        {
+            return false;
+        }
+
+        return Run("usershare", "delete", name).ExitCode == 0;
+    }
+
+    private static string? ReadUsharePath(string file)
+    {
+        try
+        {
+            return File.ReadLines(file).FirstOrDefault(l => l.StartsWith("path=", StringComparison.Ordinal))?["path=".Length..];
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void UpdateOwnedShares(Action<HashSet<string>> change)
+    {
+        lock (OwnedSync)
+        {
+            try
+            {
+                HashSet<string> names = File.Exists(OwnedSharesPath) ? File.ReadLines(OwnedSharesPath).Where(l => l.Length > 0).ToHashSet() : new();
+                int count = names.Count;
+                change(names);
+                if (names.Count == count && File.Exists(OwnedSharesPath))
+                {
+                    return;
+                }
+
+                AppPaths.EnsureDir(AppPaths.DataDir);
+                File.WriteAllLines(OwnedSharesPath, names);
+            }
+            catch
+            {
+            }
+        }
     }
 
     public static UnixFileMode GetMissingPermissions(string path, bool writable)
@@ -434,7 +576,7 @@ public sealed class SmbShareService
         }
 
         string? dir = Path.GetDirectoryName(NormalizePath(path));
-        while (!string.IsNullOrEmpty(dir) && dir != "/")
+        while (!string.IsNullOrEmpty(dir) && !PathManager.IsRoot(dir))
         {
             try
             {
@@ -518,8 +660,7 @@ public sealed class SmbShareService
 
     private static string NormalizePath(string path)
     {
-        string trimmed = path.TrimEnd('/');
-        return trimmed.Length == 0 ? "/" : trimmed;
+        return PathManager.TrimEnd(path);
     }
 
     private static string FirstLine(string text)

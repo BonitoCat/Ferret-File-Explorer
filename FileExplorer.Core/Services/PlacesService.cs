@@ -11,6 +11,7 @@ public enum PlaceKind
     Bookmarks,
     Devices,
     Network,
+    Addons,
 }
 
 public sealed class PlaceInfo
@@ -81,25 +82,14 @@ public class PlacesService
         List<PlaceInfo> places = new();
         foreach (string bookmark in _bookmarkService.GetBookmarks())
         {
-            string resolved = bookmark;
-            try
-            {
-                FileSystemInfo? target = new DirectoryInfo(bookmark).ResolveLinkTarget(true);
-                if (target != null)
-                {
-                    resolved = target.FullName;
-                }
-            }
-            catch
-            {
-            }
-
+            string resolved = BookmarkService.ResolveTarget(bookmark);
             places.Add(new()
             {
                 Kind = PlaceKind.Bookmarks,
-                Name = resolved == "/" ? "File System" : BookmarkService.GetDisplayName(resolved),
+                Name = PathManager.IsRoot(resolved) ? "File System" : BookmarkService.GetDisplayName(resolved),
                 Path = resolved,
                 IsBookmark = true,
+                IsMounted = !PathManager.IsRemote(resolved) || GvfsPath.IsMounted(resolved),
             });
         }
 
@@ -115,7 +105,7 @@ public class PlacesService
         }
 
         HashSet<string> seen = new(StringComparer.Ordinal);
-        string? json = Run("lsblk", "-J -b -o NAME,PATH,LABEL,PARTLABEL,MOUNTPOINT,FSTYPE,SIZE,MODEL,RM,HOTPLUG,TYPE");
+        string? json = Run("lsblk", $"-J -b -o {BlockDeviceFilter.LsblkColumns}");
         if (!string.IsNullOrWhiteSpace(json))
         {
             try
@@ -148,6 +138,18 @@ public class PlacesService
             places.Add(new() { Kind = PlaceKind.Devices, Name = GetGvfsDisplayName(mount), Path = mount });
         }
 
+        foreach (KdeConnectDevice phone in KdeConnectService.GetDevices())
+        {
+            places.Add(new()
+            {
+                Kind = PlaceKind.Devices,
+                Name = string.IsNullOrEmpty(phone.Name) ? "Android Device" : phone.Name,
+                Path = phone.IsMounted ? KdeConnectService.GetBrowsePath(phone.MountPoint) : KdeConnectService.ToUri(phone.Id),
+                DevicePath = KdeConnectService.ToUri(phone.Id),
+                IsMounted = phone.IsMounted,
+            });
+        }
+
         return places;
     }
 
@@ -177,6 +179,11 @@ public class PlacesService
             return;
         }
 
+        if (!BlockDeviceFilter.ShouldList(elem))
+        {
+            return;
+        }
+
         if (!string.IsNullOrEmpty(mountPoint))
         {
             if (mountPoint is "/" or "/boot" || mountPoint.StartsWith("/boot/") || mountPoint.StartsWith("/snap") || mountPoint.StartsWith("/var/lib/snapd") || mountPoint.StartsWith("[SWAP]"))
@@ -192,7 +199,7 @@ public class PlacesService
             places.Add(new()
             {
                 Kind = PlaceKind.Devices,
-                Name = FirstNonEmpty(label, partLabel, model) ?? System.IO.Path.GetFileName(mountPoint.TrimEnd('/')),
+                Name = FirstNonEmpty(label, partLabel, model) ?? PathManager.GetName(mountPoint),
                 Path = mountPoint,
                 DevicePath = path,
             });
@@ -266,6 +273,11 @@ public class PlacesService
 
     public static async Task<string?> MountDeviceAsync(string devicePath)
     {
+        if (KdeConnectService.IsDeviceUri(devicePath))
+        {
+            return await KdeConnectService.MountAsync(devicePath);
+        }
+
         string output = await Task.Run(() => Run("udisksctl", $"mount -b \"{devicePath}\"", true) ?? "");
         foreach (string marker in new[] { " at `", " at " })
         {

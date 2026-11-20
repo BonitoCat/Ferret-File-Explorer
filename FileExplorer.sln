@@ -2,15 +2,15 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileExplorer.Cli", "FileExplorer.Cli\FileExplorer.Cli.csproj", "{369BC04B-0837-4ECB-A210-E1928EEB6B16}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TuiLib", "..\TuiLib\TuiLib\TuiLib.csproj", "{BF8C950D-6DA3-498B-AA90-6D4952B8CF8A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TuiLib", "libs\TuiLib\TuiLib\TuiLib.csproj", "{BF8C950D-6DA3-498B-AA90-6D4952B8CF8A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InputLib", "..\InputLib\InputLib\InputLib.csproj", "{1D406F30-2F47-4EE6-A2D6-277E11408D7E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "InputLib", "libs\InputLib\InputLib\InputLib.csproj", "{1D406F30-2F47-4EE6-A2D6-277E11408D7E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileLib", "..\FileLib\FileLib\FileLib.csproj", "{66B94691-7854-4509-837C-FAC52F1C0D7B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FileLib", "libs\FileLib\FileLib\FileLib.csproj", "{66B94691-7854-4509-837C-FAC52F1C0D7B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoggerLib", "..\LoggerLib\LoggerLib\LoggerLib.csproj", "{4D160859-5E6F-4EDA-B9B0-F7E87A48CBC5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LoggerLib", "libs\LoggerLib\LoggerLib\LoggerLib.csproj", "{4D160859-5E6F-4EDA-B9B0-F7E87A48CBC5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecretsLib", "..\SecretsLib\SecretsLib\SecretsLib.csproj", "{91D5BAEF-66DD-4C2F-A494-7BD362C736F6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SecretsLib", "libs\SecretsLib\SecretsLib\SecretsLib.csproj", "{91D5BAEF-66DD-4C2F-A494-7BD362C736F6}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Dependencies", "Dependencies", "{7DC91669-5BE8-4928-AE8B-95388CC50CB0}"
 EndProject

@@ -111,6 +111,11 @@ public class ExecuteKeybind : Keybind
         {
             if (selected.Entry is FolderEntry folder)
             {
+                if (folder.IsBrokenLink)
+                {
+                    return;
+                }
+
                 if (FolderUtils.RequiresElevatedAccess(folder.FullPath) && !Environment.IsPrivilegedProcess && Environment.UserName != "root")
                 {
                     return;
@@ -675,12 +680,7 @@ public class NemoKeybind : Keybind
 {
     public override void OnKeyDown(KeyDownEventArgs e)
     {
-        Process.Start(new ProcessStartInfo
-        {
-            FileName = "nemo",
-            Arguments = $"\"{Context.Cwd}\"",
-            UseShellExecute = false,
-        });
+        FileExecutionService.OpenInFileManager(Context.Cwd);
     }
 }
 

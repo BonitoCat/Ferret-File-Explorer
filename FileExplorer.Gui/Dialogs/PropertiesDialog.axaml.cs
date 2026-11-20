@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
@@ -37,6 +38,7 @@ public partial class PropertiesDialog : Window
     private int _mode = -1;
     private bool _updatingUi;
     private bool _canEditPermissions;
+    private bool _isElevatedRenamePending;
     private UnixStat? _stat;
     private string? _mimeType;
     private string? _defaultApp;
@@ -93,7 +95,7 @@ public partial class PropertiesDialog : Window
         _item = item;
         ItemIcon.Source = item.Icon;
         SetupTypeIconMenu();
-        LocationValue.Text = Path.GetDirectoryName(item.FullPath) ?? "/";
+        LocationValue.Text = PathManager.GetParent(item.FullPath);
         OpenWithTab.IsVisible = !_isDirectory;
         ChecksumCard.IsVisible = !_isDirectory;
         ExecutableCheckBox.IsVisible = !_isDirectory;
@@ -843,7 +845,7 @@ public partial class PropertiesDialog : Window
     private void TryRename()
     {
         string newName = NameBox.Text?.Trim() ?? "";
-        if (string.IsNullOrEmpty(newName) || newName == _originalName)
+        if (_isElevatedRenamePending || string.IsNullOrEmpty(newName) || newName == _originalName)
         {
             return;
         }
@@ -854,7 +856,7 @@ public partial class PropertiesDialog : Window
             return;
         }
 
-        string target = Path.Combine(Path.GetDirectoryName(_path) ?? "/", newName);
+        string target = Path.Combine(PathManager.GetParent(_path), newName);
         if (File.Exists(target) || Directory.Exists(target))
         {
             ShowRenameError(LocalizationService.Format("NameAlreadyExists", newName));
@@ -877,9 +879,58 @@ public partial class PropertiesDialog : Window
             _originalName = newName;
             RenameErrorText.IsVisible = false;
         }
+        catch (Exception ex) when (ElevatedFileService.IsPermissionError(ex))
+        {
+            _ = RenameElevatedAsync(target, newName);
+        }
         catch (Exception ex)
         {
             ShowRenameError(LocalizationService.Format("RenameFailed", ex.Message));
+        }
+    }
+
+    private async Task RenameElevatedAsync(string target, string newName)
+    {
+        _isElevatedRenamePending = true;
+        try
+        {
+            ConfirmDialog confirm = new(
+                LocalizationService.Get("ElevationTitle"),
+                LocalizationService.Format("ElevateRename", $"“{_originalName}”"),
+                LocalizationService.Get("ContinueAsAdmin"),
+                true,
+                false);
+            if (await confirm.ShowDialog<bool?>(this) != true)
+            {
+                NameBox.Text = _originalName;
+                return;
+            }
+
+            ElevatedResult result = await ElevatedFileService.RunAsync(new ElevatedScript().Rename(_path, target));
+            if (result.Status == ElevatedStatus.Failed)
+            {
+                ShowRenameError(LocalizationService.Format("RenameFailed", result.Error));
+                return;
+            }
+
+            if (!result.IsSuccess)
+            {
+                NameBox.Text = _originalName;
+                return;
+            }
+
+            if (_isDirectory)
+            {
+                FolderColorService.Move(_path, target);
+            }
+
+            _path = target;
+            _originalName = newName;
+            RenameErrorText.IsVisible = false;
+        }
+        finally
+        {
+            _isElevatedRenamePending = false;
         }
     }
 

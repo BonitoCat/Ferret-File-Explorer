@@ -152,19 +152,12 @@ public static class FolderColorStore
 
     private static bool IsSameOrInside(string key, string root)
     {
-        if (key == root)
-        {
-            return true;
-        }
-
-        string prefix = root == "/" ? "/" : root + "/";
-        return key.StartsWith(prefix, StringComparison.Ordinal);
+        return PathManager.IsSameOrAncestor(root, key);
     }
 
     private static string Normalize(string path)
     {
-        string trimmed = path.TrimEnd('/');
-        return string.IsNullOrEmpty(trimmed) ? "/" : trimmed;
+        return PathManager.TrimEnd(path);
     }
 
     private static void Reload(bool force)

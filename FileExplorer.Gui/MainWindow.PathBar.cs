@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO.Enumeration;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using FileExplorer.Gui.Services;
@@ -21,11 +22,11 @@ public partial class MainWindow
                 return true;
             case "new":
             case "mkdir":
-                CreateFromPathBar(input, true);
+                _ = CreateFromPathBarAsync(input, true);
                 return true;
             case "touch":
             case "newfile":
-                CreateFromPathBar(input, false);
+                _ = CreateFromPathBarAsync(input, false);
                 return true;
             case "hidden":
                 ViewModel.ShowHiddenFiles = !ViewModel.ShowHiddenFiles;
@@ -110,7 +111,7 @@ public partial class MainWindow
             : LocalizationService.Format("PathBarNoMatch", input);
     }
 
-    private void CreateFromPathBar(string name, bool folder)
+    private async Task CreateFromPathBarAsync(string name, bool folder)
     {
         if (name.Length == 0)
         {
@@ -126,7 +127,7 @@ public partial class MainWindow
             return;
         }
 
-        SelectWhenLoaded(folder ? ViewModel.CreateFolder(name) : ViewModel.CreateFile(name));
+        SelectWhenLoaded(folder ? await ViewModel.CreateFolderAsync(name) : await ViewModel.CreateFileAsync(name));
     }
 
     private void SearchFromPathBar(string text)

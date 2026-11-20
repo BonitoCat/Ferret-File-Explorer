@@ -17,6 +17,7 @@ public class MimeService
     };
 
     private static readonly ConcurrentDictionary<string, string?> ExtensionMimeCache = new(StringComparer.OrdinalIgnoreCase);
+    private static volatile List<Dictionary<string, (int Weight, string Mime)>>? _globIndex;
 
     private static string UserHome => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 
@@ -116,6 +117,9 @@ public class MimeService
             Directory.CreateDirectory(packagesDir);
             File.WriteAllText(xmlPath, xml.ToString());
             RunProcess("update-mime-database", $"\"{Path.Combine(UserDataDir, "mime")}\"");
+            _globIndex = null;
+            ExtensionMimeCache.TryRemove("." + ext, out _);
+            ExtensionMimeCache.TryRemove(ext, out _);
         }
         catch
         {
@@ -157,50 +161,69 @@ public class MimeService
     public static string? LookupGlobMimeType(string extension)
     {
         string pattern = "*." + extension.TrimStart('.');
-        string? bestMime = null;
-        int bestWeight = -1;
-
-        foreach (string dataDir in DataDirs)
+        foreach (Dictionary<string, (int Weight, string Mime)> globs in GetGlobIndex())
         {
-            string globsPath = Path.Combine(dataDir, "mime", "globs2");
-            if (!File.Exists(globsPath))
+            if (globs.TryGetValue(pattern, out (int Weight, string Mime) match))
             {
-                continue;
-            }
-
-            try
-            {
-                foreach (string line in File.ReadLines(globsPath))
-                {
-                    if (line.Length == 0 || line[0] == '#')
-                    {
-                        continue;
-                    }
-
-                    string[] parts = line.Split(':');
-                    if (parts.Length < 3 || !string.Equals(parts[2], pattern, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    if (int.TryParse(parts[0], out int weight) && weight > bestWeight)
-                    {
-                        bestWeight = weight;
-                        bestMime = parts[1];
-                    }
-                }
-            }
-            catch
-            {
-            }
-
-            if (bestMime != null)
-            {
-                return bestMime;
+                return match.Mime;
             }
         }
 
         return null;
+    }
+
+    private static List<Dictionary<string, (int Weight, string Mime)>> GetGlobIndex()
+    {
+        List<Dictionary<string, (int Weight, string Mime)>>? index = _globIndex;
+        if (index != null)
+        {
+            return index;
+        }
+
+        index = DataDirs.Select(dir => ReadGlobs(Path.Combine(dir, "mime", "globs2"))).Where(globs => globs.Count > 0).ToList();
+        _globIndex = index;
+        return index;
+    }
+
+    private static Dictionary<string, (int Weight, string Mime)> ReadGlobs(string globsPath)
+    {
+        Dictionary<string, (int Weight, string Mime)> globs = new(StringComparer.OrdinalIgnoreCase);
+        if (!File.Exists(globsPath))
+        {
+            return globs;
+        }
+
+        try
+        {
+            foreach (string line in File.ReadLines(globsPath))
+            {
+                if (line.Length == 0 || line[0] == '#')
+                {
+                    continue;
+                }
+
+                string[] parts = line.Split(':');
+                if (parts.Length < 3 || !parts[2].StartsWith("*.", StringComparison.Ordinal) || !int.TryParse(parts[0], out int weight))
+                {
+                    continue;
+                }
+
+                if (!globs.TryGetValue(parts[2], out (int Weight, string Mime) existing) || weight > existing.Weight)
+                {
+                    globs[parts[2]] = (weight, parts[1]);
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return globs;
+    }
+
+    public static void WarmUp()
+    {
+        GetGlobIndex();
     }
 
     public static string? SniffMimeType(string filePath)

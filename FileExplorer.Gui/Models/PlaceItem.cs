@@ -1,4 +1,5 @@
 using Avalonia.Media;
+using FileExplorer.Core.Services;
 using FileExplorer.Gui.ViewModels;
 
 namespace FileExplorer.Gui.Models;
@@ -9,6 +10,7 @@ public enum PlaceCategory
     Bookmarks,
     Devices,
     Network,
+    Addons,
 }
 
 public class PlaceItem : ViewModelBase
@@ -56,7 +58,9 @@ public class PlaceItem : ViewModelBase
     public string? RemoteUri { get; set; }
     public string? DevicePath { get; set; }
     public PlaceCategory Category { get; init; } = PlaceCategory.Places;
-    public bool CanDismount => !IsHeader && IsMounted && (Category == PlaceCategory.Devices || Category == PlaceCategory.Network) && !string.IsNullOrEmpty(Path) && Path != "/" && !Path.StartsWith("sftp://") && !Path.StartsWith("smb://") && !Path.StartsWith("ftp://") && !Path.StartsWith("dav://") && !Path.StartsWith("davs://") && !Path.StartsWith("network:") && !Path.StartsWith("/dev/");
+    public string SectionKey { get; init; } = "";
+    public int SortIndex { get; init; }
+    public bool CanDismount => !IsHeader && IsMounted && (Category == PlaceCategory.Devices || Category == PlaceCategory.Network) && !string.IsNullOrEmpty(Path) && Path != "/" && !Path.StartsWith("sftp://") && !Path.StartsWith("smb://") && !Path.StartsWith("ftp://") && !Path.StartsWith("dav://") && !Path.StartsWith("davs://") && !Path.StartsWith("network:") && !Path.StartsWith("/dev/") && !KdeConnectService.IsDeviceUri(DevicePath);
     public bool IsNetworkHeader => IsHeader && Category == PlaceCategory.Network;
 
     public bool IsVisible
