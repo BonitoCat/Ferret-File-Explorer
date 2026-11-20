@@ -33,7 +33,11 @@ public class PaneViewModel : ViewModelBase, IDisposable
     private bool _isExternalLoading;
     private CancellationTokenSource? _loadCts;
     private FileSystemWatcher? _watcher;
+    private const int MinSilentRefreshGapMs = 1000;
+
     private DispatcherTimer? _debounceTimer;
+    private int _silentRefreshScheduled;
+    private long _lastSilentRefreshAt;
 
     public event Action<PaneViewModel>? BeforeLoad;
     public event Action<PaneViewModel>? ContentChanged;
@@ -252,7 +256,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
             return;
         }
 
-        _debounceTimer?.Stop();
+        CancelScheduledSilentRefresh();
         RefreshSilent();
     }
 
@@ -275,7 +279,7 @@ public class PaneViewModel : ViewModelBase, IDisposable
     public void Close()
     {
         _loadCts?.Cancel();
-        _debounceTimer?.Stop();
+        CancelScheduledSilentRefresh();
         if (_watcher != null)
         {
             _watcher.EnableRaisingEvents = false;
@@ -507,20 +511,18 @@ public class PaneViewModel : ViewModelBase, IDisposable
     private void AddSorted(List<FileItemViewModel> batch)
     {
         FileItemComparer comparer = SortComparer;
-        if (!comparer.IsDefault)
+        batch.Sort(comparer);
+
+        int next = 0;
+        while (next < batch.Count && Items.Count > 0 && comparer.Compare(Items[^1], batch[next]) > 0)
         {
-            batch.Sort(comparer);
+            Items.Insert(FindInsertIndex(batch[next], comparer), batch[next]);
+            next++;
         }
 
-        if (Items.Count == 0 || comparer.Compare(Items[^1], batch[0]) <= 0)
+        if (next < batch.Count)
         {
-            Items.AddRange(batch);
-            return;
-        }
-
-        foreach (FileItemViewModel item in batch)
-        {
-            Items.Insert(FindInsertIndex(item, comparer), item);
+            Items.AddRange(batch.GetRange(next, batch.Count - next));
         }
     }
 
@@ -777,6 +779,11 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     private void OnWatcherEvent(FileSystemEventArgs e)
     {
+        if (ArchiveService.IsPartialArchive(e.FullPath))
+        {
+            return;
+        }
+
         if (e.ChangeType == WatcherChangeTypes.Deleted)
         {
             Dispatcher.UIThread.Post(() => RemoveDeletedItem(e));
@@ -805,20 +812,35 @@ public class PaneViewModel : ViewModelBase, IDisposable
 
     private void ScheduleSilentRefresh(int delayMs)
     {
+        if (Interlocked.Exchange(ref _silentRefreshScheduled, 1) == 1)
+        {
+            return;
+        }
+
         Dispatcher.UIThread.Post(() =>
         {
+            long sinceLastRefresh = Environment.TickCount64 - _lastSilentRefreshAt;
+
             _debounceTimer?.Stop();
             _debounceTimer = new()
             {
-                Interval = TimeSpan.FromMilliseconds(delayMs),
+                Interval = TimeSpan.FromMilliseconds(Math.Max(delayMs, MinSilentRefreshGapMs - sinceLastRefresh)),
             };
             _debounceTimer.Tick += (s, args) =>
             {
                 _debounceTimer.Stop();
+                Volatile.Write(ref _silentRefreshScheduled, 0);
+                _lastSilentRefreshAt = Environment.TickCount64;
                 RefreshSilent();
             };
             _debounceTimer.Start();
         });
+    }
+
+    private void CancelScheduledSilentRefresh()
+    {
+        _debounceTimer?.Stop();
+        Volatile.Write(ref _silentRefreshScheduled, 0);
     }
 
     public void Dispose()

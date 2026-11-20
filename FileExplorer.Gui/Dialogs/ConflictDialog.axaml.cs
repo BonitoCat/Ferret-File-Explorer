@@ -16,6 +16,7 @@ public partial class ConflictDialog : Window
     public ConflictDialog()
     {
         InitializeComponent();
+        DialogButtonNavigation.Attach(this);
 
         AddHandler(KeyDownEvent, (_, e) =>
         {

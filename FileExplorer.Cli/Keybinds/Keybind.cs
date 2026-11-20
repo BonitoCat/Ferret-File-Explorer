@@ -112,6 +112,11 @@ public class ExecuteKeybind : Keybind
         {
             if (selected.Entry is FolderEntry folder)
             {
+                if (folder.IsBrokenLink)
+                {
+                    return;
+                }
+
                 if (FolderUtils.RequiresElevatedAccess(folder.FullPath) && !Environment.IsPrivilegedProcess && Environment.UserName != "root")
                 {
                     return;
@@ -704,7 +709,7 @@ public class OpenInFileBrowserKeybind(FileExecutionService executionService) : K
 {
     public override void OnKeyDown(KeyDownEventArgs e)
     {
-        executionService.OpenInDefaultFileBrowser(Context.Cwd);
+        FileExecutionService.OpenInFileManager(Context.Cwd);
     }
 }
 

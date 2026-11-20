@@ -19,6 +19,7 @@ public partial class ConfirmDialog : Window
     public ConfirmDialog()
     {
         InitializeComponent();
+        DialogButtonNavigation.Attach(this);
 
         Opened += (_, _) =>
         {
@@ -29,8 +30,9 @@ public partial class ConfirmDialog : Window
         {
             if (e.Key == Key.Enter)
             {
-                Confirmed = true;
-                Close(true);
+                bool confirmed = FocusManager?.GetFocusedElement() != CancelButton;
+                Confirmed = confirmed;
+                Close(confirmed);
                 e.Handled = true;
             }
             else if (e.Key == Key.Escape)

@@ -26,7 +26,12 @@ public sealed class FileItemComparer : IComparer<FileItemViewModel>
         if (ReferenceEquals(x, y)) return 0;
         if (x is null) return -1;
         if (y is null) return 1;
-        if (x.IsDirectory != y.IsDirectory) return x.IsDirectory ? -1 : 1;
+
+        int rank = GroupRank(x).CompareTo(GroupRank(y));
+        if (rank != 0)
+        {
+            return rank;
+        }
 
         int result = CompareColumn(x, y);
         if (result != 0)
@@ -35,6 +40,16 @@ public sealed class FileItemComparer : IComparer<FileItemViewModel>
         }
 
         return Names.Compare(x.Name, y.Name);
+    }
+
+    private static int GroupRank(FileItemViewModel item)
+    {
+        if (item.IsDirectory)
+        {
+            return 0;
+        }
+
+        return item.IsArchive ? 1 : 2;
     }
 
     private int CompareColumn(FileItemViewModel x, FileItemViewModel y)

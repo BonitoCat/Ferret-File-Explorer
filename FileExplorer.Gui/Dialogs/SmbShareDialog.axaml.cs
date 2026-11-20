@@ -79,7 +79,7 @@ public partial class SmbShareDialog : Window
 
     private void ShowUnavailable(SmbShareAvailability availability, string detail)
     {
-        bool needsRelogin = availability == SmbShareAvailability.NotPermitted && SmbShareService.IsInUsershareGroup();
+        bool needsRelogin = availability == SmbShareAvailability.NotPermitted && SmbShareService.IsInUsershareGroup() && !SmbShareService.IsUsershareGroupActive();
         bool canSetup = SmbShareService.CanSetup && !needsRelogin;
 
         UnavailableText.Text = (availability, needsRelogin, canSetup) switch
@@ -166,8 +166,15 @@ public partial class SmbShareDialog : Window
             return;
         }
 
+        bool elevate = await Task.Run(() => SmbShareService.NeedsElevation(_path));
+        if (elevate && !await ConfirmElevationAsync())
+        {
+            return;
+        }
+
         bool writable = WritableCheckBox.IsChecked == true;
-        if (!await EnsurePermissionsAsync(writable))
+        UnixFileMode? missing = await EnsurePermissionsAsync(writable, elevate);
+        if (missing == null)
         {
             return;
         }
@@ -175,7 +182,21 @@ public partial class SmbShareDialog : Window
         string comment = (CommentTextBox.Text ?? "").Trim();
         bool guestOk = GuestCheckBox.IsChecked == true;
         string? previousName = _existing?.Name;
-        string? error = await Task.Run(() => _shareService.SetShare(name, _path, comment, writable, guestOk, previousName));
+        (bool cancelled, string? error) = await ApplyShareAsync(name, comment, writable, guestOk, previousName, elevate, missing.Value);
+        if (!cancelled && guestOk && SmbShareService.IsGuestsNotAllowedError(error) && SmbShareService.CanSetup)
+        {
+            (SmbSetupResult setupResult, _) = await _shareService.SetupAsync(false);
+            if (setupResult == SmbSetupResult.Success)
+            {
+                (cancelled, error) = await ApplyShareAsync(name, comment, writable, guestOk, previousName, elevate, missing.Value);
+            }
+        }
+
+        if (cancelled)
+        {
+            return;
+        }
+
         if (error != null)
         {
             ShowError(LocalizationService.Format("ShareFailed", error));
@@ -223,7 +244,28 @@ public partial class SmbShareDialog : Window
         }
 
         string name = _existing.Name;
-        string? error = await Task.Run(() => _shareService.RemoveShare(name));
+        bool elevate = await Task.Run(() => SmbShareService.NeedsElevation(_path));
+        if (elevate && !await ConfirmElevationAsync())
+        {
+            return;
+        }
+
+        string? error;
+        if (elevate)
+        {
+            ElevatedResult result = await SmbShareService.RemoveShareElevatedAsync(name);
+            if (result.Status == ElevatedStatus.Cancelled)
+            {
+                return;
+            }
+
+            error = result.IsSuccess ? null : result.Error;
+        }
+        else
+        {
+            error = await Task.Run(() => _shareService.RemoveShare(name));
+        }
+
         if (error != null)
         {
             ShowError(LocalizationService.Format("ShareFailed", error));
@@ -234,7 +276,34 @@ public partial class SmbShareDialog : Window
         Close(await DisconnectAsync(name, LocalizationService.Get("FolderUnshared")));
     }
 
-    private async Task<bool> EnsurePermissionsAsync(bool writable)
+    private async Task<(bool Cancelled, string? Error)> ApplyShareAsync(string name, string comment, bool writable, bool guestOk, string? previousName, bool elevate, UnixFileMode missing)
+    {
+        if (!elevate)
+        {
+            return (false, await Task.Run(() => _shareService.SetShare(name, _path, comment, writable, guestOk, previousName)));
+        }
+
+        ElevatedResult result = await SmbShareService.SetShareElevatedAsync(name, _path, comment, writable, guestOk, previousName, missing != UnixFileMode.None);
+        if (result.Status == ElevatedStatus.Cancelled)
+        {
+            return (true, null);
+        }
+
+        return (false, result.IsSuccess ? null : result.Error);
+    }
+
+    private async Task<bool> ConfirmElevationAsync()
+    {
+        ConfirmDialog confirm = new(
+            LocalizationService.Get("ElevationTitle"),
+            LocalizationService.Format("ElevateShare", PathManager.GetName(_path)),
+            LocalizationService.Get("ContinueAsAdmin"),
+            true,
+            false);
+        return await confirm.ShowDialog<bool?>(this) == true;
+    }
+
+    private async Task<UnixFileMode?> EnsurePermissionsAsync(bool writable, bool elevate)
     {
         UnixFileMode missing;
         try
@@ -244,12 +313,12 @@ public partial class SmbShareDialog : Window
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             ShowError(LocalizationService.Format("ShareFailed", ex.Message));
-            return false;
+            return null;
         }
 
         if (missing == UnixFileMode.None)
         {
-            return true;
+            return missing;
         }
 
         ConfirmDialog confirm = new(
@@ -260,18 +329,23 @@ public partial class SmbShareDialog : Window
             false);
         if (await confirm.ShowDialog<bool?>(this) != true)
         {
-            return false;
+            return null;
+        }
+
+        if (elevate)
+        {
+            return missing;
         }
 
         try
         {
             SmbShareService.AddPermissions(_path, missing);
-            return true;
+            return UnixFileMode.None;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             ShowError(LocalizationService.Format("ShareFailed", ex.Message));
-            return false;
+            return null;
         }
     }
 

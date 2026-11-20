@@ -23,6 +23,8 @@ public class FileItemViewModel : ViewModelBase, INamedItem
     private static readonly IBrush DefaultBadgeBrush = new SolidColorBrush(Color.Parse("#607D8B"));
     private static readonly IBrush GridNameBrush = Brushes.White;
 
+    private bool? _isArchive;
+
     public required IFileSystemEntry Entry { get; init; }
     public required string Name { get; init; }
     public required string FullPath { get; init; }
@@ -37,6 +39,7 @@ public class FileItemViewModel : ViewModelBase, INamedItem
     public required bool IsHidden { get; init; }
     public required bool IsAccessDenied { get; init; }
     public FileType FileType { get; init; }
+    public bool IsArchive => _isArchive ??= !IsDirectory && (FileType == FileType.Archive || MainWindowViewModel.IsArchiveFile(FullPath));
     public string? MimeType { get; init; }
     public IImage? Icon
     {

@@ -103,6 +103,7 @@
         <Style Selector="Border.pane-box">
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="ClipToBounds" Value="True"/>
         </Style>
 
         <Style Selector="Border.pane-box.active">

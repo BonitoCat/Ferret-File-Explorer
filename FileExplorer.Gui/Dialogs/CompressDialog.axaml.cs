@@ -1,12 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using FileExplorer.Core.Services;
 using FileExplorer.Core.Utilities;
 using FileExplorer.Gui.Services;
 using static Avalonia.Interactivity.RoutingStrategies;
@@ -15,11 +12,11 @@ namespace FileExplorer.Gui.Dialogs;
 
 public partial class CompressDialog : Window
 {
-    private readonly ArchiveService _archiveService = new();
-    private readonly IReadOnlyList<string> _sourcePaths;
     private readonly string _currentDirectory;
 
-    public string? ResultArchivePath { get; private set; }
+    public string ArchivePath { get; private set; } = string.Empty;
+    public string ArchiveFormat { get; private set; } = string.Empty;
+    public string? Password { get; private set; }
 
     public CompressDialog() : this([], Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
     {
@@ -30,7 +27,6 @@ public partial class CompressDialog : Window
         InitializeComponent();
         UpdatePasswordIcon();
 
-        _sourcePaths = sourcePaths;
         _currentDirectory = currentDirectory;
 
         FormatComboBox.SelectedIndex = 0;
@@ -67,8 +63,7 @@ public partial class CompressDialog : Window
         {
             if (e.Key == Key.Escape)
             {
-                ResultArchivePath = null;
-                Close(null);
+                Close(false);
                 e.Handled = true;
             }
         }, Tunnel);
@@ -90,7 +85,7 @@ public partial class CompressDialog : Window
             : LocalizationService.Get("EncryptionUnsupported");
     }
 
-    private async void OnCreateClick(object? sender, RoutedEventArgs e)
+    private void OnCreateClick(object? sender, RoutedEventArgs e)
     {
         string rawName = ArchiveNameBox.Text?.Trim() ?? string.Empty;
         if (string.IsNullOrEmpty(rawName))
@@ -119,34 +114,15 @@ public partial class CompressDialog : Window
             archiveFileName += extension;
         }
 
-        string destinationPath = Path.Combine(_currentDirectory, archiveFileName);
-
-        StatusLabel.IsVisible = false;
-        ProgressBar.IsVisible = true;
-        CreateButton.IsEnabled = false;
-
-        string? password = PasswordBox.IsEnabled && !string.IsNullOrEmpty(PasswordBox.Text) ? PasswordBox.Text : null;
-
-        (bool success, string error) = await Task.Run(() => _archiveService.CompressAsync(_sourcePaths, destinationPath, extension, password));
-
-        ProgressBar.IsVisible = false;
-        CreateButton.IsEnabled = true;
-
-        if (success)
-        {
-            ResultArchivePath = destinationPath;
-            Close(destinationPath);
-            return;
-        }
-
-        StatusLabel.Text = string.IsNullOrEmpty(error) ? LocalizationService.Get("CompressionFailed") : error;
-        StatusLabel.IsVisible = true;
+        ArchivePath = Path.Combine(_currentDirectory, archiveFileName);
+        ArchiveFormat = extension;
+        Password = PasswordBox.IsEnabled && !string.IsNullOrEmpty(PasswordBox.Text) ? PasswordBox.Text : null;
+        Close(true);
     }
 
     private void OnCancelClick(object? sender, RoutedEventArgs e)
     {
-        ResultArchivePath = null;
-        Close(null);
+        Close(false);
     }
 
     private void OnTogglePasswordClick(object? sender, RoutedEventArgs e)

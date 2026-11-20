@@ -129,11 +129,6 @@
                     Spacing="6"
                     Margin="0,8,0,8">
 
-            <ProgressBar x:Name="ProgressBar"
-                         IsIndeterminate="True"
-                         Height="4"
-                         IsVisible="False"/>
-
             <TextBlock x:Name="StatusLabel"
                        FontSize="12"
                        Foreground="#E05555"
